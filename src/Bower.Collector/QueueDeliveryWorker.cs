@@ -253,18 +253,28 @@ public sealed partial class QueueDeliveryWorker(
 
         if (delivered.Count > 0)
         {
-            // One queue transaction for every acknowledged event in the batch.
+            // One queue transaction per distinct acknowledgement: the whole batch, unless the
+            // adapter names a per-event acknowledgement (one per S3 object, for example).
             Dictionary<string, string> tokens = events.ToDictionary(item => item.EventId, item => item.LeaseToken!, StringComparer.Ordinal);
-            IReadOnlyList<string> reclaimed = await SettleAsync(
-                token => queue.MarkDeliveredBatchAsync(delivered, acknowledgement, tokens, token),
-                cancellationToken);
-            for (int index = 0; index < reclaimed.Count; index++)
+            int reclaimedCount = 0;
+            foreach (IGrouping<string, string> group in delivered.GroupBy(
+                eventId => result.EventAcknowledgements?.GetValueOrDefault(eventId) ?? acknowledgement,
+                StringComparer.Ordinal))
+            {
+                List<string> eventIds = [.. group];
+                IReadOnlyList<string> reclaimed = await SettleAsync(
+                    token => queue.MarkDeliveredBatchAsync(eventIds, group.Key, tokens, token),
+                    cancellationToken);
+                reclaimedCount += reclaimed.Count;
+            }
+
+            for (int index = 0; index < reclaimedCount; index++)
             {
                 // The lease expired and the event was reclaimed; the newer lease owns it now.
                 LogStaleLease(logger, output.Id);
             }
 
-            if (reclaimed.Count < delivered.Count)
+            if (reclaimedCount < delivered.Count)
             {
                 activity?.RecordDelivery(clock.GetUtcNow());
             }

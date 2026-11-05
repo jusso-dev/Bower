@@ -9,7 +9,10 @@ forwarder, and never Sentinel delivery: evidence must not claim Sentinel arrival
   like keys are refused at start-up.
 - `S3ObjectLayout` is pure and shared with `rust/crates/bower-output-s3`: object keys,
   NDJSON bodies and splitting must match `tests/fixtures/s3-output/vectors.json` in both
-  runtimes. Keys hash the ordered event ids, so a retried batch rewrites the same key.
+  runtimes. Keys are `<prefix>/<collectorId>/yyyy/MM/dd/HH/<object hash>`; the hash
+  length-prefixes every id and binds the SHA-256 of the uncompressed body, so a retried
+  batch rewrites the same key and a 412 always means byte-identical content. Never
+  weaken that binding (it is what makes 412 safe to acknowledge).
 - Every PUT sends `If-None-Match: *`, a SHA-256 checksum, server-side encryption and,
   when set, `ExpectedBucketOwner`. 412 means the object already exists and is success.
 - Classification is destination-wide and retryable (`destination-s3-*`): events stay

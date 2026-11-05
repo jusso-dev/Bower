@@ -65,6 +65,7 @@ fn result(
     ack: Option<&str>,
 ) -> DeliveryResult {
     DeliveryResult {
+        event_acknowledgements: Default::default(),
         acknowledged_event_ids: acknowledged.iter().map(|id| id.to_string()).collect(),
         failures,
         destination_acknowledgement: ack.map(str::to_string),
@@ -636,6 +637,7 @@ async fn destination_outages_survive_restart_pause_backlog_and_preserve_budget()
                 assert!(events.iter().all(|item| item.delivery_attempts == 1));
                 if repaired.load(Ordering::SeqCst) {
                     DeliveryResult {
+                        event_acknowledgements: Default::default(),
                         acknowledged_event_ids: events
                             .iter()
                             .map(|item| item.event_id.clone())
@@ -654,6 +656,7 @@ async fn destination_outages_survive_restart_pause_backlog_and_preserve_budget()
                         })
                         .collect();
                     DeliveryResult {
+                        event_acknowledgements: Default::default(),
                         acknowledged_event_ids: vec![],
                         failures,
                         destination_acknowledgement: None,
@@ -752,6 +755,7 @@ async fn isolated_bad_record_never_pauses_healthy_backlog() {
     let store = create_store(&directory, &clock);
     enqueue(&store, &clock, &["bad", "good"]);
     let output = FakeOutput(Box::new(|events| DeliveryResult {
+        event_acknowledgements: Default::default(),
         acknowledged_event_ids: events
             .iter()
             .filter(|item| item.event_id != "bad")

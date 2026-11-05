@@ -200,6 +200,7 @@ impl Spool {
             )
         });
         Ok(DeliveryResult {
+            event_acknowledgements: Default::default(),
             acknowledged_event_ids: acknowledged,
             failures,
             destination_acknowledgement,
@@ -327,6 +328,7 @@ impl OutputAdapter for AmaSpoolOutput {
         match outcome {
             Ok(Ok(result)) => result,
             _ => DeliveryResult {
+                event_acknowledgements: Default::default(),
                 acknowledged_event_ids: Vec::new(),
                 failures: events
                     .iter()

@@ -606,7 +606,7 @@ public static partial class CollectorApplication
                     Timeout = TimeSpan.FromSeconds(60)
                 },
                 settings.CollectorId),
-            "s3" => new S3Output(settings.S3Output!),
+            "s3" => new S3Output(settings.S3Output! with { CollectorId = settings.CollectorId }),
             _ => throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {settings.OutputType}")
         };
     }

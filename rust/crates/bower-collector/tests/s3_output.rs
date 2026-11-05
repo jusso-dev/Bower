@@ -34,10 +34,12 @@ impl Clock for FakeClock {
     }
 }
 
-/// Answers every PUT with the current status; counts requests and keeps paths.
+/// Answers every PUT with the current status (or `fail_index`'s status for that request);
+/// counts requests and keeps paths.
 #[derive(Clone, Default)]
 struct FakeS3 {
     status: Arc<Mutex<u16>>,
+    fail_index: Arc<Mutex<Option<(usize, u16)>>>,
     paths: Arc<Mutex<Vec<String>>>,
 }
 
@@ -46,12 +48,19 @@ async fn start(fake: FakeS3) -> SocketAddr {
     let app = axum::Router::new().fallback(move |uri: Uri, _body: Bytes| {
         let state = state.clone();
         async move {
-            state.paths.lock().unwrap().push(uri.path().to_string());
-            let status = *state.status.lock().unwrap();
-            let body = if status == 200 {
-                String::new()
-            } else {
-                "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>".into()
+            let index = {
+                let mut paths = state.paths.lock().unwrap();
+                paths.push(uri.path().to_string());
+                paths.len() - 1
+            };
+            let status = match *state.fail_index.lock().unwrap() {
+                Some((failing, status)) if failing == index => status,
+                _ => *state.status.lock().unwrap(),
+            };
+            let body = match status {
+                200 => String::new(),
+                503 => "<Error><Code>SlowDown</Code><Message>Reduce your request rate.</Message></Error>".into(),
+                _ => "<Error><Code>AccessDenied</Code><Message>Access Denied</Message></Error>".into(),
             };
             (StatusCode::from_u16(status).unwrap(), body)
         }
@@ -63,6 +72,10 @@ async fn start(fake: FakeS3) -> SocketAddr {
 }
 
 fn output(address: SocketAddr) -> S3Output {
+    output_with(address, 1000)
+}
+
+fn output_with(address: SocketAddr, maximum_object_events: i32) -> S3Output {
     // Test-only placeholder credentials: the fake endpoint never checks signatures.
     let config = aws_sdk_s3::Config::builder()
         .behavior_version(BehaviorVersion::latest())
@@ -78,28 +91,20 @@ fn output(address: SocketAddr) -> S3Output {
         ))
         .retry_config(aws_config::retry::RetryConfig::disabled())
         .build();
-    S3Output::with_client(
-        S3OutputOptions::new("bower-test-bucket", "ap-southeast-2"),
-        aws_sdk_s3::Client::from_conf(config),
-    )
-    .unwrap()
+    let mut options = S3OutputOptions::new("collector-test", "bower-test-bucket", "ap-southeast-2");
+    options.maximum_object_events = maximum_object_events;
+    S3Output::with_client(options, aws_sdk_s3::Client::from_conf(config)).unwrap()
 }
 
-#[tokio::test]
-async fn destination_failure_keeps_events_queued_then_delivers_once() {
-    let directory = tempfile::tempdir().unwrap();
-    let clock = FakeClock(Arc::new(Mutex::new(
-        bower_contracts::time::parse("2026-07-26T02:14:19Z").unwrap(),
-    )));
+fn queue(directory: &Path, clock: &FakeClock, count: usize) -> Arc<SqliteEventStore> {
     let store = SqliteEventStore::new(
-        directory.path().join("queue.db"),
+        directory.join("queue.db"),
         10 * 1024 * 1024,
         Some(Arc::new(clock.clone())),
     )
     .unwrap();
     store.initialize().unwrap();
-    let store = Arc::new(store);
-    for index in 0..3 {
+    for index in 0..count {
         store
             .enqueue(&QueuedEvent {
                 event_id: format!("s3-{index}"),
@@ -113,6 +118,74 @@ async fn destination_failure_keeps_events_queued_then_delivers_once() {
             })
             .unwrap();
     }
+    Arc::new(store)
+}
+
+/// C# `Queue_FirstObjectDeliversAndSecondStaysRetrying_InOneLease`.
+#[tokio::test]
+async fn first_object_delivers_and_second_stays_retrying_in_one_lease() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock(Arc::new(Mutex::new(
+        bower_contracts::time::parse("2026-07-26T02:14:19Z").unwrap(),
+    )));
+    let store = queue(directory.path(), &clock, 4);
+    let fake = FakeS3::default();
+    *fake.status.lock().unwrap() = 200;
+    *fake.fail_index.lock().unwrap() = Some((1, 503));
+    let address = start(fake.clone()).await;
+    let worker = QueueDeliveryWorker::new(
+        store.clone(),
+        Arc::new(output_with(address, 2)),
+        Arc::new(clock.clone()),
+        QueueDeliveryOptions::default(),
+    );
+
+    assert_eq!(
+        4,
+        worker.deliver_once(&ShutdownToken::never()).await.unwrap()
+    );
+
+    let snapshot = store.snapshot().unwrap();
+    assert_eq!(
+        (2, 2, 0, 0),
+        (
+            snapshot.delivered,
+            snapshot.retrying,
+            snapshot.uploading,
+            snapshot.dead_lettered
+        )
+    );
+    let paths = fake.paths.lock().unwrap().clone();
+    assert_eq!(2, paths.len());
+    let connection = rusqlite::Connection::open(directory.path().join("queue.db")).unwrap();
+    let mut statement = connection
+        .prepare("SELECT event_id, acknowledgement, last_failure_code FROM queue_events ORDER BY event_id")
+        .unwrap();
+    let rows: Vec<(String, Option<String>, Option<String>)> = statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    let first_object = format!("s3:/{}", paths[0]);
+    let throttled = Some("destination-s3-throttled".to_string());
+    assert_eq!(
+        vec![
+            ("s3-0".to_string(), Some(first_object.clone()), None),
+            ("s3-1".to_string(), Some(first_object), None),
+            ("s3-2".to_string(), None, throttled.clone()),
+            ("s3-3".to_string(), None, throttled),
+        ],
+        rows
+    );
+}
+
+#[tokio::test]
+async fn destination_failure_keeps_events_queued_then_delivers_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let clock = FakeClock(Arc::new(Mutex::new(
+        bower_contracts::time::parse("2026-07-26T02:14:19Z").unwrap(),
+    )));
+    let store = queue(directory.path(), &clock, 3);
     let fake = FakeS3::default();
     *fake.status.lock().unwrap() = 403;
     let address = start(fake.clone()).await;
@@ -161,6 +234,7 @@ async fn destination_failure_keeps_events_queued_then_delivers_once() {
 fn s3_environment() -> Vec<(&'static str, &'static str)> {
     vec![
         ("BOWER_OUTPUT", "s3"),
+        ("BOWER_COLLECTOR_ID", "collector-test"),
         ("BOWER_S3_BUCKET", "bower-test-bucket"),
         ("BOWER_S3_REGION", "ap-southeast-2"),
         ("BOWER_S3_PREFIX", "security/bower"),
@@ -180,9 +254,10 @@ fn read(pairs: Vec<(&'static str, &'static str)>) -> impl Fn(&str) -> Option<Str
 #[test]
 fn settings_match_csharp_and_hash_only_non_secret_settings() {
     let settings = CollectorSettings::from_environment(read(s3_environment())).unwrap();
-    let mut expected = S3OutputOptions::new("bower-test-bucket", "ap-southeast-2");
+    let mut expected =
+        S3OutputOptions::new("collector-test", "bower-test-bucket", "ap-southeast-2");
     expected.prefix = "security/bower".into();
-    expected.server_side_encryption = "aws:kms".into();
+    expected.server_side_encryption = Some("aws:kms".into());
     assert_eq!(Some(expected), settings.s3_output);
     // C# S3OutputTests pins the same hash for the same environment.
     assert_eq!(
@@ -214,8 +289,14 @@ fn settings_match_csharp_and_hash_only_non_secret_settings() {
     let mut wrong_output = s3_environment();
     wrong_output[0] = ("BOWER_OUTPUT", "ama-spool");
     assert!(CollectorSettings::from_environment(read(wrong_output)).is_err());
+    let mut bad_collector = s3_environment();
+    bad_collector[1] = ("BOWER_COLLECTOR_ID", "host name");
+    assert!(CollectorSettings::from_environment(read(bad_collector)).is_err());
+    let mut bad_prefix = s3_environment();
+    bad_prefix[3] = ("BOWER_S3_PREFIX", "security/*");
+    assert!(CollectorSettings::from_environment(read(bad_prefix)).is_err());
     let mut bad_bucket = s3_environment();
-    bad_bucket[1] = ("BOWER_S3_BUCKET", "Bad.Bucket");
+    bad_bucket[2] = ("BOWER_S3_BUCKET", "Bad.Bucket");
     assert!(CollectorSettings::from_environment(read(bad_bucket)).is_err());
 }
 
@@ -254,7 +335,12 @@ async fn status_body(output: Option<BoxedOutput>) -> String {
 #[tokio::test]
 async fn status_reports_the_output_only_when_it_is_not_sentinel() {
     assert!(!status_body(None).await.contains("\"output\":"));
-    let s3 = S3Output::new(S3OutputOptions::new("bower-status-test", "ap-southeast-2")).unwrap();
+    let s3 = S3Output::new(S3OutputOptions::new(
+        "collector-status",
+        "bower-status-test",
+        "ap-southeast-2",
+    ))
+    .unwrap();
     let body = status_body(Some(BoxedOutput(Arc::new(s3)))).await;
     assert!(body.contains("\"output\":\"s3\""), "{body}");
     assert!(!body.contains("bower-status-test"));

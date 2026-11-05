@@ -33,6 +33,7 @@ public sealed class S3OutputTests
             (IReadOnlyList<S3PlannedObject> objects, IReadOnlyList<DeliveryFailure> rejected) = S3ObjectLayout.Plan(
                 events,
                 testCase["prefix"]!.GetValue<string>(),
+                testCase["collectorId"]!.GetValue<string>(),
                 testCase["maximumObjectBytes"]!.GetValue<int>(),
                 testCase["maximumObjectEvents"]!.GetValue<int>(),
                 testCase["gzip"]!.GetValue<bool>());
@@ -54,12 +55,42 @@ public sealed class S3OutputTests
             Assert.All(rejected, failure => Assert.False(failure.IsRetryable));
         }
 
-        foreach (JsonNode? item in Vectors["eventIdsHash"]!.AsArray())
-        {
-            Assert.Equal(item!["sha256"]!.GetValue<string>(),
-                S3ObjectLayout.EventIdsHash([.. item["eventIds"]!.AsArray().Select(id => id!.GetValue<string>())]));
-        }
     }
+
+    [Fact]
+    public void ObjectHashAndKeys_SeparateAmbiguousIdsBodiesAndCollectors()
+    {
+        HashSet<string> hashes = new(StringComparer.Ordinal);
+        foreach (JsonNode? item in Vectors["objectHash"]!.AsArray())
+        {
+            string hash = S3ObjectLayout.ObjectHash(
+                Ids(item!["eventIds"]!), Encoding.UTF8.GetBytes(item["body"]!.GetValue<string>()));
+            Assert.Equal(item["sha256"]!.GetValue<string>(), hash);
+            Assert.True(hashes.Add(hash), item["name"]!.GetValue<string>());
+        }
+
+        HashSet<string> keys = new(StringComparer.Ordinal);
+        foreach (JsonNode? item in Vectors["adversarialKeys"]!.AsArray())
+        {
+            string key = S3ObjectLayout.Key(
+                item!["prefix"]!.GetValue<string>(),
+                item["collectorId"]!.GetValue<string>(),
+                DateTimeOffset.Parse(item["receivedAt"]!.GetValue<string>(), System.Globalization.CultureInfo.InvariantCulture),
+                Ids(item["eventIds"]!),
+                Encoding.UTF8.GetBytes(item["body"]!.GetValue<string>()),
+                item["gzip"]!.GetValue<bool>());
+            Assert.Equal(item["key"]!.GetValue<string>(), key);
+            Assert.True(keys.Add(key), item["name"]!.GetValue<string>());
+        }
+
+        JsonNode validation = Vectors["validation"]!;
+        Assert.All(Ids(validation["validPrefixes"]!), prefix => Assert.True(S3OutputOptions.IsValidPrefix(prefix), prefix));
+        Assert.All(Ids(validation["invalidPrefixes"]!), prefix => Assert.False(S3OutputOptions.IsValidPrefix(prefix), prefix));
+        Assert.All(Ids(validation["validCollectorIds"]!), id => Assert.True(S3OutputOptions.IsValidCollectorId(id), id));
+        Assert.All(Ids(validation["invalidCollectorIds"]!), id => Assert.False(S3OutputOptions.IsValidCollectorId(id), id));
+    }
+
+    private static string[] Ids(JsonNode array) => [.. array.AsArray().Select(id => id!.GetValue<string>())];
 
     [Fact]
     public void Classification_AndAcknowledgement_MatchSharedVectors()
@@ -76,9 +107,8 @@ public sealed class S3OutputTests
 
         foreach (JsonNode? item in Vectors["acknowledgement"]!.AsArray())
         {
-            Assert.Equal(item!["expected"]?.GetValue<string>(), S3Output.Acknowledgement(
-                item["bucket"]!.GetValue<string>(),
-                [.. item["keys"]!.AsArray().Select(key => key!.GetValue<string>())]));
+            Assert.Equal(item!["expected"]!.GetValue<string>(), S3Output.Acknowledgement(
+                item["bucket"]!.GetValue<string>(), item["key"]!.GetValue<string>()));
         }
     }
 
@@ -94,11 +124,15 @@ public sealed class S3OutputTests
         Assert.Equal(events.Select(item => item.EventId), result.AcknowledgedEventIds);
         Assert.Empty(result.Failures);
         CapturedPut put = Assert.Single(s3.Puts);
-        string key = S3ObjectLayout.Key("bower", events[0].ReceivedAt, [.. events.Select(item => item.EventId)], gzip: true);
+        string key = S3ObjectLayout.Key("bower", "collector-test", events[0].ReceivedAt, [.. events.Select(item => item.EventId)],
+            Encoding.UTF8.GetBytes(string.Concat(events.Select(item => item.Payload + "\n"))), gzip: true);
+        Assert.StartsWith("bower/collector-test/", key, StringComparison.Ordinal);
         Assert.Equal($"/bower-test-bucket/{key}", put.Path);
         Assert.Equal($"s3://bower-test-bucket/{key}", result.DestinationAcknowledgement);
+        Assert.All(events, item => Assert.Equal($"s3://bower-test-bucket/{key}", result.EventAcknowledgements![item.EventId]));
         Assert.Equal("*", put.Header("If-None-Match"));
-        Assert.Equal("AES256", put.Header("x-amz-server-side-encryption"));
+        // BOWER_S3_SSE unset: no header, so the bucket default encryption (possibly a KMS key) applies.
+        Assert.Null(put.Header("x-amz-server-side-encryption"));
         Assert.Null(put.Header("x-amz-server-side-encryption-aws-kms-key-id"));
         Assert.Equal("123456789012", put.Header("x-amz-expected-bucket-owner"));
         Assert.Equal("gzip", put.Header("Content-Encoding"));
@@ -106,6 +140,22 @@ public sealed class S3OutputTests
         Assert.Equal(Convert.ToBase64String(SHA256.HashData(put.Body)), put.Header("x-amz-checksum-sha256"));
         Assert.Equal(string.Concat(events.Select(item => item.Payload + "\n")), Gunzip(put.Body));
         Assert.Null(put.Header("Authorization"));
+    }
+
+    [Theory]
+    [InlineData("AES256", null)]
+    [InlineData("aws:kms", null)]
+    [InlineData("aws:kms", "arn:aws:kms:ap-southeast-2:123456789012:key/0f0e0d0c-0000-4000-8000-000000000001")]
+    public async Task Deliver_SendsExplicitEncryptionOnlyWhenConfigured(string sse, string? keyId)
+    {
+        FakeS3 s3 = new();
+        using S3Output output = Create(s3, Options() with { ServerSideEncryption = sse, KmsKeyId = keyId });
+
+        await output.DeliverAsync(Events(1), TestContext.Current.CancellationToken);
+
+        CapturedPut put = Assert.Single(s3.Puts);
+        Assert.Equal(sse, put.Header("x-amz-server-side-encryption"));
+        Assert.Equal(keyId, put.Header("x-amz-server-side-encryption-aws-kms-key-id"));
     }
 
     [Fact]
@@ -147,6 +197,75 @@ public sealed class S3OutputTests
         Assert.Equal(first.AcknowledgedEventIds, retry.AcknowledgedEventIds);
         Assert.Empty(retry.Failures);
         Assert.Equal(first.DestinationAcknowledgement, retry.DestinationAcknowledgement);
+    }
+
+    [Fact]
+    public async Task ConditionalPut_IsOnlyEverAnsweredWithIdenticalBytes()
+    {
+        // A fake bucket with real If-None-Match semantics: an existing key answers 412, and
+        // records whether the refused upload's uncompressed body differed from the stored one.
+        FakeS3 s3 = new() { Store = new(StringComparer.Ordinal) };
+        using S3Output first = Create(s3, Options());
+        using S3Output otherCollector = Create(s3, Options() with { CollectorId = "collector-other" });
+        QueuedEvent[] events = Events(3);
+        QueuedEvent[] changed = [.. events.Select(item => item with { Payload = item.Payload.Replace("}", ",\"changed\":true}", StringComparison.Ordinal) })];
+        QueuedEvent[] newlineA = [new("a\nb", "f", """{"eventId":"x"}""", TestEvents.Now), new("c", "f", """{"eventId":"y"}""", TestEvents.Now)];
+        QueuedEvent[] newlineB = [new("a", "f", """{"eventId":"x"}""", TestEvents.Now), new("b\nc", "f", """{"eventId":"y"}""", TestEvents.Now)];
+
+        DeliveryResult[] results =
+        [
+            await first.DeliverAsync(events, TestContext.Current.CancellationToken),
+            await first.DeliverAsync(events, TestContext.Current.CancellationToken),
+            await first.DeliverAsync(changed, TestContext.Current.CancellationToken),
+            await otherCollector.DeliverAsync(events, TestContext.Current.CancellationToken),
+            await first.DeliverAsync(newlineA, TestContext.Current.CancellationToken),
+            await first.DeliverAsync(newlineB, TestContext.Current.CancellationToken)
+        ];
+
+        Assert.All(results, result => Assert.Empty(result.Failures));
+        // Only the exact retry met an existing key; it held byte-identical content.
+        Assert.Equal(1, s3.PreconditionFailures);
+        Assert.Equal(0, s3.MismatchedPreconditionFailures);
+        Assert.Equal(5, s3.Store.Count);
+        Assert.Equal(results[0].DestinationAcknowledgement, results[1].DestinationAcknowledgement);
+        Assert.NotEqual(results[0].DestinationAcknowledgement, results[2].DestinationAcknowledgement);
+        Assert.Contains("/collector-other/", results[3].DestinationAcknowledgement, StringComparison.Ordinal);
+        Assert.NotEqual(results[4].DestinationAcknowledgement, results[5].DestinationAcknowledgement);
+    }
+
+    [Fact]
+    public async Task Deliver_AcknowledgesEachEventWithItsOwnObject()
+    {
+        FakeS3 s3 = new();
+        using S3Output output = Create(s3, Options() with { MaximumObjectEvents = 2 });
+
+        DeliveryResult result = await output.DeliverAsync(Events(5), TestContext.Current.CancellationToken);
+
+        string[] keys = [.. s3.Puts.Select(put => "s3:/" + put.Path)];
+        Assert.Equal(3, keys.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(
+            [keys[0], keys[0], keys[1], keys[1], keys[2]],
+            result.AcknowledgedEventIds.Select(id => result.EventAcknowledgements![id]));
+    }
+
+    [Theory]
+    [InlineData(true, "destination-s3-unavailable")]
+    [InlineData(false, "destination-s3-credential-failed")]
+    public async Task Deliver_CredentialLookupNetworkFaultIsUnavailable(bool network, string expected)
+    {
+        AmazonS3Config config = new()
+        {
+            ServiceURL = "https://s3.test.invalid",
+            AuthenticationRegion = "ap-southeast-2",
+            ForcePathStyle = true,
+            MaxErrorRetry = 0,
+            HttpClientFactory = new FakeHttpClientFactory(new FakeS3())
+        };
+        using S3Output output = new(Options(), new AmazonS3Client(new FailingCredentials(network), config), ownsClient: true);
+
+        DeliveryResult result = await output.DeliverAsync(Events(1), TestContext.Current.CancellationToken);
+
+        Assert.Equal(expected, Assert.Single(result.Failures).Code);
     }
 
     [Fact]
@@ -283,6 +402,47 @@ public sealed class S3OutputTests
             message.Contains("AKIA", StringComparison.Ordinal) || message.Contains("Authorization", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public async Task Queue_FirstObjectDeliversAndSecondStaysRetrying_InOneLease()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        string path = Path.Combine(directory.Path, "queue.db");
+        SqliteEventStore store = new(path, 10 * 1024 * 1024, clock);
+        await store.InitializeAsync(cancellationToken);
+        foreach (QueuedEvent item in Events(4))
+        {
+            await store.EnqueueAsync(item, cancellationToken);
+        }
+
+        FakeS3 s3 = new() { Respond = index => index == 1 ? Error(HttpStatusCode.ServiceUnavailable, "SlowDown") : Ok() };
+        using S3Output output = Create(s3, Options() with { MaximumObjectEvents = 2 });
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), new RecordingLogger());
+
+        Assert.Equal(4, await worker.DeliverOnceAsync(cancellationToken));
+
+        QueueSnapshot snapshot = await store.GetSnapshotAsync(cancellationToken);
+        Assert.Equal((2, 2, 0, 0), (snapshot.Delivered, snapshot.Retrying, snapshot.Uploading, snapshot.DeadLettered));
+        Assert.Equal(2, s3.Puts.Count);
+        using Microsoft.Data.Sqlite.SqliteConnection connection = new($"Data Source={path};Mode=ReadOnly;Pooling=False");
+        connection.Open();
+        using Microsoft.Data.Sqlite.SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT event_id, acknowledgement, last_failure_code FROM queue_events ORDER BY event_id";
+        using Microsoft.Data.Sqlite.SqliteDataReader reader = command.ExecuteReader();
+        List<(string, string?, string?)> rows = [];
+        while (reader.Read())
+        {
+            rows.Add((reader.GetString(0), reader.IsDBNull(1) ? null : reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2)));
+        }
+
+        string firstObject = "s3:/" + s3.Puts[0].Path;
+        Assert.Equal(
+            [("s3-0", firstObject, null), ("s3-1", firstObject, null),
+             ("s3-2", null, "destination-s3-throttled"), ("s3-3", null, "destination-s3-throttled")],
+            rows);
+    }
+
     [Theory]
     [InlineData("BOWER_S3_ACCESS_KEY_ID")]
     [InlineData("BOWER_S3_SECRET_ACCESS_KEY")]
@@ -320,6 +480,12 @@ public sealed class S3OutputTests
     [InlineData("BOWER_S3_PREFIX", "bower//x")]
     [InlineData("BOWER_S3_PREFIX", "bower/../x")]
     [InlineData("BOWER_S3_PREFIX", "bower x")]
+    [InlineData("BOWER_S3_PREFIX", "security/*")]
+    [InlineData("BOWER_S3_PREFIX", "bower?")]
+    [InlineData("BOWER_S3_PREFIX", "bower/${aws:username}")]
+    [InlineData("BOWER_COLLECTOR_ID", "host name")]
+    [InlineData("BOWER_COLLECTOR_ID", "../edge")]
+    [InlineData("BOWER_COLLECTOR_ID", "edge*")]
     [InlineData("BOWER_S3_SSE", "aws:kms:dsse")]
     [InlineData("BOWER_S3_KMS_KEY_ID", "alias/has space")]
     [InlineData("BOWER_S3_EXPECTED_BUCKET_OWNER", "12345")]
@@ -346,6 +512,7 @@ public sealed class S3OutputTests
         {
             Bucket = "bower-test-bucket",
             Region = "ap-southeast-2",
+            CollectorId = "collector-test",
             Prefix = "security/bower",
             ServerSideEncryption = S3OutputOptions.SseKms
         }, settings.S3Output);
@@ -387,9 +554,10 @@ public sealed class S3OutputTests
 
     /// <summary>
     /// Live qualification only (skipped unless BOWER_S3_LIVE_BUCKET is set): delivers one
-    /// fixed batch twice through the default credential chain. The Rust test
-    /// <c>live_same_batch_writes_one_object</c> sends the same batch, so both runtimes and
-    /// every retry must land on one key (the second PUT gets 412 and counts as delivered).
+    /// fixed batch twice through the default credential chain, then the same ids with other
+    /// content. The Rust test <c>live_same_batch_writes_one_object</c> sends the same batches,
+    /// so both runtimes and every retry land on one key per content (later PUTs get 412 and
+    /// count as delivered) and changed content always gets its own key.
     /// </summary>
     [Fact]
     public async Task Live_SameBatchWritesOneObject()
@@ -400,6 +568,7 @@ public sealed class S3OutputTests
         {
             Bucket = bucket,
             Region = Environment.GetEnvironmentVariable("BOWER_S3_LIVE_REGION") ?? "ap-southeast-2",
+            CollectorId = "live-idem",
             Prefix = Environment.GetEnvironmentVariable("BOWER_S3_LIVE_PREFIX") ?? "live/idempotent",
             ExpectedBucketOwner = Environment.GetEnvironmentVariable("BOWER_S3_LIVE_OWNER")
         });
@@ -419,19 +588,28 @@ public sealed class S3OutputTests
         Assert.Empty(retry.Failures);
         Assert.Equal(events.Select(item => item.EventId), first.AcknowledgedEventIds);
         Assert.Equal(first.DestinationAcknowledgement, retry.DestinationAcknowledgement);
-        TestContext.Current.SendDiagnosticMessage($"live acknowledgement: {first.DestinationAcknowledgement}");
+
+        // Same ids, different content: a different key, never a 412 on the first object.
+        QueuedEvent[] changed = [.. events.Select(item => item with { Payload = item.Payload.Replace("true}", "false}", StringComparison.Ordinal) })];
+        DeliveryResult other = await output.DeliverAsync(changed, TestContext.Current.CancellationToken);
+        Assert.Empty(other.Failures);
+        Assert.NotEqual(first.DestinationAcknowledgement, other.DestinationAcknowledgement);
+        TestContext.Current.SendDiagnosticMessage(
+            $"live acknowledgements: {first.DestinationAcknowledgement} {other.DestinationAcknowledgement}");
     }
 
     private static Dictionary<string, string> S3Environment() => new()
     {
         ["BOWER_OUTPUT"] = "s3",
+        ["BOWER_COLLECTOR_ID"] = "collector-test",
         ["BOWER_S3_BUCKET"] = "bower-test-bucket",
         ["BOWER_S3_REGION"] = "ap-southeast-2",
         ["BOWER_S3_PREFIX"] = "security/bower",
         ["BOWER_S3_SSE"] = "aws:kms"
     };
 
-    private static S3OutputOptions Options() => new() { Bucket = "bower-test-bucket", Region = "ap-southeast-2" };
+    private static S3OutputOptions Options() =>
+        new() { Bucket = "bower-test-bucket", Region = "ap-southeast-2", CollectorId = "collector-test" };
 
     private static QueuedEvent[] Events(int count) =>
     [
@@ -490,6 +668,13 @@ public sealed class S3OutputTests
 
         public Func<Exception>? Throw { get; set; }
 
+        /// <summary>When set, the fake keeps objects and enforces If-None-Match: *.</summary>
+        public Dictionary<string, byte[]>? Store { get; init; }
+
+        public int PreconditionFailures { get; private set; }
+
+        public int MismatchedPreconditionFailures { get; private set; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (Throw is not null)
@@ -506,9 +691,36 @@ public sealed class S3OutputTests
 
             byte[] body = request.Content is null ? [] : await request.Content.ReadAsByteArrayAsync(cancellationToken);
             Assert.Equal(HttpMethod.Put, request.Method);
-            Puts.Add(new CapturedPut(Uri.UnescapeDataString(request.RequestUri!.AbsolutePath), headers, body));
+            string path = Uri.UnescapeDataString(request.RequestUri!.AbsolutePath);
+            Puts.Add(new CapturedPut(path, headers, body));
+            if (Store is not null)
+            {
+                Assert.Equal("*", headers["if-none-match"]);
+                byte[] plain = headers.GetValueOrDefault("content-encoding") == "gzip" ? Encoding.UTF8.GetBytes(Gunzip(body)) : body;
+                if (Store.TryGetValue(path, out byte[]? stored))
+                {
+                    PreconditionFailures++;
+                    if (!stored.AsSpan().SequenceEqual(plain)) MismatchedPreconditionFailures++;
+                    return Error(HttpStatusCode.PreconditionFailed, "PreconditionFailed");
+                }
+
+                Store[path] = plain;
+            }
+
             return Respond(Puts.Count - 1);
         }
+    }
+
+    /// <summary>A credential source that fails like the default chain: no credentials, or a network fault.</summary>
+    private sealed class FailingCredentials(bool network) : AWSCredentials
+    {
+        public override ImmutableCredentials GetCredentials() => throw Failure();
+
+        public override Task<ImmutableCredentials> GetCredentialsAsync() => Task.FromException<ImmutableCredentials>(Failure());
+
+        private AmazonClientException Failure() => network
+            ? new AmazonClientException("Failed to resolve AWS credentials.", new HttpRequestException("connection refused"))
+            : new AmazonClientException("Failed to resolve AWS credentials. No credentials found.");
     }
 
     private sealed class FakeHttpClientFactory(HttpMessageHandler handler) : HttpClientFactory

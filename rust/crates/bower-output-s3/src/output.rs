@@ -10,7 +10,7 @@ use aws_config::retry::RetryConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_s3::config::http::HttpResponse;
-use aws_sdk_s3::error::{ProvideErrorMetadata, SdkError};
+use aws_sdk_s3::error::{ConnectorError, ProvideErrorMetadata, SdkError};
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::primitives::ByteStream;
 use aws_sdk_s3::types::{ChecksumAlgorithm, ServerSideEncryption};
@@ -102,12 +102,15 @@ impl S3Output {
             .checksum_algorithm(ChecksumAlgorithm::Sha256)
             .checksum_sha256(checksum)
             .if_none_match("*")
-            .server_side_encryption(if self.options.server_side_encryption == SSE_KMS {
+            .metadata("bower-events", item.event_ids.len().to_string());
+        // Unset: no header, so the bucket's default encryption (possibly a KMS key) applies.
+        if let Some(sse) = &self.options.server_side_encryption {
+            request = request.server_side_encryption(if sse == SSE_KMS {
                 ServerSideEncryption::AwsKms
             } else {
                 ServerSideEncryption::Aes256
-            })
-            .metadata("bower-events", item.event_ids.len().to_string());
+            });
+        }
         if let Some(key) = &self.options.kms_key_id {
             request = request.ssekms_key_id(key);
         }
@@ -136,13 +139,14 @@ impl OutputAdapter for S3Output {
         let (objects, rejected) = layout::plan(
             events,
             &self.options.prefix,
+            &self.options.collector_id,
             self.options.maximum_object_bytes,
             self.options.maximum_object_events,
             self.options.gzip,
         );
         let mut failures = rejected;
         let mut acknowledged = Vec::new();
-        let mut keys = Vec::new();
+        let mut acknowledgements = std::collections::HashMap::new();
         for (index, item) in objects.iter().enumerate() {
             if let Some(code) = self.put(item).await {
                 for held in &objects[index..] {
@@ -156,19 +160,30 @@ impl OutputAdapter for S3Output {
                 break;
             }
             acknowledged.extend(item.event_ids.iter().cloned());
-            keys.push(item.key.clone());
+            for event_id in &item.event_ids {
+                acknowledgements.insert(
+                    event_id.clone(),
+                    acknowledgement(&self.options.bucket, &item.key),
+                );
+            }
         }
+        // Every event's acknowledgement names its own object; the batch-level value is the
+        // first object's, for readers of the batch result only.
         DeliveryResult {
+            destination_acknowledgement: acknowledged
+                .first()
+                .map(|event_id| acknowledgements[event_id].clone()),
             acknowledged_event_ids: acknowledged,
             failures,
-            destination_acknowledgement: acknowledgement(&self.options.bucket, &keys),
+            event_acknowledgements: acknowledgements,
         }
     }
 }
 
 /// C# `S3Output.Classify`: maps an S3 error response to a destination code. `None` means
-/// success: 412 answers `If-None-Match: *` when the key already exists, and the key is a
-/// hash of the ordered event ids whose queued payloads never change. Every code is
+/// success: 412 answers `If-None-Match: *` when the key already exists, and the key binds
+/// the collector, the exact ids and the uncompressed body, so the stored object holds
+/// byte-identical content. Every code is
 /// retryable; access, bucket, KMS and region faults wait in the queue for an operator.
 pub fn classify(status: u16, error_code: Option<&str>, message_names_kms: bool) -> Option<String> {
     if status == 412 {
@@ -212,14 +227,10 @@ pub fn classify(status: u16, error_code: Option<&str>, message_names_kms: bool) 
     Some(code.to_string())
 }
 
-/// C# `S3Output.Acknowledgement`: the bucket and first object key, plus how many more
-/// objects this delivery wrote. `None` when nothing was written.
-pub fn acknowledgement(bucket: &str, keys: &[String]) -> Option<String> {
-    match keys {
-        [] => None,
-        [key] => Some(format!("s3://{bucket}/{key}")),
-        [key, rest @ ..] => Some(format!("s3://{bucket}/{key} +{}", rest.len())),
-    }
+/// C# `S3Output.Acknowledgement`: persisted with each acknowledged event, the object
+/// that holds it.
+pub fn acknowledgement(bucket: &str, key: &str) -> String {
+    format!("s3://{bucket}/{key}")
 }
 
 type PutError = SdkError<PutObjectError, HttpResponse>;
@@ -245,17 +256,29 @@ fn classify_error(error: &PutError) -> Option<String> {
     }
 }
 
-/// The default chain found no credentials or could not use them. A provider timeout is
-/// an outage like any other.
-fn credential_failure(error: &(dyn std::error::Error + 'static)) -> bool {
+/// C# `IsCredentialFailure`: the default chain found no credentials or could not use
+/// them. A network fault anywhere in the chain (an I/O error, a connector I/O or timeout
+/// error, a provider timeout), such as an unreachable IMDS endpoint wrapped in
+/// `CredentialsError::ProviderError`, is an outage like any other.
+pub fn credential_failure(error: &(dyn std::error::Error + 'static)) -> bool {
+    let mut credentials = false;
     let mut current = Some(error);
     while let Some(item) = current {
-        if let Some(credentials) = item.downcast_ref::<CredentialsError>() {
-            return !matches!(credentials, CredentialsError::ProviderTimedOut(_));
+        if item.is::<std::io::Error>()
+            || item
+                .downcast_ref::<ConnectorError>()
+                .is_some_and(|connector| connector.is_io() || connector.is_timeout())
+            || matches!(
+                item.downcast_ref::<CredentialsError>(),
+                Some(CredentialsError::ProviderTimedOut(_))
+            )
+        {
+            return false;
         }
+        credentials |= item.is::<CredentialsError>();
         current = item.source();
     }
-    false
+    credentials
 }
 
 fn compress(body: &[u8]) -> Vec<u8> {

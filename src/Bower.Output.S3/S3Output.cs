@@ -51,10 +51,10 @@ public sealed class S3Output : IOutputAdapter, IDisposable
         }
 
         (IReadOnlyList<S3PlannedObject> objects, IReadOnlyList<DeliveryFailure> rejected) = S3ObjectLayout.Plan(
-            events, options.Prefix, options.MaximumObjectBytes, options.MaximumObjectEvents, options.Gzip);
+            events, options.Prefix, options.CollectorId, options.MaximumObjectBytes, options.MaximumObjectEvents, options.Gzip);
         List<DeliveryFailure> failures = [.. rejected];
         List<string> acknowledged = [];
-        List<string> keys = [];
+        Dictionary<string, string> acknowledgements = new(StringComparer.Ordinal);
         int index = 0;
         try
         {
@@ -74,7 +74,10 @@ public sealed class S3Output : IOutputAdapter, IDisposable
                 }
 
                 acknowledged.AddRange(objects[index].EventIds);
-                keys.Add(objects[index].Key);
+                foreach (string eventId in objects[index].EventIds)
+                {
+                    acknowledgements[eventId] = Acknowledgement(options.Bucket, objects[index].Key);
+                }
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -86,7 +89,15 @@ public sealed class S3Output : IOutputAdapter, IDisposable
             }
         }
 
-        return new DeliveryResult(acknowledged, failures, Acknowledgement(options.Bucket, keys));
+        // Every event's acknowledgement names its own object; the batch-level value is the
+        // first object's, for readers of the batch result only.
+        return new DeliveryResult(
+            acknowledged,
+            failures,
+            acknowledged.Count == 0 ? null : acknowledgements[acknowledged[0]])
+        {
+            EventAcknowledgements = acknowledgements
+        };
     }
 
     public void Dispose()
@@ -112,11 +123,16 @@ public sealed class S3Output : IOutputAdapter, IDisposable
             ChecksumAlgorithm = ChecksumAlgorithm.SHA256,
             ChecksumSHA256 = Convert.ToBase64String(SHA256.HashData(content)),
             IfNoneMatch = "*",
-            UseChunkEncoding = false,
-            ServerSideEncryptionMethod = options.ServerSideEncryption == S3OutputOptions.SseKms
-                ? ServerSideEncryptionMethod.AWSKMS
-                : ServerSideEncryptionMethod.AES256
+            UseChunkEncoding = false
         };
+        // Unset: no header, so the bucket's default encryption (possibly a KMS key) applies.
+        if (options.ServerSideEncryption is not null)
+        {
+            request.ServerSideEncryptionMethod = options.ServerSideEncryption == S3OutputOptions.SseKms
+                ? ServerSideEncryptionMethod.AWSKMS
+                : ServerSideEncryptionMethod.AES256;
+        }
+
         if (options.KmsKeyId is not null)
         {
             request.ServerSideEncryptionKeyManagementServiceKeyId = options.KmsKeyId;
@@ -164,8 +180,9 @@ public sealed class S3Output : IOutputAdapter, IDisposable
     /// <summary>
     /// Maps an S3 error response to a destination code (same table as the Rust port).
     /// Null means success: 412 answers <c>If-None-Match: *</c> when the key already exists,
-    /// and the key is a hash of the ordered event ids whose queued payloads never change, so
-    /// the object already holds exactly these events. Every code is retryable: access,
+    /// and the key binds the collector, the exact event ids and the uncompressed body
+    /// (<see cref="S3ObjectLayout.ObjectHash"/>), so the stored object holds byte-identical
+    /// content. Every code is retryable: access,
     /// bucket, KMS and region faults need an operator, and the events wait in the queue.
     /// </summary>
     public static string? Classify(int status, string? errorCode, bool messageNamesKms)
@@ -194,16 +211,8 @@ public sealed class S3Output : IOutputAdapter, IDisposable
         };
     }
 
-    /// <summary>
-    /// Persisted with every acknowledged event: the bucket and first object key, plus how
-    /// many more objects this delivery wrote. Null when nothing was written.
-    /// </summary>
-    public static string? Acknowledgement(string bucket, IReadOnlyList<string> keys) => keys.Count switch
-    {
-        0 => null,
-        1 => $"s3://{bucket}/{keys[0]}",
-        _ => string.Create(CultureInfo.InvariantCulture, $"s3://{bucket}/{keys[0]} +{keys.Count - 1}")
-    };
+    /// <summary>Persisted with each acknowledged event: the object that holds it.</summary>
+    public static string Acknowledgement(string bucket, string key) => $"s3://{bucket}/{key}";
 
     /// <summary>
     /// The default chain found no credentials, or could not use them. Network faults that

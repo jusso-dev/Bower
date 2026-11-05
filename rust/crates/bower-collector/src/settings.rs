@@ -290,6 +290,7 @@ impl CollectorSettings {
         let management_endpoint = read("BOWER_MANAGEMENT_ENDPOINT");
         let dce_endpoint = read("BOWER_DCE_ENDPOINT");
         let retention_hours = read_i64(&read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)?;
+        let collector_id = read("BOWER_COLLECTOR_ID").unwrap_or_else(machine_name);
         let settings = Self {
             listen_url: read("BOWER_LISTEN_URL").unwrap_or_else(|| "http://127.0.0.1:4319".into()),
             queue_path: read("BOWER_QUEUE_PATH")
@@ -303,7 +304,7 @@ impl CollectorSettings {
                         .join("policies")
                         .join("default")
                 }),
-            collector_id: read("BOWER_COLLECTOR_ID").unwrap_or_else(machine_name),
+            collector_id: collector_id.clone(),
             version: bower_contracts::version::CURRENT.into(),
             environment: read("BOWER_ENVIRONMENT").unwrap_or_else(|| "unknown".into()),
             maximum_queue_bytes: read_i64(&read, "BOWER_QUEUE_MAX_BYTES", 10 * 1024 * 1024 * 1024)?,
@@ -347,7 +348,7 @@ impl CollectorSettings {
             dcr_immutable_id: read("BOWER_DCR_ID"),
             azure_credential: parse_credential_mode(read("BOWER_AZURE_CREDENTIAL").as_deref())?,
             azure_client_id: read("BOWER_AZURE_CLIENT_ID"),
-            s3_output: bower_output_s3::S3OutputOptions::from_environment(&read)
+            s3_output: bower_output_s3::S3OutputOptions::from_environment(&read, &collector_id)
                 .map_err(|error| invalid(error.0))?,
             management_endpoint: absolute_uri(management_endpoint)?,
             management_scope: read("BOWER_MANAGEMENT_SCOPE"),
@@ -552,6 +553,9 @@ impl CollectorSettings {
             ));
         }
         if let Some(s3) = &self.s3_output {
+            // The key segment is always the collector's own id.
+            let mut s3 = s3.clone();
+            s3.collector_id = self.collector_id.clone();
             s3.validate().map_err(|error| invalid(error.0))?;
         }
 

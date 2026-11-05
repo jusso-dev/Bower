@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -12,10 +13,13 @@ public sealed record S3PlannedObject(string Key, IReadOnlyList<string> EventIds,
 /// <summary>
 /// Deterministic object layout, shared with the Rust port and pinned by
 /// <c>tests/fixtures/s3-output/vectors.json</c>. Keys are
-/// <c>&lt;prefix&gt;/yyyy/MM/dd/HH/&lt;sha256 of ordered event ids&gt;.jsonl[.gz]</c>, partitioned by the
-/// first event's queue receive time (UTC). Receive time is set once by the collector and
+/// <c>&lt;prefix&gt;/&lt;collectorId&gt;/yyyy/MM/dd/HH/&lt;object hash&gt;.jsonl[.gz]</c>, partitioned by
+/// the first event's queue receive time (UTC). Receive time is set once by the collector and
 /// never changes, so a retry of the same batch rewrites the same key; delivery time would
-/// move a retry into a later partition and duplicate the object.
+/// move a retry into a later partition and duplicate the object. The collector segment keeps
+/// collectors that share a bucket and prefix apart. The object hash binds the exact event
+/// ids and the uncompressed body (<see cref="ObjectHash"/>), so an existing key (412) always
+/// holds byte-identical content.
 /// </summary>
 public static class S3ObjectLayout
 {
@@ -30,6 +34,7 @@ public static class S3ObjectLayout
     public static (IReadOnlyList<S3PlannedObject> Objects, IReadOnlyList<DeliveryFailure> Rejected) Plan(
         IReadOnlyList<QueuedEvent> events,
         string prefix,
+        string collectorId,
         int maximumObjectBytes,
         int maximumObjectEvents,
         bool gzip)
@@ -56,7 +61,7 @@ public static class S3ObjectLayout
 
             if (current.Count > 0 && (currentBytes + recordBytes > maximumObjectBytes || current.Count >= maximumObjectEvents))
             {
-                objects.Add(Build(current, prefix, currentBytes, gzip));
+                objects.Add(Build(current, prefix, collectorId, currentBytes, gzip));
                 current = [];
                 currentBytes = 0;
             }
@@ -67,25 +72,45 @@ public static class S3ObjectLayout
 
         if (current.Count > 0)
         {
-            objects.Add(Build(current, prefix, currentBytes, gzip));
+            objects.Add(Build(current, prefix, collectorId, currentBytes, gzip));
         }
 
         return (objects, rejected);
     }
 
-    /// <summary>Object key for events in this order whose first event was received at <paramref name="firstReceivedAt"/>.</summary>
-    public static string Key(string prefix, DateTimeOffset firstReceivedAt, IReadOnlyList<string> eventIds, bool gzip)
+    /// <summary>Object key for these events, in this order, with this uncompressed body.</summary>
+    public static string Key(
+        string prefix, string collectorId, DateTimeOffset firstReceivedAt, IReadOnlyList<string> eventIds, byte[] body, bool gzip)
     {
         DateTimeOffset utc = firstReceivedAt.ToUniversalTime();
         return string.Create(CultureInfo.InvariantCulture,
-            $"{prefix}/{utc:yyyy}/{utc:MM}/{utc:dd}/{utc:HH}/{EventIdsHash(eventIds)}{(gzip ? ".jsonl.gz" : ".jsonl")}");
+            $"{prefix}/{collectorId}/{utc:yyyy}/{utc:MM}/{utc:dd}/{utc:HH}/{ObjectHash(eventIds, body)}{(gzip ? ".jsonl.gz" : ".jsonl")}");
     }
 
-    /// <summary>Lowercase hex SHA-256 of the UTF-8 event ids joined by line feeds.</summary>
-    public static string EventIdsHash(IReadOnlyList<string> eventIds) =>
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join('\n', eventIds))));
+    /// <summary>
+    /// Lowercase hex SHA-256 of an unambiguous encoding: the id count, then each UTF-8 id
+    /// prefixed with its byte length (all 32-bit big-endian), then the 32-byte SHA-256 of the
+    /// uncompressed NDJSON body. Gzip bytes differ between runtimes; the body does not.
+    /// </summary>
+    public static string ObjectHash(IReadOnlyList<string> eventIds, byte[] body)
+    {
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        Span<byte> length = stackalloc byte[4];
+        BinaryPrimitives.WriteUInt32BigEndian(length, (uint)eventIds.Count);
+        hash.AppendData(length);
+        foreach (string eventId in eventIds)
+        {
+            byte[] id = Encoding.UTF8.GetBytes(eventId);
+            BinaryPrimitives.WriteUInt32BigEndian(length, (uint)id.Length);
+            hash.AppendData(length);
+            hash.AppendData(id);
+        }
 
-    private static S3PlannedObject Build(List<QueuedEvent> events, string prefix, long bytes, bool gzip)
+        hash.AppendData(SHA256.HashData(body));
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
+    }
+
+    private static S3PlannedObject Build(List<QueuedEvent> events, string prefix, string collectorId, long bytes, bool gzip)
     {
         byte[] body = new byte[bytes];
         int offset = 0;
@@ -96,7 +121,7 @@ public static class S3ObjectLayout
         }
 
         string[] ids = [.. events.Select(item => item.EventId)];
-        return new S3PlannedObject(Key(prefix, events[0].ReceivedAt, ids, gzip), ids, body);
+        return new S3PlannedObject(Key(prefix, collectorId, events[0].ReceivedAt, ids, body, gzip), ids, body);
     }
 
     /// <summary>One JSON value with no raw line break, so it is exactly one NDJSON line.</summary>

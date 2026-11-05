@@ -1,6 +1,7 @@
 //! Live qualification only: `cargo test -p bower-output-s3 --test live -- --ignored` with
-//! `BOWER_S3_LIVE_BUCKET` set. Same fixed batch as C# `S3OutputTests.Live_SameBatchWritesOneObject`,
-//! so both runtimes and every retry land on one key (later PUTs get 412 and count as delivered).
+//! `BOWER_S3_LIVE_BUCKET` set. Same fixed batches as C# `S3OutputTests.Live_SameBatchWritesOneObject`,
+//! so both runtimes and every retry land on one key per content (later PUTs get 412 and
+//! count as delivered) and the same ids with changed content get their own key.
 
 use bower_contracts::abstractions::{OutputAdapter, QueueState, QueuedEvent};
 use bower_output_s3::{S3Output, S3OutputOptions};
@@ -10,6 +11,7 @@ use bower_output_s3::{S3Output, S3OutputOptions};
 async fn live_same_batch_writes_one_object() {
     let bucket = std::env::var("BOWER_S3_LIVE_BUCKET").expect("BOWER_S3_LIVE_BUCKET");
     let mut options = S3OutputOptions::new(
+        "live-idem",
         bucket,
         std::env::var("BOWER_S3_LIVE_REGION").unwrap_or_else(|_| "ap-southeast-2".into()),
     );
@@ -43,8 +45,24 @@ async fn live_same_batch_writes_one_object() {
         first.destination_acknowledgement,
         retry.destination_acknowledgement
     );
+
+    // Same ids, different content: a different key, never a 412 on the first object.
+    let changed: Vec<QueuedEvent> = events
+        .iter()
+        .map(|item| QueuedEvent {
+            payload: item.payload.replace("true}", "false}"),
+            ..item.clone()
+        })
+        .collect();
+    let other = output.deliver(&changed).await;
+    assert!(other.failures.is_empty(), "{:?}", other.failures);
+    assert_ne!(
+        first.destination_acknowledgement,
+        other.destination_acknowledgement
+    );
     println!(
-        "live acknowledgement: {}",
-        first.destination_acknowledgement.unwrap_or_default()
+        "live acknowledgements: {} {}",
+        first.destination_acknowledgement.unwrap_or_default(),
+        other.destination_acknowledgement.unwrap_or_default()
     );
 }

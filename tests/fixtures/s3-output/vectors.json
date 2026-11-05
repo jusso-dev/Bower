@@ -1,24 +1,145 @@
 {
-  "description": "S3 output object layout vectors shared by src/Bower.Output.S3 (S3ObjectLayout) and rust/crates/bower-output-s3 (layout). Bodies are uncompressed NDJSON; gzip changes only the key extension and the uploaded bytes.",
-  "eventIdsHash": [
+  "description": "S3 output vectors shared by src/Bower.Output.S3 and rust/crates/bower-output-s3. Keys are <prefix>/<collectorId>/yyyy/MM/dd/HH/<objectHash>.jsonl[.gz]; objectHash is SHA-256 over u32be(count), then u32be(utf8 length) + utf8 bytes per id, then SHA-256 of the uncompressed NDJSON body. Bodies are uncompressed; gzip changes only the extension and the uploaded bytes.",
+  "objectHash": [
     {
+      "name": "newline-split-1",
       "eventIds": [
-        "a",
-        "b"
+        "a\nb",
+        "c"
       ],
-      "sha256": "7e18f737311b2dc3b2f269dd78396b0351f14fb66efa879f768cb23181883c78"
+      "body": "{\"eventId\":\"a\"}\n{\"eventId\":\"c\"}\n",
+      "sha256": "1643ac47bc37b2f02b211ceac0a711d1142121e66f5bacb2af497b59d65d9bc6"
     },
     {
+      "name": "newline-split-2",
       "eventIds": [
-        "evt-0001"
+        "a",
+        "b\nc"
       ],
-      "sha256": "71df1a9d56214f2a11c85dde083c2a2815fa760ae150b859aa542db3c47cfcde"
+      "body": "{\"eventId\":\"a\"}\n{\"eventId\":\"c\"}\n",
+      "sha256": "1e682f3d2bd87f56747a0673b16af904202f15457aea34c97114b5dd47902541"
+    },
+    {
+      "name": "joined-ids",
+      "eventIds": [
+        "a\nb\nc"
+      ],
+      "body": "{\"eventId\":\"a\"}\n{\"eventId\":\"c\"}\n",
+      "sha256": "fef6117c7a83d4b8df29eabeee631dc3720b1ca2938574222995719c6b326cd3"
+    },
+    {
+      "name": "same-ids-other-body",
+      "eventIds": [
+        "a\nb",
+        "c"
+      ],
+      "body": "{\"eventId\":\"a\"}\n{\"eventId\":\"c\",\"changed\":true}\n",
+      "sha256": "5fea167d03090bc2218ed63dc4b49b9eb8fb2bb1244d4653a45c4a2d7ecbc25c"
+    },
+    {
+      "name": "empty-id",
+      "eventIds": [
+        "",
+        "a"
+      ],
+      "body": "{\"eventId\":\"a\"}\n{\"eventId\":\"c\"}\n",
+      "sha256": "f497de76c1c20e92b7500329e901357baf6553bbf792ff6793a43189747c245f"
+    },
+    {
+      "name": "unicode",
+      "eventIds": [
+        "é",
+        "🔐"
+      ],
+      "body": "{\"eventId\":\"a\"}\n{\"eventId\":\"c\"}\n",
+      "sha256": "54cd04f249be1c9c035f3ea63e2d1a6eb19e90f82226e8c303a15bf8960097cd"
+    }
+  ],
+  "adversarialKeys": [
+    {
+      "prefix": "bower",
+      "collectorId": "collector-01",
+      "receivedAt": "2026-11-05T01:00:00.000+00:00",
+      "eventIds": [
+        "evt-1",
+        "evt-2"
+      ],
+      "body": "{\"eventId\":\"evt-1\"}\n{\"eventId\":\"evt-2\"}\n",
+      "gzip": true,
+      "name": "base",
+      "key": "bower/collector-01/2026/11/05/01/d894a48f596760d3e50e99090da73a36e3b8374225850cb6fa9d89e26522403f.jsonl.gz"
+    },
+    {
+      "prefix": "bower",
+      "collectorId": "collector-02",
+      "receivedAt": "2026-11-05T01:00:00.000+00:00",
+      "eventIds": [
+        "evt-1",
+        "evt-2"
+      ],
+      "body": "{\"eventId\":\"evt-1\"}\n{\"eventId\":\"evt-2\"}\n",
+      "gzip": true,
+      "name": "other-collector",
+      "key": "bower/collector-02/2026/11/05/01/d894a48f596760d3e50e99090da73a36e3b8374225850cb6fa9d89e26522403f.jsonl.gz"
+    },
+    {
+      "prefix": "bower",
+      "collectorId": "collector-01",
+      "receivedAt": "2026-11-05T01:00:00.000+00:00",
+      "eventIds": [
+        "evt-1",
+        "evt-2"
+      ],
+      "body": "{\"eventId\":\"evt-1\",\"x\":1}\n{\"eventId\":\"evt-2\"}\n",
+      "gzip": true,
+      "name": "same-ids-other-body",
+      "key": "bower/collector-01/2026/11/05/01/bc9c0f542744952cbb11c949eaf06f7f8c2cfbef0f9db6e101782ff77d3bcf16.jsonl.gz"
+    },
+    {
+      "prefix": "bower",
+      "collectorId": "collector-01",
+      "receivedAt": "2026-11-05T01:00:00.000+00:00",
+      "eventIds": [
+        "evt-1\nevt-2",
+        "evt-3"
+      ],
+      "body": "{\"eventId\":\"evt-1\"}\n{\"eventId\":\"evt-2\"}\n",
+      "gzip": true,
+      "name": "newline-ids-1",
+      "key": "bower/collector-01/2026/11/05/01/134d7837cafc5754cbb9d4e9b23b8162ed8e93e7c8b3410ddd39f26ac5ba2fd6.jsonl.gz"
+    },
+    {
+      "prefix": "bower",
+      "collectorId": "collector-01",
+      "receivedAt": "2026-11-05T01:00:00.000+00:00",
+      "eventIds": [
+        "evt-1",
+        "evt-2\nevt-3"
+      ],
+      "body": "{\"eventId\":\"evt-1\"}\n{\"eventId\":\"evt-2\"}\n",
+      "gzip": true,
+      "name": "newline-ids-2",
+      "key": "bower/collector-01/2026/11/05/01/83a37336bf93951b1905bc33fc41cfe901f24a14d6ef9cf0e7165d20e87e4937.jsonl.gz"
+    },
+    {
+      "prefix": "bower",
+      "collectorId": "collector-01",
+      "receivedAt": "2026-11-05T01:00:00.000+00:00",
+      "eventIds": [
+        "evt-1",
+        "evt-2"
+      ],
+      "body": "{\"eventId\":\"evt-1\"}\n{\"eventId\":\"evt-2\"}\n",
+      "gzip": false,
+      "name": "plain",
+      "key": "bower/collector-01/2026/11/05/01/d894a48f596760d3e50e99090da73a36e3b8374225850cb6fa9d89e26522403f.jsonl"
     }
   ],
   "cases": [
     {
       "name": "single-object-gzip",
       "prefix": "bower",
+      "collectorId": "collector-01",
       "gzip": true,
       "maximumObjectBytes": 8388608,
       "maximumObjectEvents": 1000,
@@ -42,7 +163,7 @@
       "expected": {
         "objects": [
           {
-            "key": "bower/2026/11/05/01/6ba3fc78bc66556e3f5789db93788c9d3bf3eebe642f124863eda298956ff9e2.jsonl.gz",
+            "key": "bower/collector-01/2026/11/05/01/77356f3ea93830bddddc2d67ffdf2e7b14291e2c85cf128ebe9c88aa6d173106.jsonl.gz",
             "eventIds": [
               "evt-0001",
               "evt-0002",
@@ -58,6 +179,7 @@
     {
       "name": "split-by-count-plain-utc-conversion",
       "prefix": "security/bower-events",
+      "collectorId": "edge.example_02",
       "gzip": false,
       "maximumObjectBytes": 8388608,
       "maximumObjectEvents": 2,
@@ -91,7 +213,7 @@
       "expected": {
         "objects": [
           {
-            "key": "security/bower-events/2026/11/05/13/62ce705725b90062c946ad67302860c52e81d70326f4b0b5663deb3afbb1f589.jsonl",
+            "key": "security/bower-events/edge.example_02/2026/11/05/13/1b47893cc12f6f8da7b0a9f4eb9db4a2822d6324f2173d7482eb86c342a3ab42.jsonl",
             "eventIds": [
               "evt-0010",
               "evt-0011"
@@ -100,7 +222,7 @@
             "bodySha256": "0ca074e7bb7d9a89078690a8aba0500af763bed832ad4dcaeacb5bcd69b1411f"
           },
           {
-            "key": "security/bower-events/2026/11/05/13/5bd6cff119ad2b1ec74f86e3974adde8c6f8320f7c00cb1fe524ace6f3c3d316.jsonl",
+            "key": "security/bower-events/edge.example_02/2026/11/05/13/4c2ff3f112648933cb52fde0f499dfb7079ec711de4e645118cb98dfbc22352c.jsonl",
             "eventIds": [
               "evt-0012",
               "evt-0013"
@@ -109,7 +231,7 @@
             "bodySha256": "4c190d97b0fda7b9c887d5693252a1b5fed7337bc714314b81342c52274ef852"
           },
           {
-            "key": "security/bower-events/2026/11/05/13/835c3aa2680012f8625940f948de645a5d95a0858a4b2259f9d925f6e69092c2.jsonl",
+            "key": "security/bower-events/edge.example_02/2026/11/05/13/d9a9ac4bc086368416a5ad0d758d0b8b61a28bbc4fb2926daa1ac69468b18820.jsonl",
             "eventIds": [
               "evt-0014"
             ],
@@ -123,6 +245,7 @@
     {
       "name": "split-by-bytes",
       "prefix": "bower",
+      "collectorId": "collector-01",
       "gzip": true,
       "maximumObjectBytes": 180,
       "maximumObjectEvents": 1000,
@@ -151,7 +274,7 @@
       "expected": {
         "objects": [
           {
-            "key": "bower/2027/01/01/00/31ad067ced28930dff10f64c888de7dd36bd4407dc22103d3ee8a90a57423e14.jsonl.gz",
+            "key": "bower/collector-01/2027/01/01/00/5fef0ff79588e00d7b42829be8e0931d605b3c8dbbca7803c4d7f956b1a339cb.jsonl.gz",
             "eventIds": [
               "evt-0020",
               "evt-0021"
@@ -160,7 +283,7 @@
             "bodySha256": "0759c139397cbd459bb14ebc96d1a054d29333797031ead983fd77a0e5c3c17a"
           },
           {
-            "key": "bower/2027/01/01/00/c5ccaba902a561ec5910dbbd5d1d789b8aca5244b2db7e03e659dc3a41a1401e.jsonl.gz",
+            "key": "bower/collector-01/2027/01/01/00/308879d3c07e79ec1b490634ccea2809507e8ddc34eb335576a6a85ab5f371f3.jsonl.gz",
             "eventIds": [
               "evt-0022",
               "evt-0023"
@@ -175,6 +298,7 @@
     {
       "name": "rejects-invalid-and-oversized",
       "prefix": "bower",
+      "collectorId": "collector-01",
       "gzip": true,
       "maximumObjectBytes": 180,
       "maximumObjectEvents": 1000,
@@ -218,7 +342,7 @@
       "expected": {
         "objects": [
           {
-            "key": "bower/2026/11/05/04/7ea17142511d2fb1237ccd7e919e569eab85683f57c339ac49c408cfeaed1a81.jsonl.gz",
+            "key": "bower/collector-01/2026/11/05/04/6fbfae9a4829ca75a824c11577b11c21a821368246c1ade19680c12237000b66.jsonl.gz",
             "eventIds": [
               "evt-0030",
               "evt-0036"
@@ -252,6 +376,43 @@
       }
     }
   ],
+  "validation": {
+    "validPrefixes": [
+      "bower",
+      "security/bower-events",
+      "a!_.'()=-b"
+    ],
+    "invalidPrefixes": [
+      "security/*",
+      "bower?",
+      "bower/${aws:username}",
+      "bower{x}",
+      "bower$",
+      "/bower",
+      "bower/",
+      "bower//x",
+      "bower/../x",
+      "bower x",
+      ""
+    ],
+    "validCollectorIds": [
+      "collector-01",
+      "edge.example_02",
+      "A",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    ],
+    "invalidCollectorIds": [
+      "",
+      "-edge",
+      ".hidden",
+      "..",
+      "host name",
+      "edge/1",
+      "edge*",
+      "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "édge"
+    ]
+  },
   "classification": [
     {
       "status": 412,
@@ -407,24 +568,8 @@
   "acknowledgement": [
     {
       "bucket": "bower-lab",
-      "keys": [],
-      "expected": null
-    },
-    {
-      "bucket": "bower-lab",
-      "keys": [
-        "bower/2026/11/05/01/a.jsonl.gz"
-      ],
-      "expected": "s3://bower-lab/bower/2026/11/05/01/a.jsonl.gz"
-    },
-    {
-      "bucket": "bower-lab",
-      "keys": [
-        "p/a.jsonl",
-        "p/b.jsonl",
-        "p/c.jsonl"
-      ],
-      "expected": "s3://bower-lab/p/a.jsonl +2"
+      "key": "bower/collector-01/2026/11/05/01/a.jsonl.gz",
+      "expected": "s3://bower-lab/bower/collector-01/2026/11/05/01/a.jsonl.gz"
     }
   ]
 }

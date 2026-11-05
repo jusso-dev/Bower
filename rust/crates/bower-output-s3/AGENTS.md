@@ -15,5 +15,7 @@ events to one S3 bucket as NDJSON objects (gzip by default). Not Sentinel delive
   credentials in codes or logs. Gzip bytes may differ from .NET; bodies and keys may not.
 - Known divergence: the Rust worker has no delivery cancellation token, so
   `destination-s3-cancelled` has no Rust producer (shutdown aborts the task and the
-  lease returns the events). A credential provider timeout is `destination-s3-unavailable`;
-  any other `CredentialsError` is `destination-s3-credential-failed`.
+  lease returns the events).
+- Credential classification follows C#: a network fault anywhere in the error chain (I/O,
+  connector I/O or timeout, provider timeout) is `destination-s3-unavailable`; otherwise
+  a `CredentialsError` is `destination-s3-credential-failed`.

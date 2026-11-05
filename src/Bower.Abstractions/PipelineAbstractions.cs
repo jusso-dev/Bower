@@ -416,7 +416,14 @@ public sealed record OutputConcurrencySnapshot(
 public sealed record DeliveryResult(
     IReadOnlyList<string> AcknowledgedEventIds,
     IReadOnlyList<DeliveryFailure> Failures,
-    string? DestinationAcknowledgement);
+    string? DestinationAcknowledgement)
+{
+    /// <summary>
+    /// Optional per-event acknowledgement (for example the S3 object holding the event).
+    /// Overrides <see cref="DestinationAcknowledgement"/> for the events it lists.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? EventAcknowledgements { get; init; }
+}
 
 public sealed record DeliveryFailure(
     string EventId,

@@ -1,7 +1,7 @@
 //! Shared C#/Rust vectors: `tests/fixtures/s3-output/vectors.json` (C# `S3OutputTests`).
 
 use bower_contracts::abstractions::{QueueState, QueuedEvent};
-use bower_output_s3::{layout, output};
+use bower_output_s3::{layout, options, output};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
@@ -40,6 +40,7 @@ fn layout_matches_shared_vectors() {
         let (objects, rejected) = layout::plan(
             &events,
             text(&case["prefix"]),
+            text(&case["collectorId"]),
             i32::try_from(case["maximumObjectBytes"].as_i64().unwrap()).unwrap(),
             i32::try_from(case["maximumObjectEvents"].as_i64().unwrap()).unwrap(),
             case["gzip"].as_bool().unwrap(),
@@ -78,15 +79,54 @@ fn layout_matches_shared_vectors() {
         assert_eq!(expected_rejected, actual_rejected, "{}", case["name"]);
         assert!(rejected.iter().all(|failure| !failure.is_retryable));
     }
+}
 
-    for item in vectors["eventIdsHash"].as_array().unwrap() {
-        let ids: Vec<String> = item["eventIds"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|id| text(id).to_string())
-            .collect();
-        assert_eq!(text(&item["sha256"]), layout::event_ids_hash(&ids));
+fn strings(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| text(item).to_string())
+        .collect()
+}
+
+/// C# `ObjectHashAndKeys_SeparateAmbiguousIdsBodiesAndCollectors`.
+#[test]
+fn object_hash_and_keys_separate_ambiguous_ids_bodies_and_collectors() {
+    let vectors = vectors();
+    let mut hashes = std::collections::HashSet::new();
+    for item in vectors["objectHash"].as_array().unwrap() {
+        let hash = layout::object_hash(&strings(&item["eventIds"]), text(&item["body"]).as_bytes());
+        assert_eq!(text(&item["sha256"]), hash, "{}", item["name"]);
+        assert!(hashes.insert(hash), "{}", item["name"]);
+    }
+
+    let mut keys = std::collections::HashSet::new();
+    for item in vectors["adversarialKeys"].as_array().unwrap() {
+        let key = layout::key(
+            text(&item["prefix"]),
+            text(&item["collectorId"]),
+            chrono::DateTime::parse_from_rfc3339(text(&item["receivedAt"])).unwrap(),
+            &strings(&item["eventIds"]),
+            text(&item["body"]).as_bytes(),
+            item["gzip"].as_bool().unwrap(),
+        );
+        assert_eq!(text(&item["key"]), key, "{}", item["name"]);
+        assert!(keys.insert(key), "{}", item["name"]);
+    }
+
+    let validation = &vectors["validation"];
+    for prefix in strings(&validation["validPrefixes"]) {
+        assert!(options::is_valid_prefix(&prefix), "{prefix}");
+    }
+    for prefix in strings(&validation["invalidPrefixes"]) {
+        assert!(!options::is_valid_prefix(&prefix), "{prefix}");
+    }
+    for id in strings(&validation["validCollectorIds"]) {
+        assert!(options::is_valid_collector_id(&id), "{id}");
+    }
+    for id in strings(&validation["invalidCollectorIds"]) {
+        assert!(!options::is_valid_collector_id(&id), "{id}");
     }
 }
 
@@ -102,15 +142,9 @@ fn classification_and_acknowledgement_match_shared_vectors() {
         assert_eq!(item["expected"].as_str(), code.as_deref(), "{item}");
     }
     for item in vectors["acknowledgement"].as_array().unwrap() {
-        let keys: Vec<String> = item["keys"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|key| text(key).to_string())
-            .collect();
         assert_eq!(
-            item["expected"].as_str(),
-            output::acknowledgement(text(&item["bucket"]), &keys).as_deref()
+            text(&item["expected"]),
+            output::acknowledgement(text(&item["bucket"]), text(&item["key"]))
         );
     }
 }

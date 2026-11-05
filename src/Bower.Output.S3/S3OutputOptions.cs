@@ -31,13 +31,29 @@ public sealed partial record S3OutputOptions
 
     public required string Region { get; init; }
 
+    /// <summary>
+    /// The collector id (BOWER_COLLECTOR_ID), used as the key segment after the prefix so
+    /// collectors sharing a bucket never write the same key. It must be S3 and IAM safe:
+    /// 1 to 128 letters, digits, dots, hyphens and underscores, starting with a letter or
+    /// digit. It is validated, never rewritten, so two collectors cannot map to one segment.
+    /// </summary>
+    public required string CollectorId { get; init; }
+
     /// <summary>Key prefix without leading or trailing slash (BOWER_S3_PREFIX, default <c>bower</c>).</summary>
     public string Prefix { get; init; } = "bower";
 
-    /// <summary><c>AES256</c> (SSE-S3, default) or <c>aws:kms</c> (BOWER_S3_SSE).</summary>
-    public string ServerSideEncryption { get; init; } = SseS3;
+    /// <summary>
+    /// BOWER_S3_SSE: <c>AES256</c> (SSE-S3) or <c>aws:kms</c>, sent explicitly on every PUT.
+    /// Null (the default) sends no encryption header, so the bucket's default encryption
+    /// applies (a bucket KMS key included); S3 always encrypts, at least with SSE-S3.
+    /// </summary>
+    public string? ServerSideEncryption { get; init; }
 
-    /// <summary>KMS key id, alias or ARN for <c>aws:kms</c>; null uses the bucket's AWS managed key.</summary>
+    /// <summary>
+    /// KMS key id, alias or ARN for <c>aws:kms</c>. Null with <c>aws:kms</c> means the AWS
+    /// managed <c>aws/s3</c> key, not the bucket's default key; leave BOWER_S3_SSE unset to
+    /// use the bucket default.
+    /// </summary>
     public string? KmsKeyId { get; init; }
 
     /// <summary>Twelve-digit account id sent as <c>ExpectedBucketOwner</c> (BOWER_S3_EXPECTED_BUCKET_OWNER).</summary>
@@ -56,7 +72,7 @@ public sealed partial record S3OutputOptions
     /// Reads BOWER_S3_* settings; null when none is set. Static key settings are refused
     /// whether or not the S3 output is selected. Messages never echo values.
     /// </summary>
-    public static S3OutputOptions? FromEnvironment(Func<string, string?> read)
+    public static S3OutputOptions? FromEnvironment(Func<string, string?> read, string collectorId)
     {
         ArgumentNullException.ThrowIfNull(read);
         foreach (string name in RefusedCredentialSettings)
@@ -88,8 +104,9 @@ public sealed partial record S3OutputOptions
         {
             Bucket = bucket ?? string.Empty,
             Region = region ?? string.Empty,
+            CollectorId = collectorId,
             Prefix = prefix ?? "bower",
-            ServerSideEncryption = sse is null ? SseS3
+            ServerSideEncryption = sse is null ? null
                 : string.Equals(sse, SseS3, StringComparison.OrdinalIgnoreCase) ? SseS3
                 : string.Equals(sse, SseKms, StringComparison.OrdinalIgnoreCase) ? SseKms
                 : sse,
@@ -118,11 +135,19 @@ public sealed partial record S3OutputOptions
         if (!IsValidPrefix(Prefix))
         {
             throw new InvalidOperationException(
-                "BOWER_S3_PREFIX must be 1 to 512 characters of letters, digits and !-_.*'()= in segments " +
-                "separated by single slashes, without a leading or trailing slash or . and .. segments.");
+                "BOWER_S3_PREFIX must be 1 to 512 characters of letters, digits and !-_.'()= in segments " +
+                "separated by single slashes, without a leading or trailing slash or . and .. segments. " +
+                "IAM wildcard and variable characters (* ? $ { }) are refused.");
         }
 
-        if (ServerSideEncryption is not (SseS3 or SseKms))
+        if (!IsValidCollectorId(CollectorId))
+        {
+            throw new InvalidOperationException(
+                "BOWER_COLLECTOR_ID must be 1 to 128 letters, digits, dots, hyphens and underscores, starting " +
+                "with a letter or digit, for BOWER_OUTPUT=s3: it is a segment of every object key.");
+        }
+
+        if (ServerSideEncryption is not (null or SseS3 or SseKms))
         {
             throw new InvalidOperationException("BOWER_S3_SSE must be AES256 or aws:kms.");
         }
@@ -181,6 +206,9 @@ public sealed partial record S3OutputOptions
             || value.EndsWith("--table-s3", StringComparison.Ordinal));
     }
 
+    public static bool IsValidCollectorId(string? value) =>
+        value is { Length: >= 1 and <= 128 } && CollectorIdPattern().IsMatch(value);
+
     public static bool IsValidPrefix(string? value)
     {
         if (value is null || value.Length is < 1 or > 512 || !PrefixPattern().IsMatch(value))
@@ -193,7 +221,7 @@ public sealed partial record S3OutputOptions
 
     /// <summary>Non-secret settings for the collector configuration hash.</summary>
     public string HashMaterial() => string.Join(',',
-        Bucket, Region, Prefix, ServerSideEncryption, KmsKeyId ?? string.Empty, ExpectedBucketOwner ?? string.Empty,
+        Bucket, Region, Prefix, ServerSideEncryption ?? string.Empty, KmsKeyId ?? string.Empty, ExpectedBucketOwner ?? string.Empty,
         MaximumObjectBytes.ToString(CultureInfo.InvariantCulture),
         MaximumObjectEvents.ToString(CultureInfo.InvariantCulture),
         Gzip ? "gzip" : "plain");
@@ -226,6 +254,10 @@ public sealed partial record S3OutputOptions
     [GeneratedRegex("^[0-9]{12}$", RegexOptions.CultureInvariant)]
     private static partial Regex AccountPattern();
 
-    [GeneratedRegex("^[A-Za-z0-9!_.*'()=/-]+$", RegexOptions.CultureInvariant)]
+    // No * ? $ { }: the prefix becomes an IAM resource ARN, where they are wildcards or variables.
+    [GeneratedRegex("^[A-Za-z0-9!_.'()=/-]+$", RegexOptions.CultureInvariant)]
     private static partial Regex PrefixPattern();
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex CollectorIdPattern();
 }

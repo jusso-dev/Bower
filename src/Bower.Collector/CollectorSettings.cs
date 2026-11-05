@@ -289,6 +289,7 @@ public sealed record CollectorSettings
     public static CollectorSettings FromEnvironment(Func<string, string?>? read = null)
     {
         read ??= System.Environment.GetEnvironmentVariable;
+        string collectorId = read("BOWER_COLLECTOR_ID") ?? System.Environment.MachineName;
         string? tokenFile = read("BOWER_INGEST_TOKEN_FILE");
         string? token = read("BOWER_INGEST_TOKEN");
         if (!string.IsNullOrWhiteSpace(tokenFile))
@@ -305,7 +306,7 @@ public sealed record CollectorSettings
                 ?? Path.Combine(AppContext.BaseDirectory, "data", "bower.db"),
             PolicyDirectory = read("BOWER_POLICY_DIRECTORY")
                 ?? Path.Combine(Directory.GetCurrentDirectory(), "policies", "default"),
-            CollectorId = read("BOWER_COLLECTOR_ID") ?? System.Environment.MachineName,
+            CollectorId = collectorId,
             Environment = read("BOWER_ENVIRONMENT") ?? "unknown",
             MaximumQueueBytes = ReadInt64(read, "BOWER_QUEUE_MAX_BYTES", 10L * 1024 * 1024 * 1024),
             PressureRetentionFloor = TimeSpan.FromMinutes(ReadInt64(read, "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES", 60)),
@@ -353,7 +354,7 @@ public sealed record CollectorSettings
             DcrImmutableId = read("BOWER_DCR_ID"),
             AzureCredential = ParseCredentialMode(read("BOWER_AZURE_CREDENTIAL")),
             AzureClientId = read("BOWER_AZURE_CLIENT_ID"),
-            S3Output = Bower.Output.S3.S3OutputOptions.FromEnvironment(read),
+            S3Output = Bower.Output.S3.S3OutputOptions.FromEnvironment(read, collectorId),
             ManagementEndpoint = string.IsNullOrWhiteSpace(managementEndpoint)
                 ? null
                 : new Uri(managementEndpoint, UriKind.Absolute),
@@ -491,7 +492,8 @@ public sealed record CollectorSettings
                 "BOWER_OUTPUT=s3 requires BOWER_S3_BUCKET and BOWER_S3_REGION, and BOWER_S3_* settings require BOWER_OUTPUT=s3.");
         }
 
-        S3Output?.Validate();
+        // The key segment is always the collector's own id.
+        (S3Output is null ? null : S3Output with { CollectorId = CollectorId })?.Validate();
 
         if (ManagementAuthentication is not (ManagementAuthenticationModes.Entra or ManagementAuthenticationModes.Enrolment))
         {

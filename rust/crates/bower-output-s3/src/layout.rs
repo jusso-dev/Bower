@@ -1,8 +1,9 @@
 //! Deterministic object layout (C# `S3ObjectLayout`), pinned by
 //! `tests/fixtures/s3-output/vectors.json`. Keys are
-//! `<prefix>/yyyy/MM/dd/HH/<sha256 of ordered event ids>.jsonl[.gz]`, partitioned by the
+//! `<prefix>/<collectorId>/yyyy/MM/dd/HH/<object hash>.jsonl[.gz]`, partitioned by the
 //! first event's queue receive time (UTC): it never changes, so a retry of the same batch
-//! rewrites the same key.
+//! rewrites the same key. The object hash binds the exact ids and the uncompressed body
+//! (`object_hash`), so an existing key (412) always holds byte-identical content.
 
 use bower_contracts::abstractions::{DeliveryFailure, QueuedEvent};
 use bower_contracts::time::Timestamp;
@@ -25,6 +26,7 @@ pub struct PlannedObject {
 pub fn plan(
     events: &[QueuedEvent],
     prefix: &str,
+    collector_id: &str,
     maximum_object_bytes: i32,
     maximum_object_events: i32,
     gzip: bool,
@@ -48,7 +50,7 @@ pub fn plan(
         if !current.is_empty()
             && (current_bytes + record_bytes > maximum_bytes || current.len() >= maximum_events)
         {
-            objects.push(build(&current, prefix, gzip));
+            objects.push(build(&current, prefix, collector_id, gzip));
             current.clear();
             current_bytes = 0;
         }
@@ -56,28 +58,52 @@ pub fn plan(
         current_bytes += record_bytes;
     }
     if !current.is_empty() {
-        objects.push(build(&current, prefix, gzip));
+        objects.push(build(&current, prefix, collector_id, gzip));
     }
     (objects, rejected)
 }
 
-/// Object key for events in this order whose first event was received at `first_received_at`.
-pub fn key(prefix: &str, first_received_at: Timestamp, event_ids: &[String], gzip: bool) -> String {
+/// Object key for these events, in this order, with this uncompressed body.
+pub fn key(
+    prefix: &str,
+    collector_id: &str,
+    first_received_at: Timestamp,
+    event_ids: &[String],
+    body: &[u8],
+    gzip: bool,
+) -> String {
     let utc = first_received_at.naive_utc();
     format!(
-        "{prefix}/{}/{}{}",
+        "{prefix}/{collector_id}/{}/{}{}",
         utc.format("%Y/%m/%d/%H"),
-        event_ids_hash(event_ids),
+        object_hash(event_ids, body),
         if gzip { ".jsonl.gz" } else { ".jsonl" }
     )
 }
 
-/// Lowercase hex SHA-256 of the UTF-8 event ids joined by line feeds.
-pub fn event_ids_hash(event_ids: &[String]) -> String {
-    hex::encode(Sha256::digest(event_ids.join("\n").as_bytes()))
+/// C# `ObjectHash`: lowercase hex SHA-256 of the id count, then each UTF-8 id prefixed
+/// with its byte length (all 32-bit big-endian), then the 32-byte SHA-256 of the
+/// uncompressed NDJSON body.
+pub fn object_hash(event_ids: &[String], body: &[u8]) -> String {
+    let mut hash = Sha256::new();
+    hash.update(
+        u32::try_from(event_ids.len())
+            .unwrap_or(u32::MAX)
+            .to_be_bytes(),
+    );
+    for event_id in event_ids {
+        hash.update(
+            u32::try_from(event_id.len())
+                .unwrap_or(u32::MAX)
+                .to_be_bytes(),
+        );
+        hash.update(event_id.as_bytes());
+    }
+    hash.update(Sha256::digest(body));
+    hex::encode(hash.finalize())
 }
 
-fn build(events: &[&QueuedEvent], prefix: &str, gzip: bool) -> PlannedObject {
+fn build(events: &[&QueuedEvent], prefix: &str, collector_id: &str, gzip: bool) -> PlannedObject {
     let mut body = Vec::with_capacity(events.iter().map(|item| item.payload.len() + 1).sum());
     for item in events {
         body.extend_from_slice(item.payload.as_bytes());
@@ -85,7 +111,14 @@ fn build(events: &[&QueuedEvent], prefix: &str, gzip: bool) -> PlannedObject {
     }
     let event_ids: Vec<String> = events.iter().map(|item| item.event_id.clone()).collect();
     PlannedObject {
-        key: key(prefix, events[0].received_at, &event_ids, gzip),
+        key: key(
+            prefix,
+            collector_id,
+            events[0].received_at,
+            &event_ids,
+            &body,
+            gzip,
+        ),
         event_ids,
         body,
     }

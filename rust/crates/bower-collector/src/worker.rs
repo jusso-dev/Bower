@@ -177,15 +177,35 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
 
         if !delivered.is_empty() {
             let count = delivered.len();
-            // One queue transaction for every acknowledged event in the batch.
-            let reclaimed = self
-                .blocking(
-                    move |queue| queue.mark_delivered_batch(&delivered, &acknowledgement, &claims),
-                    shutdown,
-                )
-                .await?;
-            self.log_stale_leases(reclaimed.len());
-            if reclaimed.len() < count
+            // One queue transaction per distinct acknowledgement: the whole batch, unless the
+            // adapter names a per-event acknowledgement (one per S3 object, for example).
+            let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+            for event_id in delivered {
+                let key = result
+                    .event_acknowledgements
+                    .get(&event_id)
+                    .unwrap_or(&acknowledgement);
+                match groups.iter_mut().find(|(group, _)| group == key) {
+                    Some((_, ids)) => ids.push(event_id),
+                    None => groups.push((key.clone(), vec![event_id])),
+                }
+            }
+            let mut reclaimed = 0;
+            for (group, ids) in groups {
+                let claims = claims.clone();
+                reclaimed += self
+                    .blocking(
+                        move |queue| {
+                            queue
+                                .mark_delivered_batch(&ids, &group, &claims)
+                                .map(|r| r.len())
+                        },
+                        shutdown,
+                    )
+                    .await?;
+            }
+            self.log_stale_leases(reclaimed);
+            if reclaimed < count
                 && let Some(activity) = &self.activity
             {
                 activity.record_delivery(self.clock.utc_now());
@@ -300,6 +320,7 @@ impl<O: OutputAdapter + 'static> QueueDeliveryWorker<O> {
                 "Output adapter failed; batch will retry."
             );
             DeliveryResult {
+                event_acknowledgements: Default::default(),
                 acknowledged_event_ids: Vec::new(),
                 failures: order
                     .iter()

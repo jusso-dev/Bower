@@ -270,7 +270,12 @@ public sealed class CollectorHostTests
         await using WebApplication bucket = await StartAsync(s3, Token, cancellationToken, settings => settings with
         {
             OutputType = "s3",
-            S3Output = new Bower.Output.S3.S3OutputOptions { Bucket = "bower-status-test", Region = "ap-southeast-2" }
+            S3Output = new Bower.Output.S3.S3OutputOptions
+            {
+                Bucket = "bower-status-test",
+                Region = "ap-southeast-2",
+                CollectorId = "collector-status"
+            }
         });
 
         async Task<string> StatusAsync(WebApplication app)

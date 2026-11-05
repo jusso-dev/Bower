@@ -518,6 +518,9 @@ pub struct DeliveryResult {
     pub acknowledged_event_ids: Vec<String>,
     pub failures: Vec<DeliveryFailure>,
     pub destination_acknowledgement: Option<String>,
+    /// C# `EventAcknowledgements`: optional per-event acknowledgement (for example the S3
+    /// object holding the event). Overrides `destination_acknowledgement` for listed events.
+    pub event_acknowledgements: std::collections::HashMap<String, String>,
 }
 
 /// C# `OutputConcurrencySnapshot`: adaptive request concurrency of one output stream,

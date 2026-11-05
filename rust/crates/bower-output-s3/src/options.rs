@@ -29,11 +29,19 @@ pub struct S3OutputOptions {
     pub id: String,
     pub bucket: String,
     pub region: String,
+    /// The collector id (`BOWER_COLLECTOR_ID`), the key segment after the prefix so
+    /// collectors sharing a bucket never write the same key. Validated (1 to 128 letters,
+    /// digits, dots, hyphens and underscores, starting with a letter or digit), never
+    /// rewritten, so two collectors cannot map to one segment.
+    pub collector_id: String,
     /// Key prefix without leading or trailing slash (`BOWER_S3_PREFIX`, default `bower`).
     pub prefix: String,
-    /// `AES256` (SSE-S3, default) or `aws:kms` (`BOWER_S3_SSE`).
-    pub server_side_encryption: String,
-    /// KMS key id, alias or ARN for `aws:kms`; `None` uses the bucket's AWS managed key.
+    /// `BOWER_S3_SSE`: `AES256` (SSE-S3) or `aws:kms`, sent explicitly on every PUT. `None`
+    /// (the default) sends no encryption header, so the bucket's default encryption applies
+    /// (a bucket KMS key included); S3 always encrypts, at least with SSE-S3.
+    pub server_side_encryption: Option<String>,
+    /// KMS key id, alias or ARN for `aws:kms`. `None` with `aws:kms` means the AWS managed
+    /// `aws/s3` key, not the bucket's default key; leave `BOWER_S3_SSE` unset for that.
     pub kms_key_id: Option<String>,
     /// Twelve-digit account id sent as `ExpectedBucketOwner`.
     pub expected_bucket_owner: Option<String>,
@@ -45,14 +53,19 @@ pub struct S3OutputOptions {
 }
 
 impl S3OutputOptions {
-    /// Options with C# defaults for everything but the bucket and region.
-    pub fn new(bucket: impl Into<String>, region: impl Into<String>) -> Self {
+    /// Options with C# defaults for everything but the collector id, bucket and region.
+    pub fn new(
+        collector_id: impl Into<String>,
+        bucket: impl Into<String>,
+        region: impl Into<String>,
+    ) -> Self {
         Self {
             id: "s3".into(),
             bucket: bucket.into(),
             region: region.into(),
+            collector_id: collector_id.into(),
             prefix: "bower".into(),
-            server_side_encryption: SSE_S3.into(),
+            server_side_encryption: None,
             kms_key_id: None,
             expected_bucket_owner: None,
             maximum_object_bytes: DEFAULT_MAXIMUM_OBJECT_BYTES,
@@ -65,6 +78,7 @@ impl S3OutputOptions {
     /// settings are refused whether or not the S3 output is selected.
     pub fn from_environment(
         read: impl Fn(&str) -> Option<String>,
+        collector_id: &str,
     ) -> Result<Option<Self>, S3SettingsError> {
         for name in REFUSED_CREDENTIAL_SETTINGS {
             if read(name).is_some_and(|value| !value.is_empty()) {
@@ -102,13 +116,17 @@ impl S3OutputOptions {
             id: "s3".into(),
             bucket: bucket.unwrap_or_default(),
             region: region.unwrap_or_default(),
+            collector_id: collector_id.to_string(),
             prefix: prefix.unwrap_or_else(|| "bower".into()),
-            server_side_encryption: match sse {
-                None => SSE_S3.into(),
-                Some(value) if value.eq_ignore_ascii_case(SSE_S3) => SSE_S3.into(),
-                Some(value) if value.eq_ignore_ascii_case(SSE_KMS) => SSE_KMS.into(),
-                Some(value) => value,
-            },
+            server_side_encryption: sse.map(|value| {
+                if value.eq_ignore_ascii_case(SSE_S3) {
+                    SSE_S3.into()
+                } else if value.eq_ignore_ascii_case(SSE_KMS) {
+                    SSE_KMS.into()
+                } else {
+                    value
+                }
+            }),
             kms_key_id: kms,
             expected_bucket_owner: owner,
             maximum_object_bytes: read_int(
@@ -147,15 +165,26 @@ impl S3OutputOptions {
         }
         if !is_valid_prefix(&self.prefix) {
             return fail(
-                "BOWER_S3_PREFIX must be 1 to 512 characters of letters, digits and !-_.*'()= in segments \
-                 separated by single slashes, without a leading or trailing slash or . and .. segments.",
+                "BOWER_S3_PREFIX must be 1 to 512 characters of letters, digits and !-_.'()= in segments \
+                 separated by single slashes, without a leading or trailing slash or . and .. segments. \
+                 IAM wildcard and variable characters (* ? $ { }) are refused.",
             );
         }
-        if self.server_side_encryption != SSE_S3 && self.server_side_encryption != SSE_KMS {
+        if !is_valid_collector_id(&self.collector_id) {
+            return fail(
+                "BOWER_COLLECTOR_ID must be 1 to 128 letters, digits, dots, hyphens and underscores, starting \
+                 with a letter or digit, for BOWER_OUTPUT=s3: it is a segment of every object key.",
+            );
+        }
+        if self
+            .server_side_encryption
+            .as_deref()
+            .is_some_and(|sse| sse != SSE_S3 && sse != SSE_KMS)
+        {
             return fail("BOWER_S3_SSE must be AES256 or aws:kms.");
         }
         if let Some(key) = &self.kms_key_id {
-            if self.server_side_encryption != SSE_KMS {
+            if self.server_side_encryption.as_deref() != Some(SSE_KMS) {
                 return fail("BOWER_S3_KMS_KEY_ID requires BOWER_S3_SSE=aws:kms.");
             }
             // C# counts UTF-16 code units; a key id is ASCII, so the counts agree.
@@ -197,7 +226,7 @@ impl S3OutputOptions {
             self.bucket.as_str(),
             &self.region,
             &self.prefix,
-            &self.server_side_encryption,
+            self.server_side_encryption.as_deref().unwrap_or_default(),
             self.kms_key_id.as_deref().unwrap_or_default(),
             self.expected_bucket_owner.as_deref().unwrap_or_default(),
             &self.maximum_object_bytes.to_string(),
@@ -245,12 +274,22 @@ fn is_valid_region(value: &str) -> bool {
         && number.bytes().all(|b| b.is_ascii_digit())
 }
 
-/// C# `IsValidPrefix`.
+/// C# `IsValidCollectorId`: `^[A-Za-z0-9][A-Za-z0-9._-]*$`, 1 to 128 characters.
+pub fn is_valid_collector_id(value: &str) -> bool {
+    (1..=128).contains(&value.len())
+        && value.as_bytes()[0].is_ascii_alphanumeric()
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+}
+
+/// C# `IsValidPrefix`. No `* ? $ { }`: the prefix becomes an IAM resource ARN, where they
+/// are wildcards or policy variables.
 pub fn is_valid_prefix(value: &str) -> bool {
     (1..=512).contains(&value.len())
         && value
             .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b"!_.*'()=/-".contains(&b))
+            .all(|b| b.is_ascii_alphanumeric() || b"!_.'()=/-".contains(&b))
         && value
             .split('/')
             .all(|segment| !segment.is_empty() && segment != "." && segment != "..")

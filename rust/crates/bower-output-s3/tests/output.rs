@@ -37,13 +37,32 @@ type Respond = dyn Fn(usize) -> (u16, String) + Send + Sync;
 struct FakeS3 {
     puts: Arc<Mutex<Vec<Put>>>,
     respond: Arc<Mutex<Arc<Respond>>>,
+    /// When set, the fake keeps objects (uncompressed) and enforces `If-None-Match: *`,
+    /// counting 412s and 412s whose refused body differed from the stored one.
+    store: Option<Arc<Mutex<Store>>>,
+}
+
+#[derive(Default)]
+struct Store {
+    objects: std::collections::HashMap<String, Vec<u8>>,
+    precondition_failures: usize,
+    mismatched_precondition_failures: usize,
 }
 
 impl FakeS3 {
     async fn start() -> (Self, SocketAddr) {
+        Self::start_with(None).await
+    }
+
+    async fn start_conditional() -> (Self, SocketAddr) {
+        Self::start_with(Some(Arc::default())).await
+    }
+
+    async fn start_with(store: Option<Arc<Mutex<Store>>>) -> (Self, SocketAddr) {
         let fake = Self {
             puts: Arc::default(),
             respond: Arc::new(Mutex::new(Arc::new(|_| (200, String::new())))),
+            store,
         };
         let state = fake.clone();
         let app = axum::Router::new().fallback(
@@ -60,6 +79,9 @@ impl FakeS3 {
 
     fn handle(&self, method: Method, uri: Uri, headers: HeaderMap, body: Bytes) -> Response {
         assert_eq!(Method::PUT, method);
+        let gzip = headers
+            .get("content-encoding")
+            .is_some_and(|value| value == "gzip");
         let index = {
             let mut puts = self.puts.lock().unwrap();
             puts.push(Put {
@@ -69,6 +91,30 @@ impl FakeS3 {
             });
             puts.len() - 1
         };
+        if let Some(store) = &self.store {
+            let put = self.puts.lock().unwrap()[index].clone();
+            assert_eq!(Some("*"), put.header("if-none-match"));
+            let plain = if gzip {
+                gunzip(&put.body).into_bytes()
+            } else {
+                put.body.clone()
+            };
+            let mut store = store.lock().unwrap();
+            if let Some(stored) = store.objects.get(&put.path) {
+                let mismatched = *stored != plain;
+                store.precondition_failures += 1;
+                store.mismatched_precondition_failures += usize::from(mismatched);
+                return (
+                    StatusCode::PRECONDITION_FAILED,
+                    error(
+                        "PreconditionFailed",
+                        "At least one of the pre-conditions you specified did not hold",
+                    ),
+                )
+                    .into_response();
+            }
+            store.objects.insert(put.path, plain);
+        }
         let respond = self.respond.lock().unwrap().clone();
         let (status, body) = respond(index);
         let mut response = (StatusCode::from_u16(status).unwrap(), body).into_response();
@@ -94,7 +140,7 @@ fn error(code: &str, message: &str) -> String {
 }
 
 fn options() -> S3OutputOptions {
-    S3OutputOptions::new("bower-test-bucket", "ap-southeast-2")
+    S3OutputOptions::new("collector-test", "bower-test-bucket", "ap-southeast-2")
 }
 
 fn client(address: SocketAddr) -> aws_sdk_s3::Client {
@@ -165,14 +211,27 @@ async fn deliver_sends_conditional_encrypted_checksummed_gzip_object() {
     assert_eq!(1, puts.len());
     let put = &puts[0];
     let ids: Vec<String> = events.iter().map(|item| item.event_id.clone()).collect();
-    let key = layout::key("bower", events[0].received_at, &ids, true);
+    let key = layout::key(
+        "bower",
+        "collector-test",
+        events[0].received_at,
+        &ids,
+        ndjson(&events).as_bytes(),
+        true,
+    );
+    assert!(key.starts_with("bower/collector-test/"));
     assert_eq!(format!("/bower-test-bucket/{key}"), put.path);
     assert_eq!(
         Some(format!("s3://bower-test-bucket/{key}")),
         result.destination_acknowledgement
     );
+    assert!(
+        ids.iter()
+            .all(|id| result.event_acknowledgements[id] == format!("s3://bower-test-bucket/{key}"))
+    );
     assert_eq!(Some("*"), put.header("if-none-match"));
-    assert_eq!(Some("AES256"), put.header("x-amz-server-side-encryption"));
+    // BOWER_S3_SSE unset: no header, so the bucket default encryption (possibly KMS) applies.
+    assert_eq!(None, put.header("x-amz-server-side-encryption"));
     assert_eq!(
         None,
         put.header("x-amz-server-side-encryption-aws-kms-key-id")
@@ -194,7 +253,7 @@ async fn deliver_sends_conditional_encrypted_checksummed_gzip_object() {
 async fn deliver_uses_kms_key_and_plain_ndjson_when_gzip_is_off() {
     let (s3, address) = FakeS3::start().await;
     let mut options = options();
-    options.server_side_encryption = "aws:kms".into();
+    options.server_side_encryption = Some("aws:kms".into());
     options.kms_key_id = Some("alias/bower-output".into());
     options.gzip = false;
     let output = S3Output::with_client(options, client(address)).unwrap();
@@ -213,6 +272,121 @@ async fn deliver_uses_kms_key_and_plain_ndjson_when_gzip_is_off() {
     assert_eq!(
         ndjson(&events),
         String::from_utf8(put.body.clone()).unwrap()
+    );
+}
+
+/// C# `Deliver_SendsExplicitEncryptionOnlyWhenConfigured`.
+#[tokio::test]
+async fn sends_explicit_encryption_only_when_configured() {
+    let key_arn =
+        "arn:aws:kms:ap-southeast-2:123456789012:key/0f0e0d0c-0000-4000-8000-000000000001";
+    for (sse, key) in [
+        ("AES256", None),
+        ("aws:kms", None),
+        ("aws:kms", Some(key_arn)),
+    ] {
+        let (s3, address) = FakeS3::start().await;
+        let mut options = options();
+        options.server_side_encryption = Some(sse.into());
+        options.kms_key_id = key.map(str::to_string);
+        let output = S3Output::with_client(options, client(address)).unwrap();
+
+        output.deliver(&events(1)).await;
+
+        let put = &s3.puts()[0];
+        assert_eq!(Some(sse), put.header("x-amz-server-side-encryption"));
+        assert_eq!(
+            key,
+            put.header("x-amz-server-side-encryption-aws-kms-key-id")
+        );
+    }
+}
+
+/// C# `ConditionalPut_IsOnlyEverAnsweredWithIdenticalBytes`.
+#[tokio::test]
+async fn conditional_put_is_only_ever_answered_with_identical_bytes() {
+    let (s3, address) = FakeS3::start_conditional().await;
+    let first = S3Output::with_client(options(), client(address)).unwrap();
+    let mut other = options();
+    other.collector_id = "collector-other".into();
+    let other_collector = S3Output::with_client(other, client(address)).unwrap();
+    let batch = events(3);
+    let changed: Vec<QueuedEvent> = batch
+        .iter()
+        .map(|item| QueuedEvent {
+            payload: item.payload.replace('}', ",\"changed\":true}"),
+            ..item.clone()
+        })
+        .collect();
+    let pair = |a: &str, b: &str| {
+        let mut items = events(2);
+        items[0].event_id = a.into();
+        items[1].event_id = b.into();
+        items[0].payload = "{\"eventId\":\"x\"}".into();
+        items[1].payload = "{\"eventId\":\"y\"}".into();
+        items
+    };
+
+    let results = [
+        first.deliver(&batch).await,
+        first.deliver(&batch).await,
+        first.deliver(&changed).await,
+        other_collector.deliver(&batch).await,
+        first.deliver(&pair("a\nb", "c")).await,
+        first.deliver(&pair("a", "b\nc")).await,
+    ];
+
+    assert!(results.iter().all(|result| result.failures.is_empty()));
+    let store = s3.store.as_ref().unwrap().lock().unwrap();
+    // Only the exact retry met an existing key; it held byte-identical content.
+    assert_eq!(1, store.precondition_failures);
+    assert_eq!(0, store.mismatched_precondition_failures);
+    assert_eq!(5, store.objects.len());
+    assert_eq!(
+        results[0].destination_acknowledgement,
+        results[1].destination_acknowledgement
+    );
+    assert_ne!(
+        results[0].destination_acknowledgement,
+        results[2].destination_acknowledgement
+    );
+    assert!(
+        results[3]
+            .destination_acknowledgement
+            .as_deref()
+            .unwrap()
+            .contains("/collector-other/")
+    );
+    assert_ne!(
+        results[4].destination_acknowledgement,
+        results[5].destination_acknowledgement
+    );
+}
+
+/// C# `Deliver_AcknowledgesEachEventWithItsOwnObject`.
+#[tokio::test]
+async fn acknowledges_each_event_with_its_own_object() {
+    let (s3, address) = FakeS3::start().await;
+    let mut options = options();
+    options.maximum_object_events = 2;
+    let output = S3Output::with_client(options, client(address)).unwrap();
+
+    let result = output.deliver(&events(5)).await;
+
+    let keys: Vec<String> = s3
+        .puts()
+        .iter()
+        .map(|put| format!("s3:/{}", put.path))
+        .collect();
+    assert_eq!(3, keys.len());
+    let acknowledgements: Vec<&String> = result
+        .acknowledged_event_ids
+        .iter()
+        .map(|id| &result.event_acknowledgements[id])
+        .collect();
+    assert_eq!(
+        vec![&keys[0], &keys[0], &keys[1], &keys[1], &keys[2]],
+        acknowledgements
     );
 }
 
@@ -354,6 +528,39 @@ impl aws_credential_types::provider::ProvideCredentials for NoCredentials {
     }
 }
 
+#[derive(Debug)]
+struct NetworkFailingCredentials;
+
+impl aws_credential_types::provider::ProvideCredentials for NetworkFailingCredentials {
+    fn provide_credentials<'a>(&'a self) -> CredentialsFuture<'a>
+    where
+        Self: 'a,
+    {
+        // An unreachable IMDS or container endpoint, as the default chain reports it.
+        CredentialsFuture::ready(Err(CredentialsError::provider_error(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "connection refused",
+        ))))
+    }
+}
+
+/// C# `Deliver_CredentialLookupNetworkFaultIsUnavailable` (network case).
+#[tokio::test]
+async fn credential_lookup_network_fault_is_unavailable() {
+    let (s3, address) = FakeS3::start().await;
+    let config = client(address)
+        .config()
+        .to_builder()
+        .credentials_provider(NetworkFailingCredentials)
+        .build();
+    let output = S3Output::with_client(options(), aws_sdk_s3::Client::from_conf(config)).unwrap();
+
+    let result = output.deliver(&events(1)).await;
+
+    assert!(s3.puts().is_empty());
+    assert_eq!(UNAVAILABLE_CODE, result.failures[0].code);
+}
+
 #[tokio::test]
 async fn missing_default_chain_credentials_are_a_credential_failure() {
     let (s3, address) = FakeS3::start().await;
@@ -420,7 +627,7 @@ fn settings_refuse_static_keys_and_invalid_values_without_echoing_them() {
         let mut pairs: Vec<(&str, String)> =
             base.iter().map(|(k, v)| (*k, v.to_string())).collect();
         pairs.push((name, SECRET.into()));
-        let error = S3OutputOptions::from_environment(read(pairs)).unwrap_err();
+        let error = S3OutputOptions::from_environment(read(pairs), "collector-test").unwrap_err();
         assert!(error.0.contains(name));
         assert!(!error.0.contains(SECRET));
     }
@@ -439,6 +646,9 @@ fn settings_refuse_static_keys_and_invalid_values_without_echoing_them() {
         ("BOWER_S3_PREFIX", "bower//x"),
         ("BOWER_S3_PREFIX", "bower/../x"),
         ("BOWER_S3_PREFIX", "bower x"),
+        ("BOWER_S3_PREFIX", "security/*"),
+        ("BOWER_S3_PREFIX", "bower?"),
+        ("BOWER_S3_PREFIX", "bower/${aws:username}"),
         ("BOWER_S3_SSE", "aws:kms:dsse"),
         ("BOWER_S3_KMS_KEY_ID", "alias/key"),
         ("BOWER_S3_EXPECTED_BUCKET_OWNER", "12345"),
@@ -454,7 +664,7 @@ fn settings_refuse_static_keys_and_invalid_values_without_echoing_them() {
             .map(|(k, v)| (*k, v.to_string()))
             .collect();
         pairs.push((name, value.into()));
-        let parsed = S3OutputOptions::from_environment(read(pairs));
+        let parsed = S3OutputOptions::from_environment(read(pairs), "collector-test");
         assert!(
             parsed
                 .and_then(|options| options.unwrap().validate())
@@ -463,6 +673,14 @@ fn settings_refuse_static_keys_and_invalid_values_without_echoing_them() {
         );
     }
 
-    let none = S3OutputOptions::from_environment(|_| None).unwrap();
+    for collector in ["host name", "../edge", "edge*"] {
+        let pairs: Vec<(&str, String)> = base.iter().map(|(k, v)| (*k, v.to_string())).collect();
+        let parsed = S3OutputOptions::from_environment(read(pairs), collector)
+            .unwrap()
+            .unwrap();
+        assert!(parsed.validate().is_err(), "{collector}");
+    }
+
+    let none = S3OutputOptions::from_environment(|_| None, "collector-test").unwrap();
     assert_eq!(None, none);
 }
