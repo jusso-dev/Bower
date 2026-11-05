@@ -431,7 +431,8 @@ fn safe_failure_code(code: &str, destination: bool) -> String {
         "azure-http-",
     ]
     .into_iter()
-    .any(|prefix| is_http_status_code(base, prefix));
+    .any(|prefix| is_http_status_code(base, prefix))
+        || is_s3_code(base);
     let safe = if known {
         base
     } else if base.starts_with("relay-rejected:") {
@@ -446,6 +447,21 @@ fn safe_failure_code(code: &str, destination: bool) -> String {
     } else {
         safe.to_string()
     }
+}
+
+/// Bounded S3 output codes (`bower_output_s3::output`).
+fn is_s3_code(code: &str) -> bool {
+    matches!(
+        code,
+        "destination-s3-throttled"
+            | "destination-s3-access-denied"
+            | "destination-s3-kms-denied"
+            | "destination-s3-no-such-bucket"
+            | "destination-s3-wrong-region"
+            | "destination-s3-credential-failed"
+            | "destination-s3-unavailable"
+            | "destination-s3-cancelled"
+    ) || is_http_status_code(code, "destination-s3-http-")
 }
 
 fn is_http_status_code(code: &str, prefix: &str) -> bool {

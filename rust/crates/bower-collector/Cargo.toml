@@ -19,6 +19,7 @@ bower-core.workspace = true
 bower-integrity.workspace = true
 bower-output-ama-spool.workspace = true
 bower-output-azure.workspace = true
+bower-output-s3.workspace = true
 bower-packs.workspace = true
 bower-pipeline.workspace = true
 bower-persistence.workspace = true
@@ -46,6 +47,9 @@ uuid.workspace = true
 x509-cert.workspace = true
 
 [dev-dependencies]
+# S3 output tests against a local fake endpoint.
+aws-config.workspace = true
+aws-sdk-s3.workspace = true
 bower-evidence.workspace = true
 flate2.workspace = true
 rusqlite.workspace = true

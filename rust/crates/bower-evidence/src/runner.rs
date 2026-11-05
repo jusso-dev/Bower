@@ -212,14 +212,20 @@ impl EvidenceRunner {
             EvidenceError::InvalidData("Canary event could not be serialized.".to_owned())
         })?;
 
-        let (status, body) = self
-            .sender
-            .send(
-                &options.collector_url,
-                options.ingest_token.as_deref(),
-                canary_json,
-            )
-            .await?;
+        // A collector that reports a non-Sentinel output (s3) gets no canary: its delivery
+        // can never be evidenced in Sentinel, so the bundle says so instead of waiting.
+        let non_sentinel_output = self.read_non_sentinel_output(options).await?;
+        let (status, body) = if non_sentinel_output.is_some() {
+            (0, None)
+        } else {
+            self.sender
+                .send(
+                    &options.collector_url,
+                    options.ingest_token.as_deref(),
+                    canary_json,
+                )
+                .await?
+        };
         let canary_record = CanaryRecord {
             event_id: event_id.clone(),
             sent_at,
@@ -245,11 +251,19 @@ impl EvidenceRunner {
 
         let mut arrival =
             ArrivalRecord::not_found(options.workspace_id.clone(), options.table.clone());
-        match query {
-            None => limitations.push(
+        if query.is_none() {
+            limitations.push(
                 "SIMULATED: no Sentinel query was run, so this bundle is not delivery evidence."
                     .to_owned(),
-            ),
+            );
+        }
+        match query {
+            _ if non_sentinel_output.is_some() => {
+                let output = non_sentinel_output.as_deref().unwrap_or_default();
+                limitations.push(probe::non_sentinel_limitation(output));
+                arrival.query_error = Some(outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL.to_owned());
+            }
+            None => {}
             Some(_) if !collector_accepted => {
                 arrival.query_error = Some("collector-rejected-canary".to_owned())
             }
@@ -288,6 +302,27 @@ impl EvidenceRunner {
         })
     }
 
+    /// C# `ReadNonSentinelOutputAsync`: the non-Sentinel output the collector's
+    /// `/v1/status` reports, or `None` when it reports none, no status reader is set, or
+    /// status is unreadable (the generic probe then proceeds and only a Sentinel query can
+    /// verify it).
+    async fn read_non_sentinel_output(
+        &self,
+        options: &EvidenceOptions,
+    ) -> Result<Option<String>, EvidenceError> {
+        let Some(reader) = self.parser_sender.as_ref() else {
+            return Ok(None);
+        };
+        match reader
+            .get_status(&options.collector_url, options.ingest_token.as_deref())
+            .await
+        {
+            Ok((200, status)) => Ok(probe::non_sentinel_output(status.as_ref())),
+            Ok(_) | Err(EvidenceError::Http(_)) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     /// Opt-in parser probe (C# `RunParserProbeAsync`): reads the collector's loaded pack
     /// and policy configuration, posts the trusted fixture through the signed parser's
     /// HTTP intake, then queries the destination for exactly that event identity.
@@ -316,6 +351,7 @@ impl EvidenceRunner {
         let mut pack_version = None;
         let mut pack_hash = None;
         let mut parser_status = None;
+        let mut non_sentinel_output = None;
         let (status_code, status) = sender.get_status(&options.collector_url, token).await?;
         let policy = status
             .as_ref()
@@ -347,7 +383,10 @@ impl EvidenceRunner {
                     Some(value) => probe::text(Some(value)),
                     None => Some("absent".to_owned()),
                 };
-                if parser_status.as_deref() != Some("active-local-json") {
+                if let Some(output) = probe::non_sentinel_output(status.as_ref()) {
+                    outcome = Some(outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL.to_owned());
+                    non_sentinel_output = Some(output);
+                } else if parser_status.as_deref() != Some("active-local-json") {
                     outcome = Some(outcomes::PARSER_INACTIVE.to_owned());
                 }
             }
@@ -399,6 +438,9 @@ impl EvidenceRunner {
             ),
             "Bundles hold metadata only: no event payloads or credentials.".to_owned(),
         ];
+        if let Some(output) = &non_sentinel_output {
+            limitations.push(probe::non_sentinel_limitation(output));
+        }
 
         let mut arrival =
             ArrivalRecord::not_found(options.workspace_id.clone(), options.table.clone());

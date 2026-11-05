@@ -365,6 +365,7 @@ fn test_emit_posts_canary_with_token_and_prints_response() {
 
 const COLLECTOR_ACCEPT: &str =
     "{\"decision\":\"accept\",\"policy\":{\"policyId\":\"BWR-POL-EVIDENCE-CANARY\"}}";
+const COLLECTOR_STATUS: &str = "{\"status\":\"healthy\"}";
 
 #[test]
 fn evidence_run_writes_simulated_signed_bundle_that_verifies() {
@@ -379,7 +380,11 @@ fn evidence_run_writes_simulated_signed_bundle_that_verifies() {
     let private = keys.join("bower-signing.key.pem");
     let public = keys.join("bower-signing.pub.pem");
 
-    let (address, server) = one_shot_server("202 Accepted", COLLECTOR_ACCEPT);
+    // `evidence run` reads /v1/status first (a non-Sentinel output refuses the canary).
+    let (address, server) = common::sequence_server(vec![
+        ("200 OK", COLLECTOR_STATUS),
+        ("202 Accepted", COLLECTOR_ACCEPT),
+    ]);
     let output = common::command(
         &common::bower_binary(),
         &[
@@ -398,7 +403,9 @@ fn evidence_run_writes_simulated_signed_bundle_that_verifies() {
     .output()
     .unwrap();
     let run = common::Run::from(output);
-    let request = server.join().unwrap();
+    let mut requests = server.join().unwrap();
+    assert!(requests[0].starts_with("GET /v1/status HTTP/1.1\r\n"));
+    let request = requests.pop().unwrap();
     assert_eq!(run.code, 2, "simulated is not verified: {}", run.stderr);
     assert!(request.starts_with("POST /v1/events HTTP/1.1\r\n"));
     assert!(
@@ -465,7 +472,10 @@ fn evidence_run_writes_simulated_signed_bundle_that_verifies() {
 #[test]
 fn evidence_run_defaults_bundle_name_and_reports_unsigned() {
     let dir = tempfile::tempdir().unwrap();
-    let (address, server) = one_shot_server("503 Service Unavailable", "not json");
+    let (address, server) = common::sequence_server(vec![
+        ("503 Service Unavailable", "not json"),
+        ("503 Service Unavailable", "not json"),
+    ]);
     let run = bower_in(
         dir.path(),
         &["evidence", "run", "--collector-url", &address],

@@ -175,6 +175,18 @@ impl DeliveryStatus {
             .as_ref()
             .and_then(OutputAdapter::concurrency_snapshot)
     }
+
+    /// C# status `output`: the configured output when it does not deliver to Sentinel
+    /// (`s3`), so evidence runners refuse to claim Sentinel delivery.
+    pub fn non_sentinel_output(&self) -> Option<String> {
+        use bower_contracts::OutputAdapter;
+        self.0
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .as_ref()
+            .map(|output| output.id().to_string())
+            .filter(|id| id == "s3")
+    }
 }
 
 pub fn router(state: AppState) -> Router {
@@ -711,6 +723,9 @@ struct StatusBody<'a> {
     activity: Vec<ActivityBody>,
     /// Tap sessions and frame counters since start. Metadata only.
     tap: crate::tap::EventTapSnapshot,
+    /// The configured output when it does not deliver to Sentinel (`s3`); omitted otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    output: Option<String>,
 }
 
 /// `SourceActivity` (Web defaults).
@@ -965,6 +980,7 @@ async fn status(
                 })
                 .collect(),
             tap: state.tap.snapshot(),
+            output: state.delivery.non_sentinel_output(),
         },
     )
 }

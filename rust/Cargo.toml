@@ -19,6 +19,7 @@ bower-evidence = { path = "crates/bower-evidence" }
 bower-integrity = { path = "crates/bower-integrity" }
 bower-output-ama-spool = { path = "crates/bower-output-ama-spool" }
 bower-output-azure = { path = "crates/bower-output-azure" }
+bower-output-s3 = { path = "crates/bower-output-s3" }
 bower-packs = { path = "crates/bower-packs" }
 bower-persistence = { path = "crates/bower-persistence" }
 bower-pipeline = { path = "crates/bower-pipeline" }
@@ -71,6 +72,9 @@ aws-config = { version = "1.13", default-features = false, features = ["rt-tokio
 aws-sdk-cloudtraildata = { version = "1.118", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
 aws-sdk-cloudwatchlogs = { version = "1.160", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
 aws-sdk-secretsmanager = { version = "1.123", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
+# S3 output (bower-output-s3): conditional PutObject with the default credential chain.
+aws-credential-types = { version = "1.3", default-features = false }
+aws-sdk-s3 = { version = "1.157", default-features = false, features = ["rt-tokio", "default-https-client", "behavior-version-latest"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

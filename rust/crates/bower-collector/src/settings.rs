@@ -87,6 +87,8 @@ pub struct CollectorSettings {
     pub dcr_immutable_id: Option<String>,
     pub azure_credential: AzureCredentialMode,
     pub azure_client_id: Option<String>,
+    /// S3 output settings (`BOWER_S3_*`, `BOWER_OUTPUT=s3`); `None` when none is set.
+    pub s3_output: Option<bower_output_s3::S3OutputOptions>,
     pub management_endpoint: Option<Url>,
     pub management_scope: Option<String>,
     /// Explicit HTTP(S) proxy for the management channel (BOWER_MANAGEMENT_PROXY). Unset:
@@ -218,6 +220,7 @@ impl CollectorSettings {
             dcr_immutable_id: None,
             azure_credential: AzureCredentialMode::ManagedIdentity,
             azure_client_id: None,
+            s3_output: None,
             management_endpoint: None,
             management_scope: None,
             management_proxy: None,
@@ -344,6 +347,8 @@ impl CollectorSettings {
             dcr_immutable_id: read("BOWER_DCR_ID"),
             azure_credential: parse_credential_mode(read("BOWER_AZURE_CREDENTIAL").as_deref())?,
             azure_client_id: read("BOWER_AZURE_CLIENT_ID"),
+            s3_output: bower_output_s3::S3OutputOptions::from_environment(&read)
+                .map_err(|error| invalid(error.0))?,
             management_endpoint: absolute_uri(management_endpoint)?,
             management_scope: read("BOWER_MANAGEMENT_SCOPE"),
             management_proxy: read_proxy(blank(read("BOWER_MANAGEMENT_PROXY")))?,
@@ -524,7 +529,7 @@ impl CollectorSettings {
 
         if !matches!(
             self.output_type.as_str(),
-            "none" | "ama-spool" | "azure-logs-ingestion" | "relay"
+            "none" | "ama-spool" | "azure-logs-ingestion" | "relay" | "s3"
         ) {
             return Err(invalid(format!(
                 "Unsupported BOWER_OUTPUT value: {}",
@@ -539,6 +544,15 @@ impl CollectorSettings {
             return Err(invalid(
                 "BOWER_DCE_ENDPOINT and BOWER_DCR_ID are required for azure-logs-ingestion.",
             ));
+        }
+
+        if (self.output_type == "s3") != self.s3_output.is_some() {
+            return Err(invalid(
+                "BOWER_OUTPUT=s3 requires BOWER_S3_BUCKET and BOWER_S3_REGION, and BOWER_S3_* settings require BOWER_OUTPUT=s3.",
+            ));
+        }
+        if let Some(s3) = &self.s3_output {
+            s3.validate().map_err(|error| invalid(error.0))?;
         }
 
         if self.management_authentication != MANAGEMENT_AUTH_ENTRA && !self.uses_enrolment() {
@@ -916,6 +930,11 @@ impl CollectorSettings {
         if self.uses_enrolment() {
             material.push('\u{1f}');
             material.push_str("management-auth:enrolment");
+        }
+        // Appended only when set so existing configuration hashes are unchanged. No
+        // credential is configured for S3, so none can enter the hash.
+        if let Some(s3) = &self.s3_output {
+            material.push_str(&format!("\u{1f}s3:{}", s3.hash_material()));
         }
         // Relay settings, appended only when set. Hosts, ports and paths only, never file
         // contents.

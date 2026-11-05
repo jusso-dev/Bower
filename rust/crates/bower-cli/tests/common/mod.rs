@@ -67,55 +67,70 @@ pub fn one_shot_server(
     status: &'static str,
     body: &'static str,
 ) -> (String, std::thread::JoinHandle<String>) {
+    let (address, handle) = sequence_server(vec![(status, body)]);
+    (
+        address,
+        std::thread::spawn(move || handle.join().unwrap().pop().unwrap_or_default()),
+    )
+}
+
+/// Answers one request per response, in order (one connection each); returns the
+/// requests received. Gives up after 30 s so a client that never connects cannot hang.
+pub fn sequence_server(
+    responses: Vec<(&'static str, &'static str)>,
+) -> (String, std::thread::JoinHandle<Vec<String>>) {
     use std::io::{Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());
     let handle = std::thread::spawn(move || {
-        // Give up after 30 s so a client that never connects cannot hang the test.
         listener.set_nonblocking(true).unwrap();
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-        let mut stream = loop {
-            match listener.accept() {
-                Ok((stream, _)) => break stream,
-                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-                    if std::time::Instant::now() > deadline {
-                        return String::new();
+        let mut requests = Vec::new();
+        for (status, body) in responses {
+            let mut stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        if std::time::Instant::now() > deadline {
+                            return requests;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(20));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    Err(error) => panic!("accept: {error}"),
                 }
-                Err(error) => panic!("accept: {error}"),
-            }
-        };
-        stream.set_nonblocking(false).unwrap();
-        let mut request = Vec::new();
-        let mut buffer = [0u8; 4096];
-        loop {
-            let read = stream.read(&mut buffer).unwrap();
-            request.extend_from_slice(&buffer[..read]);
-            let text = String::from_utf8_lossy(&request).into_owned();
-            if let Some(split) = text.find("\r\n\r\n") {
-                let length = text[..split]
-                    .lines()
-                    .find_map(|line| {
-                        line.to_ascii_lowercase()
-                            .strip_prefix("content-length:")
-                            .map(|v| v.trim().parse::<usize>().unwrap())
-                    })
-                    .unwrap_or(0);
-                if request.len() >= split + 4 + length {
+            };
+            stream.set_nonblocking(false).unwrap();
+            let mut request = Vec::new();
+            let mut buffer = [0u8; 4096];
+            loop {
+                let read = stream.read(&mut buffer).unwrap();
+                request.extend_from_slice(&buffer[..read]);
+                let text = String::from_utf8_lossy(&request).into_owned();
+                if let Some(split) = text.find("\r\n\r\n") {
+                    let length = text[..split]
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(|v| v.trim().parse::<usize>().unwrap())
+                        })
+                        .unwrap_or(0);
+                    if request.len() >= split + 4 + length {
+                        break;
+                    }
+                }
+                if read == 0 {
                     break;
                 }
             }
-            if read == 0 {
-                break;
-            }
+            let response = format!(
+                "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).unwrap();
+            requests.push(String::from_utf8_lossy(&request).into_owned());
         }
-        let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
-        );
-        stream.write_all(response.as_bytes()).unwrap();
-        String::from_utf8_lossy(&request).into_owned()
+        requests
     });
     (address, handle)
 }

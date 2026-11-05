@@ -53,8 +53,10 @@ fn object(value: Value) -> Map<String, Value> {
 struct FakeCollector {
     status_code: u16,
     not_queued: Option<&'static str>,
+    output: Option<&'static str>,
     status_reads: Mutex<usize>,
     records: Mutex<usize>,
+    canaries: Mutex<usize>,
 }
 
 impl FakeCollector {
@@ -66,8 +68,21 @@ impl FakeCollector {
         Arc::new(Self {
             status_code,
             not_queued,
+            output: None,
             status_reads: Mutex::new(0),
             records: Mutex::new(0),
+            canaries: Mutex::new(0),
+        })
+    }
+
+    fn with_output(output: &'static str) -> Arc<Self> {
+        Arc::new(Self {
+            status_code: 200,
+            not_queued: None,
+            output: Some(output),
+            status_reads: Mutex::new(0),
+            records: Mutex::new(0),
+            canaries: Mutex::new(0),
         })
     }
 }
@@ -79,6 +94,7 @@ impl CanarySender for FakeCollector {
         _token: Option<&'a str>,
         json: String,
     ) -> BoxFuture<'a, Result<CollectorResponse, EvidenceError>> {
+        *self.canaries.lock().unwrap() += 1;
         let event: Value = serde_json::from_str(&json).unwrap();
         let body = object(json!({"eventId": event["eventId"], "decision": "accept"}));
         Box::pin(async move { Ok((202, Some(body))) })
@@ -97,7 +113,7 @@ impl ParserProbeSender for FakeCollector {
             object(json!({"policy": {"hash": "sha256:bundle", "packs": [{
                 "id": "linux-ssh-gateway", "version": "1.1.0", "packHash": "sha256:pack",
                 "parserStatuses": ["active-local-json"]
-            }]}}))
+            }]}, "output": self.output}))
         });
         Box::pin(async move { Ok((status, body)) })
     }
@@ -239,6 +255,58 @@ fn runner(
     destination: Option<Arc<dyn LogAnalyticsQuery>>,
 ) -> EvidenceRunner {
     EvidenceRunner::new(collector.clone(), destination, None).with_parser_sender(collector)
+}
+
+/// C# `NonSentinelOutput_IsRefusedWithoutSendingAProbe`.
+#[tokio::test]
+async fn non_sentinel_output_is_refused_without_sending_a_probe() {
+    for (output, profile, label) in [
+        ("s3", probe::GENERIC, "s3"),
+        ("s3", PROFILE, "s3"),
+        ("S3; drop", probe::GENERIC, "unknown"),
+    ] {
+        let collector = FakeCollector::with_output(output);
+        let destination = EchoDestination::new("sha256:policy");
+        let mut options = options(Some(WORKSPACE));
+        options.probe_profile = profile.to_owned();
+
+        let bundle = runner(collector.clone(), Some(destination.clone()))
+            .run(&options)
+            .await
+            .unwrap();
+        options.workspace_id = None;
+        let simulated = runner(collector.clone(), None).run(&options).await.unwrap();
+
+        assert_eq!(modes::FAILED, bundle.mode);
+        assert_eq!(modes::SIMULATED, simulated.mode);
+        assert!(!bundle.arrival.found);
+        assert_eq!(
+            Some(outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL),
+            bundle.arrival.query_error.as_deref()
+        );
+        let limitation = probe::non_sentinel_limitation(label);
+        assert!(bundle.limitations.contains(&limitation));
+        assert!(simulated.limitations.contains(&limitation));
+        assert_eq!(
+            0,
+            *collector.canaries.lock().unwrap() + *collector.records.lock().unwrap()
+        );
+        let event_id = bundle.canary.event_id.clone();
+        assert!(
+            !destination
+                .queries
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|kql| kql.contains(&event_id))
+        );
+        if profile == PROFILE {
+            assert_eq!(
+                outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL,
+                bundle.probe.unwrap().outcome
+            );
+        }
+    }
 }
 
 #[tokio::test]
