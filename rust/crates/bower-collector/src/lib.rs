@@ -10,6 +10,7 @@ mod conflicts;
 pub mod credential;
 pub mod enrolment;
 pub mod error;
+pub mod file_tail;
 pub mod heartbeat;
 pub mod host;
 pub mod http_output;

@@ -26,6 +26,7 @@ bower-pipeline.workspace = true
 bower-persistence.workspace = true
 bower-policy.workspace = true
 bower-redaction.workspace = true
+bower-source-file.workspace = true
 bower-source-syslog.workspace = true
 chrono.workspace = true
 hex.workspace = true

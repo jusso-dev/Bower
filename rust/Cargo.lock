@@ -843,6 +843,7 @@ dependencies = [
  "bower-pipeline",
  "bower-policy",
  "bower-redaction",
+ "bower-source-file",
  "bower-source-syslog",
  "chrono",
  "flate2",

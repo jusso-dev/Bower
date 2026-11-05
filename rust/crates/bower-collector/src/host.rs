@@ -183,6 +183,12 @@ pub struct Collector {
     job_triggers: JobTriggers,
     /// Syslog listeners when `BOWER_SYSLOG_CONFIG` is set; bound by `initialize`.
     syslog: Option<bower_source_syslog::SyslogSource>,
+    /// File tail inputs when `BOWER_FILE_CONFIG` is set, and their cursor table (created
+    /// by `initialize` in the queue database).
+    file_tail: Option<(
+        bower_source_file::FileTailSource,
+        Arc<bower_persistence::SqliteSourceCursorStore>,
+    )>,
     /// Relay role: the mutual TLS listener for downstream collectors (bound in `initialize`).
     relay_server: Option<crate::relay::listener::RelayServer>,
     /// `BOWER_MANAGEMENT_VIA_RELAY`: the management tunnel forwarder, served while alive.
@@ -284,6 +290,32 @@ pub fn build(
             Some(Arc::clone(&clock)),
         )
     });
+    // Cursors live with the queue, so a restart resumes where the queue left off.
+    let file_tail = sources
+        .file_tail
+        .map(|configuration| {
+            let cursors = Arc::new(
+                bower_persistence::SqliteSourceCursorStore::new(&settings.queue_path).map_err(
+                    |error| HostError::new("InvalidOperationException", error.to_string()),
+                )?,
+            );
+            let source = bower_source_file::FileTailSource::new(
+                configuration,
+                Arc::new(crate::file_tail::CollectorFileTailSink {
+                    processor: processor.clone(),
+                    identity: identity.clone(),
+                    packs: Arc::clone(&packs),
+                    managed_privacy: Arc::clone(&managed_privacy),
+                    clock: Arc::clone(&clock),
+                    telemetry: Arc::clone(&telemetry),
+                    tap: Some(Arc::clone(&tap)),
+                }),
+                Arc::clone(&cursors) as Arc<dyn bower_contracts::SourceCursorStore>,
+                Some(Arc::clone(&clock)),
+            );
+            Ok::<_, HostError>((source, cursors))
+        })
+        .transpose()?;
     // Relay role. The pins and the server certificate are read here, so a bad file stops
     // start-up; the listener binds in `initialize`, after queue initialisation.
     let (relay_server, relay_telemetry) = if settings.is_relay() {
@@ -334,6 +366,7 @@ pub fn build(
         syslog: syslog
             .as_ref()
             .map(bower_source_syslog::SyslogSource::metrics),
+        file_tail: file_tail.as_ref().map(|(source, _)| source.metrics()),
         managed_privacy: Arc::clone(&managed_privacy),
         tap: Arc::clone(&tap),
         tap_access: Arc::new(crate::tap_http::TapAccess {
@@ -423,6 +456,7 @@ pub fn build(
         enrolment,
         job_triggers: JobTriggers::default(),
         syslog,
+        file_tail,
         relay_server,
         #[cfg(unix)]
         _relay_tunnel: relay_tunnel,
@@ -658,6 +692,25 @@ impl Collector {
                 );
             }
         }
+        if let Some((source, cursors)) = &self.file_tail {
+            let store = Arc::clone(cursors);
+            tokio::task::spawn_blocking(move || store.initialize())
+                .await
+                .map_err(|_| {
+                    HostError::new(
+                        "InvalidOperationException",
+                        "Cursor initialisation panicked.",
+                    )
+                })?
+                .map_err(|error| HostError::new("InvalidOperationException", error.to_string()))?;
+            for status in source.snapshot() {
+                info!(
+                    input = status.id,
+                    path = status.path,
+                    "File tail input reading."
+                );
+            }
+        }
         if let Some(relay) = &mut self.relay_server {
             relay.bind().await?;
         }
@@ -711,6 +764,10 @@ impl Collector {
             tasks.push(tokio::spawn(async move { worker.run(inbox, token).await }));
         }
         if let Some(source) = self.syslog.take() {
+            let stop = shutdown.receiver();
+            tasks.push(tokio::spawn(source.run(stop)));
+        }
+        if let Some((source, _)) = self.file_tail.take() {
             let stop = shutdown.receiver();
             tasks.push(tokio::spawn(source.run(stop)));
         }
