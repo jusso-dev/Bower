@@ -4,70 +4,60 @@ using Bower.Evidence;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// Evidence for a collector whose output is <c>http</c> never claims Sentinel delivery.
+/// Evidence never claims Sentinel delivery for an output outside the Sentinel allowlist.
 /// Mirrored in rust/crates/bower-evidence/tests/http_output_evidence.rs.
 /// </summary>
 public sealed class HttpOutputEvidenceTests
 {
     private const string Workspace = "00000000-0000-0000-0000-000000000001";
 
-    [Fact]
-    public async Task Canary_ForAnHttpOutputFailsWithoutQueryingSentinel()
+    [Theory]
+    [InlineData("http", null, "http")]
+    [InlineData("http", "parser:linux-ssh-gateway:0", "http")]
+    [InlineData("s3", null, "s3")]
+    [InlineData("future-output", "parser:linux-ssh-gateway:0", "future-output")]
+    [InlineData("Not An Id!", null, "unknown")]
+    public async Task NonSentinelOutput_IsRefusedWithoutSendingACanaryOrQuerying(string output, string? profile, string label)
     {
-        StatusCollector collector = new("http");
+        StatusCollector collector = new(output);
         RowQuery query = new();
+        EvidenceOptions options = Options(Workspace) with { ProbeProfile = profile ?? ProbeProfiles.Generic };
 
         EvidenceBundle bundle = await new EvidenceRunner(collector, query, null)
-            .RunAsync(Options(Workspace), TestContext.Current.CancellationToken);
+            .RunAsync(options, TestContext.Current.CancellationToken);
+        EvidenceBundle simulated = await new EvidenceRunner(collector, null, null)
+            .RunAsync(options with { WorkspaceId = null }, TestContext.Current.CancellationToken);
 
         Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.Equal(EvidenceModes.Simulated, simulated.Mode);
         Assert.False(bundle.Arrival.Found);
-        Assert.Equal(ProbeOutcomes.OutputNotSentinel, bundle.Arrival.QueryError);
-        Assert.Contains(bundle.Limitations, item => item.StartsWith("NOT SENTINEL:", StringComparison.Ordinal));
-        // The canary was still sent through the real pipeline, but Sentinel was never asked for it.
-        Assert.Equal(1, collector.Canaries);
+        Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Arrival.QueryError);
+        Assert.Contains(ProbeOutcomes.NonSentinelLimitation(label), bundle.Limitations);
+        Assert.Contains(ProbeOutcomes.NonSentinelLimitation(label), simulated.Limitations);
+        Assert.Equal(0, collector.Canaries + collector.Records);
         Assert.DoesNotContain(query.Queries, kql => kql.Contains(bundle.Canary.EventId, StringComparison.Ordinal));
-        Assert.All(bundle.Controls, control => Assert.NotEqual("verified", control.Status));
+        if (profile is not null)
+        {
+            Assert.Equal(ProbeOutcomes.CollectorOutputNotSentinel, bundle.Probe!.Outcome);
+        }
     }
 
-    [Fact]
-    public async Task SimulatedCanaryForAnHttpOutputSaysItIsNotSentinel()
+    [Theory]
+    [InlineData("azure-logs-ingestion", 200)]
+    [InlineData("ama-spool", 200)]
+    [InlineData("relay", 200)]
+    [InlineData(null, 200)]
+    [InlineData("http", 503)]
+    public async Task SentinelRelayMissingOrUnreadableOutput_ProceedsAndOnlyTheQueryVerifies(string? output, int statusCode)
     {
-        EvidenceBundle bundle = await new EvidenceRunner(new StatusCollector("http"), null, null)
-            .RunAsync(Options(null), TestContext.Current.CancellationToken);
-
-        Assert.Equal(EvidenceModes.Simulated, bundle.Mode);
-        Assert.Contains(bundle.Limitations, item => item.StartsWith("NOT SENTINEL:", StringComparison.Ordinal));
-        Assert.Contains(bundle.Limitations, item => item.StartsWith("SIMULATED:", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task SentinelOutputsStillVerifyByQuery()
-    {
-        StatusCollector collector = new("azure-logs-ingestion");
+        StatusCollector collector = new(output, statusCode);
 
         EvidenceBundle bundle = await new EvidenceRunner(collector, new RowQuery(), null)
             .RunAsync(Options(Workspace), TestContext.Current.CancellationToken);
 
         Assert.Equal(EvidenceModes.Verified, bundle.Mode);
+        Assert.Equal(1, collector.Canaries);
         Assert.DoesNotContain(bundle.Limitations, item => item.StartsWith("NOT SENTINEL:", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public async Task ParserProbe_ForAnHttpOutputIsNotSentOrQueried()
-    {
-        StatusCollector collector = new("http");
-        RowQuery query = new();
-
-        EvidenceBundle bundle = await new EvidenceRunner(collector, query, null)
-            .RunAsync(Options(Workspace) with { ProbeProfile = "parser:linux-ssh-gateway:0" }, TestContext.Current.CancellationToken);
-
-        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
-        Assert.Equal(ProbeOutcomes.OutputNotSentinel, bundle.Probe!.Outcome);
-        Assert.Equal(ProbeOutcomes.OutputNotSentinel, bundle.Arrival.QueryError);
-        Assert.Equal(0, collector.Records);
-        Assert.Contains(bundle.Limitations, item => item.StartsWith("NOT SENTINEL:", StringComparison.Ordinal));
-        Assert.DoesNotContain(query.Queries, kql => kql.Contains(bundle.Probe.EventId, StringComparison.Ordinal));
     }
 
     private static EvidenceOptions Options(string? workspace) => new()
@@ -78,8 +68,8 @@ public sealed class HttpOutputEvidenceTests
         Timeout = TimeSpan.FromSeconds(5)
     };
 
-    /// <summary>A collector reporting <paramref name="output"/> in <c>/v1/status</c>, with an active SSH parser.</summary>
-    private sealed class StatusCollector(string output) : ICanarySender, IParserProbeSender
+    /// <summary>A collector reporting <paramref name="output"/> in <c>/v1/status</c> (omitted when null), with an active SSH parser.</summary>
+    private sealed class StatusCollector(string? output, int statusCode = 200) : ICanarySender, IParserProbeSender
     {
         public int Canaries { get; private set; }
 
@@ -92,7 +82,7 @@ public sealed class HttpOutputEvidenceTests
         }
 
         public Task<(int Status, JsonObject? Body)> GetStatusAsync(Uri collector, string? token, CancellationToken cancellationToken) =>
-            Task.FromResult<(int, JsonObject?)>((200, new JsonObject
+            Task.FromResult<(int, JsonObject?)>((statusCode, new JsonObject
             {
                 ["output"] = output,
                 ["policy"] = new JsonObject

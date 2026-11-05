@@ -1,5 +1,5 @@
-//! Evidence for a collector whose output is `http` never claims Sentinel delivery (C#
-//! `HttpOutputEvidenceTests`).
+//! Evidence never claims Sentinel delivery for an output outside the Sentinel allowlist
+//! (C# `HttpOutputEvidenceTests`).
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,15 +22,17 @@ fn object(value: Value) -> Map<String, Value> {
 
 /// A collector reporting `output` in `/v1/status`, with an active SSH parser.
 struct StatusCollector {
-    output: &'static str,
+    output: Option<&'static str>,
+    status_code: u16,
     canaries: Mutex<usize>,
     records: Mutex<usize>,
 }
 
 impl StatusCollector {
-    fn new(output: &'static str) -> Arc<Self> {
+    fn new(output: Option<&'static str>, status_code: u16) -> Arc<Self> {
         Arc::new(Self {
             output,
+            status_code,
             canaries: Mutex::new(0),
             records: Mutex::new(0),
         })
@@ -61,7 +63,8 @@ impl ParserProbeSender for StatusCollector {
                 "parserStatuses": ["active-local-json"]
             }]}}),
         );
-        Box::pin(async move { Ok((200, Some(body))) })
+        let status = self.status_code;
+        Box::pin(async move { Ok((status, Some(body))) })
     }
 
     fn send_record<'a>(
@@ -128,92 +131,79 @@ fn not_sentinel(limitations: &[String]) -> bool {
 }
 
 #[tokio::test]
-async fn canary_for_an_http_output_fails_without_querying_sentinel() {
-    let collector = StatusCollector::new("http");
-    let query = Arc::new(RowQuery::default());
+async fn non_sentinel_output_is_refused_without_sending_a_canary_or_querying() {
+    for (output, profile, label) in [
+        ("http", None, "http"),
+        ("http", Some("parser:linux-ssh-gateway:0"), "http"),
+        ("s3", None, "s3"),
+        (
+            "future-output",
+            Some("parser:linux-ssh-gateway:0"),
+            "future-output",
+        ),
+        ("Not An Id!", None, "unknown"),
+    ] {
+        let collector = StatusCollector::new(Some(output), 200);
+        let query = Arc::new(RowQuery::default());
+        let mut options = options(Some(WORKSPACE));
+        if let Some(profile) = profile {
+            options.probe_profile = profile.into();
+        }
 
-    let bundle = runner(&collector, Some(query.clone()))
-        .run(&options(Some(WORKSPACE)))
-        .await
-        .unwrap();
+        let bundle = runner(&collector, Some(query.clone()))
+            .run(&options)
+            .await
+            .unwrap();
+        options.workspace_id = None;
+        let simulated = runner(&collector, None).run(&options).await.unwrap();
 
-    assert_eq!(bundle.mode, modes::FAILED);
-    assert!(!bundle.arrival.found);
-    assert_eq!(
-        bundle.arrival.query_error.as_deref(),
-        Some(outcomes::OUTPUT_NOT_SENTINEL)
-    );
-    assert!(not_sentinel(&bundle.limitations));
-    // The canary was still sent through the real pipeline, but Sentinel was never asked for it.
-    assert_eq!(*collector.canaries.lock().unwrap(), 1);
-    assert!(
-        query
-            .queries
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|kql| !kql.contains(&bundle.canary.event_id))
-    );
+        assert_eq!(bundle.mode, modes::FAILED, "{output}");
+        assert_eq!(simulated.mode, modes::SIMULATED, "{output}");
+        assert!(!bundle.arrival.found);
+        assert_eq!(
+            bundle.arrival.query_error.as_deref(),
+            Some(outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL),
+            "{output}"
+        );
+        let limitation = bower_evidence::probe::non_sentinel_limitation(label);
+        assert!(bundle.limitations.contains(&limitation), "{output}");
+        assert!(simulated.limitations.contains(&limitation), "{output}");
+        assert_eq!(*collector.canaries.lock().unwrap(), 0, "{output}");
+        assert_eq!(*collector.records.lock().unwrap(), 0, "{output}");
+        assert!(
+            query
+                .queries
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|kql| !kql.contains(&bundle.canary.event_id))
+        );
+        if profile.is_some() {
+            assert_eq!(
+                bundle.probe.as_ref().unwrap().outcome,
+                outcomes::COLLECTOR_OUTPUT_NOT_SENTINEL
+            );
+        }
+    }
 }
 
 #[tokio::test]
-async fn simulated_canary_for_an_http_output_says_it_is_not_sentinel() {
-    let bundle = runner(&StatusCollector::new("http"), None)
-        .run(&options(None))
-        .await
-        .unwrap();
+async fn sentinel_relay_missing_or_unreadable_output_proceeds_and_only_the_query_verifies() {
+    for (output, status) in [
+        (Some("azure-logs-ingestion"), 200),
+        (Some("ama-spool"), 200),
+        (Some("relay"), 200),
+        (None, 200),
+        (Some("http"), 503),
+    ] {
+        let collector = StatusCollector::new(output, status);
+        let bundle = runner(&collector, Some(Arc::new(RowQuery::default())))
+            .run(&options(Some(WORKSPACE)))
+            .await
+            .unwrap();
 
-    assert_eq!(bundle.mode, modes::SIMULATED);
-    assert!(not_sentinel(&bundle.limitations));
-    assert!(
-        bundle
-            .limitations
-            .iter()
-            .any(|item| item.starts_with("SIMULATED:"))
-    );
-}
-
-#[tokio::test]
-async fn sentinel_outputs_still_verify_by_query() {
-    let bundle = runner(
-        &StatusCollector::new("azure-logs-ingestion"),
-        Some(Arc::new(RowQuery::default())),
-    )
-    .run(&options(Some(WORKSPACE)))
-    .await
-    .unwrap();
-
-    assert_eq!(bundle.mode, modes::VERIFIED);
-    assert!(!not_sentinel(&bundle.limitations));
-}
-
-#[tokio::test]
-async fn parser_probe_for_an_http_output_is_not_sent_or_queried() {
-    let collector = StatusCollector::new("http");
-    let query = Arc::new(RowQuery::default());
-    let mut options = options(Some(WORKSPACE));
-    options.probe_profile = "parser:linux-ssh-gateway:0".into();
-
-    let bundle = runner(&collector, Some(query.clone()))
-        .run(&options)
-        .await
-        .unwrap();
-
-    let probe = bundle.probe.as_ref().unwrap();
-    assert_eq!(bundle.mode, modes::FAILED);
-    assert_eq!(probe.outcome, outcomes::OUTPUT_NOT_SENTINEL);
-    assert_eq!(
-        bundle.arrival.query_error.as_deref(),
-        Some(outcomes::OUTPUT_NOT_SENTINEL)
-    );
-    assert_eq!(*collector.records.lock().unwrap(), 0);
-    assert!(not_sentinel(&bundle.limitations));
-    assert!(
-        query
-            .queries
-            .lock()
-            .unwrap()
-            .iter()
-            .all(|kql| !kql.contains(&probe.event_id))
-    );
+        assert_eq!(bundle.mode, modes::VERIFIED, "{output:?}");
+        assert_eq!(*collector.canaries.lock().unwrap(), 1, "{output:?}");
+        assert!(!not_sentinel(&bundle.limitations));
+    }
 }
