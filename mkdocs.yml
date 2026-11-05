@@ -95,6 +95,7 @@ nav:
           - AWS Lambda: deployment/aws-lambda.md
           - Google Cloud: deployment/gcp.md
           - Relay networks: deployment/relay.md
+          - Amazon S3 output: deployment/s3-output.md
           - Azure Arc extension: deployment/azure-arc-extension.md
       - Connect a source:
           - Syslog: deployment/syslog-source.md

@@ -25,7 +25,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Functions.Collector`: serverless Azure Functions collector (Entra-authenticated, no durable queue).
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
 - `ui/Bower.Management.Web`: tenant-controlled operational console.
-- `src/Bower.Output.*`: bounded delivery adapters.
+- `src/Bower.Output.*`: bounded delivery adapters (`Bower.Output.S3`: NDJSON objects in Amazon S3, an extra sink, never Sentinel delivery).
 - `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch), EventBridge/SNS/S3 queue message parser and Firehose log object reader.
 - `src/Bower.Source.Gcp`: Cloud Audit Logs and Security Command Center mapper for Pub/Sub messages.
 - `src/Bower.Forwarding`: shared collector client for agents (at-least-once acknowledgement rule) and the relay output and wire contract.
@@ -43,7 +43,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
 - `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `windows-security-logon`, `aws-security`, `gcp-security`).
 - `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
-- `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal (plan-only by default).
+- `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal and the S3 output policy (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
 - `deploy/installers`, `deploy/ansible`: deb, rpm and MSI packages, offline installers with a pre-seeded enrolment token, and an example Ansible role. See `deploy/installers/AGENTS.md`.
 - `powershell`: PowerShell 7.4+ modules (events, management, plan-first deployment, privacy tooling). See `powershell/AGENTS.md`.
