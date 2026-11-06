@@ -50,6 +50,8 @@ DOMAIN = 'bower.lab'
 # the stack's scheduler terminates the hosts at its own expiry; the Azure resource group deletes
 # itself AZURE_GUARD_AFTER_AWS seconds after the AWS expiry, leaving a day to reconcile.
 GUARD_AFTER_START = 76 * 3600
+# Smoke end to soak start: room to reconcile the smoke, far below the 60-minute silence allowance.
+SMOKE_TO_SOAK = 20 * 60
 AZURE_GUARD_AFTER_AWS = 24 * 3600
 # The dry run keeps every mechanism and shortens the clock: 40 minutes, one fault (a 10-minute
 # destination outage on both collectors), canaries on.
@@ -513,14 +515,17 @@ def deploy(only=None):
 
 
 def times(kind):
-    """Smoke in 12 minutes (the three soak agents install first); the soak at the next hh:05 at
-    least 20 minutes after the smoke ends, so the smoke is reconciled before the clock starts."""
+    """The soak starts at an hh:05 and the smoke ends SMOKE_TO_SOAK seconds before it: enough to
+    export and reconcile the smoke, and well inside the destination-freshness allowance (60
+    minutes of source silence). A longer gap fires that alert into the run's first minutes (run
+    bower-resoak-20261105-234529: 64 minutes, criterion 5). The agents install first (12 minutes)."""
     now = int(time.time())
-    smoke = (now // 60 + 12) * 60
-    earliest = smoke + 900 + 1200
+    earliest_smoke = (now // 60 + 12) * 60
+    earliest = earliest_smoke + 900 + SMOKE_TO_SOAK
     soak = earliest - earliest % 3600 + 300
     if soak < earliest:
         soak += 3600
+    smoke = soak - SMOKE_TO_SOAK - 900
     seconds = plan_for(kind)['profile']['soakSeconds']
     return {'smokeStart': smoke, 'smokeSeconds': 900, 'soakStart': soak, 'soakSeconds': seconds}
 

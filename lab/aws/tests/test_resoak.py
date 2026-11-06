@@ -229,6 +229,18 @@ class ExpiryGuardTests(unittest.TestCase):
         self.assertIn("aws_expiry() < run['soakStart'] + run['soakSeconds'] + 7200", source)
         self.assertLess(source.index("('guard-linux'"), source.index("('gen-sender'"))
 
+    def test_smoke_ends_inside_the_silence_allowance_before_the_soak(self):
+        os.environ.update(BOWER_LAB_RUN_ID=RUN, BOWER_LAB_DIR=tempfile.mkdtemp())
+        r = load('resoak_driver_times', ROOT / 'resoak' / 'resoak.py')
+        for now in range(1_793_925_000, 1_793_925_000 + 7200, 137):
+            with mock.patch.object(r.time, 'time', return_value=now):
+                t = r.times('registered')
+            self.assertEqual(t['soakStart'] % 3600, 300)
+            self.assertGreaterEqual(t['smokeStart'], now + 12 * 60)
+            gap = t['soakStart'] - (t['smokeStart'] + t['smokeSeconds'])
+            self.assertEqual(gap, 20 * 60)
+            self.assertLess(gap + 15 * 60, 60 * 60)   # plus a 15-minute evaluation lag, still silent < 60 min
+
     def test_azure_guard_deletes_only_its_own_group(self):
         template = json.loads((ROOT / 'resoak' / 'azure-expiry-guard.json').read_text())
         text = json.dumps(template)
