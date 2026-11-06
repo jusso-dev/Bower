@@ -25,20 +25,6 @@ fresh results and rejects partial query responses (see
 reconciliation tools should likewise send `Cache-Control: no-cache` and fail closed
 on partial errors.
 
-Monitor the workspace's [daily cap](https://learn.microsoft.com/en-us/azure/azure-monitor/logs/daily-cap)
-and its `_LogOperation` ingestion warnings. A workspace can stop collecting after
-an API request was accepted; Bower cannot automatically retry a row that Azure
-accepted but did not make queryable. Raising a cap is not proof that collection
-has resumed: wait until new rows are queryable. Configure capacity before starting a
-workload, alert on quota warnings, and verify representative event IDs in the
-destination. If collection stops, restore capacity, reconcile the affected
-window, and use a reviewed recovery procedure and the source or a tested backup
-to replay missing events with their original IDs. A collector may reject replay
-of an already acknowledged ID as a duplicate, so test the recovery procedure
-before relying on it. Reconcile again after replay because the destination can
-contain duplicates. The [monitoring runbooks](../production-readiness/06-monitoring-and-runbooks.md)
-cover the operational checks.
-
 Local malformed/mismatched payloads and failed schema preflight are individual
 permanent failures. A credential the identity service rejects (any 4xx answer other than 408/429, even
 after a retried network error) or a missing or unusable credential configuration fails
