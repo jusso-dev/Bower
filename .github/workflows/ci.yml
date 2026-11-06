@@ -152,6 +152,30 @@ jobs:
           retention-days: 7
       - run: dotnet format Bower.sln --verify-no-changes --no-restore
 
+  linux-arm64:
+    needs: changes
+    if: needs.changes.outputs.dotnet == 'true'
+    # Linux open(2) flag values differ on arm64 (O_NOFOLLOW is 0x8000, not 0x20000), so the
+    # native-handle tests run on a native arm64 runner as well as in build-test (x64).
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: '**/packages.lock.json'
+      - run: dotnet restore tests/Bower.UnitTests/Bower.UnitTests.csproj --locked-mode
+      - run: dotnet build tests/Bower.UnitTests/Bower.UnitTests.csproj --configuration Release --no-restore
+      - name: Settings file and file tail handle tests
+        run: >
+          dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
+          --configuration Release --no-build
+          --filter-class "Bower.UnitTests.CollectorSettingsFileTests"
+          --filter-class "Bower.UnitTests.FileTailSourceTests"
+
   windows-event-log:
     needs: changes
     if: needs.changes.outputs.windows == 'true'
@@ -814,7 +838,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, version, workflow-lint, build-test, windows-event-log, rust, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
+    needs: [changes, version, workflow-lint, build-test, linux-arm64, windows-event-log, rust, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected check to pass
@@ -831,7 +855,7 @@ jobs:
                   failed[required] = results[required]['result']
           selected = results['changes'].get('outputs', {})
           groups = {
-              'dotnet': ['build-test'], 'rust': ['rust'],
+              'dotnet': ['build-test', 'linux-arm64'], 'rust': ['rust'],
               'infrastructure': ['infrastructure', 'monitoring-windows'], 'powershell': ['powershell'],
               'ui': ['ui'], 'e2e': ['e2e'], 'windows': ['windows-event-log'],
               'containers': ['docker', 'docker-arm64'], 'platforms': ['publish'],

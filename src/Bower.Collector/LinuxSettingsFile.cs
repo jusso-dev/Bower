@@ -21,7 +21,8 @@ internal static partial class LinuxSettingsFile
     /// <summary>
     /// <c>O_DIRECTORY</c> and <c>O_NOFOLLOW</c> per architecture: 0x10000 and 0x20000 on x86 and
     /// x86-64, but 0x4000 and 0x8000 on arm and arm64 (where 0x10000 is <c>O_DIRECT</c> and 0x20000
-    /// is <c>O_LARGEFILE</c>). Other architectures get null and the file is refused (fail closed).
+    /// is <c>O_LARGEFILE</c>). Bower ships only for x64 and arm64; other architectures are not
+    /// built or tested here, so they get null and the file is refused (fail closed).
     /// </summary>
     internal static (int DirectoryOnly, int NoFollow)? OpenFlags(Architecture architecture) => architecture switch
     {

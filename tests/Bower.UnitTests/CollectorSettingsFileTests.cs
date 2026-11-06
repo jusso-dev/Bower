@@ -44,6 +44,11 @@ public sealed class CollectorSettingsFileTests
     {
         using TemporaryDirectory directory = new();
         string missing = Path.Combine(directory.Path, "bower.env");
+        if (!OperatingSystem.IsWindows())
+        {
+            // Under umask 002 the folder is group-writable and would be refused before the lookup.
+            File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
 
         Assert.Equal(SettingsFileState.NotConfigured,
             CollectorSettingsFile.Apply(_ => null, (_, _) => throw new InvalidOperationException()).State);
@@ -166,6 +171,8 @@ public sealed class CollectorSettingsFileTests
     public void LinuxLoad_RejectsSymlinkedParentsAndWritableAncestors()
     {
         if (!OperatingSystem.IsLinux()) return;
+        // This architecture has known O_DIRECTORY and O_NOFOLLOW values (CI runs this on x64 and arm64).
+        Assert.NotNull(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
         using TemporaryDirectory directory = new();
         string child = Path.Combine(directory.Path, "child");
         Directory.CreateDirectory(child);
@@ -193,29 +200,9 @@ public sealed class CollectorSettingsFileTests
         // On arm and arm64, 0x10000 is O_DIRECT and 0x20000 is O_LARGEFILE.
         Assert.Equal((0x4000, 0x8000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm64));
         Assert.Equal((0x4000, 0x8000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm));
-        // Unknown flag values: refuse the settings file rather than open it unprotected.
+        // Not shipped or tested: refuse the settings file rather than open it unprotected.
         Assert.Null(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.RiscV64));
         Assert.Null(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.S390x));
-    }
-
-    [Fact]
-    public void LinuxLoad_RefusesSymbolicLinksOnThisArchitecture()
-    {
-        if (!OperatingSystem.IsLinux()) return;
-        using TemporaryDirectory directory = new();
-        string trusted = Write(directory, "BOWER_OUTPUT=none");
-        Assert.NotNull(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
-        Assert.NotNull(CollectorSettingsFile.Load(trusted));
-
-        // Without this architecture's O_NOFOLLOW the open follows the link and the trusted target loads.
-        string link = Path.Combine(directory.Path, "link.env");
-        File.CreateSymbolicLink(link, trusted);
-        Assert.Contains("symbolic link", Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(link)).Message,
-            StringComparison.Ordinal);
-
-        string linkedDirectory = Path.Combine(directory.Path, "linked");
-        Directory.CreateSymbolicLink(linkedDirectory, directory.Path);
-        Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(Path.Combine(linkedDirectory, "bower.env")));
     }
 
     private static bool IsRoot() => Environment.UserName == "root";
