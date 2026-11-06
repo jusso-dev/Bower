@@ -47,7 +47,7 @@ def summarize(rows):
 
 
 def report_for(data, windows_since, linux_since=None):
-    if data.get('error'):
+    if data.get('error') is not None:
         raise ValueError('Partial or failed query results cannot establish delivery')
     tables = data.get('tables', [])
     if len(tables) != 1:

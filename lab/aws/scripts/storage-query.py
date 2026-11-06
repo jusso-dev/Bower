@@ -41,7 +41,7 @@ def query(workspace, access_token, text):
     if len(body) > MAXIMUM_RESPONSE_BYTES:
         raise SystemExit("Response too large")
     data = json.loads(body)
-    if data.get("error") or "tables" not in data:
+    if data.get("error") is not None or "tables" not in data:
         raise SystemExit("Partial or failed query results cannot establish delivery")
     table = data["tables"][0]
     names = [column["name"] for column in table["columns"]]

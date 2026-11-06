@@ -89,5 +89,64 @@ class QueryCacheTests(unittest.TestCase):
         self.assertNotIn('sensitive-query-marker', str(caught.exception))
 
 
+# The product treats any non-null `error` as a partial result; so must the lab readers.
+PARTIAL_ERRORS = ({}, {'code': 'PartialError'}, False, '', 0)
+
+
+def with_error(error):
+    return {'error': error, **response(True)}
+
+
+class Body:
+    status = 200
+    headers = {}
+
+    def __init__(self, data):
+        self.body = json.dumps(data).encode()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def read(self, limit):
+        return self.body
+
+
+class PartialResultTests(unittest.TestCase):
+    def test_storage_verifier_rejects_any_non_null_error(self):
+        module = load('storage_query_partial', ROOT / 'scripts' / 'storage-query.py')
+        for error in PARTIAL_ERRORS:
+            with self.subTest(error=error), \
+                    mock.patch.object(module.urllib.request, 'urlopen', return_value=Body(with_error(error))), \
+                    self.assertRaises(SystemExit):
+                module.query('workspace', 'synthetic-token', 'T | take 1')
+        with mock.patch.object(module.urllib.request, 'urlopen', return_value=Body(with_error(None))):
+            self.assertEqual([{'EventId': 'fresh'}], module.query('workspace', 'synthetic-token', 'T | take 1'))
+
+    def test_query_pilot_rejects_any_non_null_error(self):
+        module = load('query_pilot_partial', ROOT / 'scripts' / 'query-pilot.py')
+        for error in PARTIAL_ERRORS:
+            with self.subTest(error=error), self.assertRaisesRegex(ValueError, 'Partial or failed'):
+                module.report_for(with_error(error), '2026-11-06T00:00:00Z')
+
+    def test_azure_qualification_rejects_any_non_null_error(self):
+        module = load('azure_qualification_partial', ROOT / 'monitoring' / 'qualify-azure.py')
+        for error in PARTIAL_ERRORS:
+            with self.subTest(error=error), mock.patch.object(module, 'az', return_value=with_error(error)), \
+                    self.assertRaises(RuntimeError):
+                module.query({'workspaceId': 'workspace'}, 'T | take 1')
+        with mock.patch.object(module, 'az', return_value=with_error(None)):
+            self.assertEqual([{'EventId': 'fresh'}], module.query({'workspaceId': 'workspace'}, 'T | take 1'))
+
+    def test_firewall_reader_rejects_any_non_null_error(self):
+        module = load('query_firewall_partial', ROOT / 'monitoring' / 'query-firewall.py')
+        for error in PARTIAL_ERRORS:
+            with self.subTest(error=error), self.assertRaises(ValueError):
+                module.reject_partial(with_error(error))
+        module.reject_partial(with_error(None))
+
+
 if __name__ == '__main__':
     unittest.main()

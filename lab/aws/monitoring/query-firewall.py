@@ -119,6 +119,9 @@ def native_summary(plan, reports):
 def reject_partial(value):
     if isinstance(value, dict):
         for key, child in value.items():
+            # Any non-null `error` is a partial result, as in the product's query client.
+            if key.lower() == 'error' and child is not None:
+                raise ValueError('Partial, paginated or failed query response')
             if any(word in key.lower() for word in ('error', 'partial', 'continuation', 'nextlink', 'truncat')) and child:
                 raise ValueError('Partial, paginated or failed query response')
             reject_partial(child)
