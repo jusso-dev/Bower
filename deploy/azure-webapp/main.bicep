@@ -31,6 +31,12 @@ param tags object = {}
 param sku string = 'B1'
 @description('Bower environment stamped on events.')
 param environmentName string = 'production'
+@description('Required, no default: true accepts that the queue is in the container filesystem and is lost on every restart, recycle, setting change or platform maintenance, including events already answered with 202 but not yet delivered.')
+@allowed([true])
+param acknowledgeEphemeralQueue bool
+@description('Queue cap in bytes. The container filesystem shares the worker local disk, so keep this well below the default 10 GiB.')
+@minValue(1048576)
+param queueMaxBytes int = 1073741824
 
 var dcrParts = split(dcrResourceId, '/')
 var vaultParts = split(vaultResourceId, '/')
@@ -46,6 +52,13 @@ resource vault 'Microsoft.KeyVault/vaults@2023-07-01' existing = {
   scope: resourceGroup(vaultParts[2], vaultParts[4])
   name: vaultParts[8]
 }
+// Created and granted before the site, so the Key Vault reference can resolve on the
+// first start. A system-assigned identity exists only after the site starts.
+resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${appName}-id'
+  location: location
+  tags: tags
+}
 resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${appName}-plan'
   location: location
@@ -57,17 +70,20 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
 resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
   location: location
-  tags: tags
+  tags: union(tags, { 'bower-queue': acknowledgeEphemeralQueue ? 'ephemeral-acknowledged' : 'unacknowledged' })
   kind: 'app,linux,container'
-  identity: { type: 'SystemAssigned' }
+  identity: { type: 'UserAssigned', userAssignedIdentities: { '${identity.id}': {} } }
+  dependsOn: [tokenGrant, dcrGrant, registryGrant]
   properties: {
     serverFarmId: plan.id
+    keyVaultReferenceIdentity: identity.id
     httpsOnly: true
     publicNetworkAccess: 'Disabled'
     clientAffinityEnabled: false
     siteConfig: {
       linuxFxVersion: 'DOCKER|${collectorImage}'
       acrUseManagedIdentityCreds: !empty(registryResourceId)
+      acrUserManagedIdentityID: empty(registryResourceId) ? null : identity.properties.clientId
       alwaysOn: true
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
@@ -80,6 +96,8 @@ resource app 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'BOWER_ENVIRONMENT', value: environmentName }
         { name: 'BOWER_OUTPUT', value: 'azure-logs-ingestion' }
         { name: 'BOWER_AZURE_CREDENTIAL', value: 'managed-identity' }
+        { name: 'BOWER_AZURE_CLIENT_ID', value: identity.properties.clientId }
+        { name: 'BOWER_QUEUE_MAX_BYTES', value: string(queueMaxBytes) }
         { name: 'BOWER_DCE_ENDPOINT', value: logsIngestionEndpoint }
         { name: 'BOWER_DCR_ID', value: dcr.properties.immutableId }
         { name: 'BOWER_STREAM_NAME', value: 'Custom-BowerSecurity' }
@@ -122,20 +140,20 @@ resource privateDns 'Microsoft.Network/privateEndpoints/privateDnsZoneGroups@202
   }
 }
 module dcrGrant './modules/dcr-role.bicep' = {
-  name: '${uniqueString(app.id, dcr.id)}-dcr-grant'
+  name: '${uniqueString(identity.id, dcr.id)}-dcr-grant'
   scope: resourceGroup(dcrParts[2], dcrParts[4])
-  params: { dcrName: dcr.name, principalId: app.identity.principalId }
+  params: { dcrName: dcr.name, principalId: identity.properties.principalId }
 }
 module tokenGrant './modules/secret-role.bicep' = {
-  name: '${uniqueString(app.id, vault.id, ingestSecretName)}-token-grant'
+  name: '${uniqueString(identity.id, vault.id, ingestSecretName)}-token-grant'
   scope: resourceGroup(vaultParts[2], vaultParts[4])
-  params: { vaultName: vault.name, secretName: ingestSecretName, principalId: app.identity.principalId }
+  params: { vaultName: vault.name, secretName: ingestSecretName, principalId: identity.properties.principalId }
 }
 module registryGrant './modules/acr-role.bicep' = if (!empty(registryResourceId)) {
-  name: '${uniqueString(app.id, registryResourceId)}-registry-grant'
+  name: '${uniqueString(identity.id, registryResourceId)}-registry-grant'
   scope: resourceGroup(registrySubscription, registryGroup)
-  params: { registryName: registryName, principalId: app.identity.principalId }
+  params: { registryName: registryName, principalId: identity.properties.principalId }
 }
 output appHost string = app.properties.defaultHostName
-output appPrincipalId string = app.identity.principalId
+output identityPrincipalId string = identity.properties.principalId
 output privateEndpointId string = privateEndpoint.id

@@ -86,6 +86,16 @@ at rest (see [Backup handling](#backup-handling-and-encryption)).
   on the WEC host or Bower subscription id. A syslog id combines listener id, sender address
   and the exact frame. Keep the collector id, listener ids and the HMAC key stable across
   upgrades and restores, or replays are no longer recognised as duplicates.
+- **Kubernetes template (hosted collectors change).** `deploy/kubernetes/deployment.yaml`
+  now listens on HTTPS with the `bower-intake-tls` secret, reads producer scopes from a
+  ConfigMap shipped as `[]` (default deny), admits only labelled producers in its own
+  namespace, and mounts secrets `0440` with `fsGroup: 1654`. Applying it unchanged over an
+  older installation stops intake. Follow
+  [upgrading an existing Kubernetes installation](../deployment/hosted-collectors.md#upgrading-an-existing-kubernetes-installation).
+- **Ingest token references.** From the hosted collectors change, both collectors refuse to
+  start when `BOWER_INGEST_TOKEN` (or the `BOWER_INGEST_TOKEN_FILE` content) contains
+  `@Microsoft.KeyVault(` or `@Microsoft.AppConfiguration(` anywhere, in any ASCII letter
+  case. Earlier builds accepted such an unresolved App Service reference as the bearer token.
 - **Deduplication window.** The queue deduplicates a replayed event only while its delivered
   row is retained (`BOWER_QUEUE_RETENTION_HOURS`, default 168). After that, a replay is a new
   delivery. The destination must deduplicate by `CollectorId, EventId`; see

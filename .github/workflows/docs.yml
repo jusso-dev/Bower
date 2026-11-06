@@ -75,6 +75,18 @@ jobs:
         with:
           path: site
 
+  bicep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and lint the Web App template
+        run: |
+          az bicep install --version v0.45.6
+          az bicep build --file deploy/azure-webapp/main.bicep --stdout > /dev/null
+          az bicep lint --file deploy/azure-webapp/main.bicep
+
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build

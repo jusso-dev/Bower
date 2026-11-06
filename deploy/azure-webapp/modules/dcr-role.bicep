@@ -2,7 +2,7 @@ targetScope = 'resourceGroup'
 
 @description('Existing data collection rule name.')
 param dcrName string
-@description('System-assigned identity object ID of the collector.')
+@description('Object ID of the collector\'s user-assigned managed identity.')
 param principalId string
 
 var publisherRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')

@@ -2,7 +2,7 @@ targetScope = 'resourceGroup'
 
 @description('Existing Azure Container Registry name.')
 param registryName string
-@description('System-assigned identity object ID of the collector.')
+@description('Object ID of the collector\'s user-assigned managed identity.')
 param principalId string
 
 var acrPullRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d')

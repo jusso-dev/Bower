@@ -68,6 +68,18 @@ class HostedTemplateTests(unittest.TestCase):
         self.assertIn('privateLinkServiceId: app.id', template)
         self.assertIn('@Microsoft.KeyVault(SecretUri=', template)
         self.assertNotIn('BOWER_ALLOW_UNAUTHENTICATED_INGEST', template)
+        # Queue loss needs an explicit opt-in: no default, only true allowed.
+        self.assertIn('@allowed([true])\nparam acknowledgeEphemeralQueue bool\n', template)
+        self.assertNotRegex(template, r'param acknowledgeEphemeralQueue bool\s*=')
+        self.assertIn("name: 'BOWER_QUEUE_MAX_BYTES', value: string(queueMaxBytes)", template)
+        self.assertIn('param queueMaxBytes int = 1073741824', template)
+        for document in (root / 'README.md', ROOT / 'docs/deployment/hosted-collectors.md'):
+            self.assertIn('acknowledgeEphemeralQueue=true', document.read_text())
+        # The identity and its Key Vault grant exist before the site's first start.
+        self.assertNotIn('SystemAssigned', template)
+        self.assertIn('keyVaultReferenceIdentity: identity.id', template)
+        self.assertIn('dependsOn: [tokenGrant, dcrGrant, registryGrant]', template)
+        self.assertIn("name: 'BOWER_AZURE_CLIENT_ID', value: identity.properties.clientId", template)
         for module, expected_scope in (('dcr-role.bicep', 'scope: dcr'),
                                        ('secret-role.bicep', 'scope: secret'),
                                        ('acr-role.bicep', 'scope: registry')):

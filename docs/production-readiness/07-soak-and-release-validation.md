@@ -318,7 +318,11 @@ Not run in this soak.
 
 1. Deploy `deploy/kubernetes/deployment.yaml` with the candidate image into a dedicated
    namespace. The queue is on PVC `bower-data` at `/var/lib/bower`. Add the soak settings to the
-   pod environment.
+   pod environment. Create the `bower-ingest` and `bower-intake-tls` secrets and the reviewed
+   `bower-producer-scopes` ConfigMap **before** applying: the collector listens on HTTPS, and
+   without the TLS secret the pod waits in `ContainerCreating`. Load generators send to
+   `https://bower-collector.bower-soak.svc:4319` and trust the issuing CA. See
+   [upgrading an existing Kubernetes installation](../deployment/hosted-collectors.md#upgrading-an-existing-kubernetes-installation).
 2. Record and sample every 5 minutes:
 
    ```bash

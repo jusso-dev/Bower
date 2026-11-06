@@ -4,7 +4,7 @@ targetScope = 'resourceGroup'
 param vaultName string
 @description('Existing ingest-token secret name.')
 param secretName string
-@description('System-assigned identity object ID of the collector.')
+@description('Object ID of the collector\'s user-assigned managed identity.')
 param principalId string
 
 var secretsUserRole = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
