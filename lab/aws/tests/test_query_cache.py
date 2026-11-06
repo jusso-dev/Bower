@@ -55,6 +55,16 @@ class QueryCacheTests(unittest.TestCase):
             rows, _ = verifier.query('T | take 1')
         self.assertEqual([{'EventId': 'fresh'}], rows)
 
+    def test_wec_fix_verifier_bypasses_cached_empty_response(self):
+        module = load('wecfix_query_cache', ROOT / 'wecfix' / 'reconcile.py')
+        verifier = object.__new__(module.Verifier)
+        verifier.state = {'workspaceId': 'workspace'}
+        verifier.az = lambda *args: {'accessToken': 'synthetic-token'}
+        opener = types.SimpleNamespace(open=lambda request, **_: Reply(request))
+        with mock.patch.object(module.urllib.request, 'build_opener', return_value=opener):
+            rows, _ = verifier.query('T | take 1')
+        self.assertEqual([{'EventId': 'fresh'}], rows)
+
     def test_azure_qualification_bypasses_cached_empty_response(self):
         module = load('azure_qualification_cache', ROOT / 'monitoring' / 'qualify-azure.py')
         with mock.patch.object(module, 'az', side_effect=lambda *args: response('Cache-Control=no-cache' in args)):
