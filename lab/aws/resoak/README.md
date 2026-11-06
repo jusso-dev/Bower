@@ -108,8 +108,10 @@ python3 lab/aws/resoak/reconcile.py smoke --lab-dir "$BOWER_LAB_DIR" --out "$BOW
 python3 $R start [--plan dryrun]       # fault agents, canaries, then the soak generators; prints the end time
 ```
 
-`resoak.py status` prints every host agent's last record. At +1 h 30 min run the interim
-reconciliation (`reconcile.py fetch`, then `interim`). After the end plus 30 minutes the agents
+`resoak.py status` prints every host agent's last record. At +2 h 10 min run the interim
+reconciliation (`reconcile.py fetch`, then `interim`): the hosts upload at hh:00, so only then
+are the +1 h 30 union and the first hour's canary records in the buckets. Run earlier, the interim
+shows accepted ids and canaries short (run bower-resoak-20261105-234529 at +1 h 31). After the end plus 30 minutes the agents
 publish their final exports by themselves; then `fetch` and `final`. Export the window after the
 end on demand if the DC generator drifted into it (`dc-native-window.ps1 NAME=h72 FROM=<end>
 TO=<end+3600>`).
