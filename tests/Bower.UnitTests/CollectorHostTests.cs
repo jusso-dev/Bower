@@ -465,7 +465,7 @@ public sealed class CollectorHostTests
         CollectorSettings settings = BaseSettings("unused") with { IngestToken = reference };
 
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(settings.Validate);
-        Assert.Contains("unresolved Key Vault reference", error.Message, StringComparison.Ordinal);
+        Assert.Contains("unresolved Key Vault or App Configuration reference", error.Message, StringComparison.Ordinal);
         Assert.DoesNotContain(reference, error.Message, StringComparison.Ordinal);
     }
 

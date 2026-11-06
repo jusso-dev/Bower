@@ -1349,7 +1349,7 @@ fn settings_reject_unresolved_vault_references_and_conflicting_scopes() {
     let error = settings.validate().unwrap_err();
     assert_eq!(
         error.message,
-        "BOWER_INGEST_TOKEN contains an unresolved Key Vault reference."
+        "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference."
     );
     assert!(!error.message.contains("example.test"));
 

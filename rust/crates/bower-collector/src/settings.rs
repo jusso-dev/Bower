@@ -482,15 +482,16 @@ impl CollectorSettings {
             ));
         }
 
-        if self.ingest_token.as_deref().is_some_and(|token| {
-            const PREFIX: &str = "@Microsoft.KeyVault";
-            token
-                .trim_start()
-                .get(..PREFIX.len())
-                .is_some_and(|start| start.eq_ignore_ascii_case(PREFIX))
-        }) {
+        // App Service passes an unresolved Key Vault or App Configuration reference
+        // literally, including when it is quoted or wrapped. Never accept that
+        // predictable configuration string as a bearer credential.
+        if self
+            .ingest_token
+            .as_deref()
+            .is_some_and(contains_setting_reference)
+        {
             return Err(invalid(
-                "BOWER_INGEST_TOKEN contains an unresolved Key Vault reference.",
+                "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference.",
             ));
         }
 
@@ -1054,6 +1055,19 @@ pub(crate) fn is_blank(value: &str) -> bool {
 
 fn blank(value: Option<String>) -> Option<String> {
     value.filter(|value| !is_blank(value))
+}
+
+/// C# `ContainsSettingReference`: an App Service reference marker anywhere in the value,
+/// ASCII case folding only (non-ASCII UTF-8 bytes never fold, as in C# `Ascii`).
+fn contains_setting_reference(value: &str) -> bool {
+    ["@Microsoft.KeyVault(", "@Microsoft.AppConfiguration("]
+        .iter()
+        .any(|marker| {
+            value
+                .as_bytes()
+                .windows(marker.len())
+                .any(|window| window.eq_ignore_ascii_case(marker.as_bytes()))
+        })
 }
 
 fn split_list(value: Option<&str>) -> Vec<String> {

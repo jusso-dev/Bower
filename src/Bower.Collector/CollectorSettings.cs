@@ -421,11 +421,13 @@ public sealed record CollectorSettings
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(CollectorId);
-        // App Service passes an unresolved Key Vault reference literally. Never
-        // accept that predictable configuration string as a bearer credential.
-        if (IngestToken?.TrimStart().StartsWith("@Microsoft.KeyVault", StringComparison.OrdinalIgnoreCase) == true)
+        // App Service passes an unresolved Key Vault or App Configuration reference
+        // literally, including when it is quoted or wrapped. Never accept that
+        // predictable configuration string as a bearer credential.
+        if (IngestToken is not null && ContainsSettingReference(IngestToken))
         {
-            throw new InvalidOperationException("BOWER_INGEST_TOKEN contains an unresolved Key Vault reference.");
+            throw new InvalidOperationException(
+                "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference.");
         }
 
         if (IngestToken is not null && IngestToken.Length < MinimumIngestTokenLength)
@@ -972,6 +974,26 @@ public sealed record CollectorSettings
         };
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// True when an App Service reference marker appears anywhere in the value. ASCII
+    /// case folding only, so no culture or Unicode mapping can differ from the Rust port.
+    /// </summary>
+    private static bool ContainsSettingReference(string value)
+    {
+        foreach (string marker in (ReadOnlySpan<string>)["@Microsoft.KeyVault(", "@Microsoft.AppConfiguration("])
+        {
+            for (int start = 0; start + marker.Length <= value.Length; start++)
+            {
+                if (System.Text.Ascii.EqualsIgnoreCase(value.AsSpan(start, marker.Length), marker))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     private static string[] SplitList(string? value) =>
         string.IsNullOrWhiteSpace(value)

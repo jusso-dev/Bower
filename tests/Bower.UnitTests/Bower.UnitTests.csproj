@@ -55,6 +55,11 @@
       <Link>s3-output/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Collector settings vectors shared with rust/crates/bower-collector. -->
+    <Content Include="../fixtures/collector-settings/*.json">
+      <Link>collector-settings/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <!-- C# outcomes pinned for the Rust port (rust/crates/bower-policy). -->
     <Content Include="../../rust/crates/bower-policy/tests/fixtures/**/*">
       <Link>policy-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
