@@ -52,7 +52,7 @@ a JSON object with a `bundle` object.
 
 Every Log Analytics query sends `Cache-Control: no-cache`, so polling sees current
 destination state rather than a cached empty result. A query answered with HTTP 200
-and an `error` object (partial results) is a failed query with code
+and any non-null `error` (partial results) is a failed query with code
 `query-incomplete`: its rows are never used as evidence and the error details are not
 recorded. The C# and Rust clients behave the same.
 
@@ -125,11 +125,11 @@ fixture was not sent.
 | `collector-output-not-sentinel` | `/v1/status` reports an `output` outside the Sentinel allowlist (`azure-logs-ingestion`, `ama-spool`, `relay`), for example `s3`, `http` or any future output. No probe is sent and a `NOT SENTINEL` limitation is added. The generic canary does the same, with this code in `arrival.queryError`. A missing `output` field, an allowlisted value or unreadable status proceeds, and only the Sentinel query can verify. See [S3 output](../deployment/s3-output.md#evidence) and [HTTP output](../deployment/http-splunk-hec-output.md#status-health-and-evidence). |
 | `collector-rejected` | Any other refusal (capacity, rate limit, identity conflict). |
 | `destination-permission-denied` | The verifier identity may not query the workspace (stops at once). |
-| `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed). |
+| `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed, but the last one was not a partial `query-incomplete` result). |
 | `destination-wrong-event` | A row came back but it is not the exact probe event. |
 | `configuration-mismatch` | The exact probe row arrived, but its policy hash differs from the one the collector reported for the probe. |
 | `destination-timeout` | No query was ever answered: they timed out (including gateway 408/504 with any body). |
-| `destination-query-failed` | No query was ever answered: they failed with another error. |
+| `destination-query-failed` | No query was ever answered: they failed with another error. Also reported, with `query-incomplete`, when the last query returned partial results, because the dropped rows may have held the probe row. |
 
 Every parser bundle lists what it did not test: generic intake, other packs and parsers,
 other event types and privacy rules of the pack, upstream agents and readers, and any

@@ -428,9 +428,10 @@ public sealed partial class EvidenceRunner(
             if (clock.GetUtcNow() + options.PollInterval > deadline)
             {
                 // Any answered query means the destination was reachable and the row absent;
-                // timeout or failure only when no query was ever answered.
-                string outcome = answered || error is null
-                    ? ProbeOutcomes.DestinationRowMissing
+                // timeout or failure only when no query was ever answered. A partial last
+                // answer may have dropped the probe row, so it never reports the row missing.
+                string outcome = error == ProbeOutcomes.QueryIncompleteCode ? ProbeOutcomes.DestinationQueryFailed
+                    : answered || error is null ? ProbeOutcomes.DestinationRowMissing
                     : ProbeOutcomes.IsTimeoutError(error) ? ProbeOutcomes.DestinationTimeout : ProbeOutcomes.DestinationQueryFailed;
                 return (missing with { Attempts = attempts, QueryError = outcome == ProbeOutcomes.DestinationRowMissing ? outcome : error },
                     outcome, queriedAt);

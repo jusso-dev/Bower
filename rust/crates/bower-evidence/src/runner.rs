@@ -638,8 +638,10 @@ impl EvidenceRunner {
             answered |= result.error.is_none();
             if self.clock.utc_now() + chrono_duration(options.poll_interval) > deadline {
                 // Any answered query means the destination was reachable and the row absent;
-                // timeout or failure only when no query was ever answered.
+                // timeout or failure only when no query was ever answered. A partial last
+                // answer may have dropped the probe row, so it never reports the row missing.
                 let outcome = match result.error.as_deref() {
+                    Some(outcomes::QUERY_INCOMPLETE_CODE) => outcomes::DESTINATION_QUERY_FAILED,
                     _ if answered => outcomes::DESTINATION_ROW_MISSING,
                     None => outcomes::DESTINATION_ROW_MISSING,
                     Some(error) if probe::is_timeout_error(error) => outcomes::DESTINATION_TIMEOUT,

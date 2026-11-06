@@ -238,6 +238,10 @@ impl LogAnalyticsQuery for FailingDestination {
                         .to_owned(),
                 )),
                 "gateway" => error("GatewayTimeout"),
+                "answered-then-incomplete" => Ok(QueryRows {
+                    rows: vec![object(json!({"EventId": "candidate"}))],
+                    error: Some(outcomes::QUERY_INCOMPLETE_CODE.to_owned()),
+                }),
                 _ => error("BadArgumentError"),
             }
         };
@@ -361,18 +365,56 @@ async fn sentinel_allowlisted_or_unknown_output_proceeds_and_only_the_query_veri
 
 #[tokio::test]
 async fn destination_failures_stay_distinct() {
-    for (failure, outcome, attempts) in [
-        ("permission", outcomes::DESTINATION_PERMISSION_DENIED, 1),
-        ("missing", outcomes::DESTINATION_ROW_MISSING, 3),
-        ("timeout", outcomes::DESTINATION_TIMEOUT, 3),
-        ("gateway", outcomes::DESTINATION_TIMEOUT, 3),
-        ("other", outcomes::DESTINATION_QUERY_FAILED, 3),
+    for (failure, outcome, attempts, query_error) in [
+        (
+            "permission",
+            outcomes::DESTINATION_PERMISSION_DENIED,
+            1,
+            "InsufficientAccessError",
+        ),
+        (
+            "missing",
+            outcomes::DESTINATION_ROW_MISSING,
+            3,
+            outcomes::DESTINATION_ROW_MISSING,
+        ),
+        (
+            "timeout",
+            outcomes::DESTINATION_TIMEOUT,
+            3,
+            outcomes::QUERY_TIMEOUT_CODE,
+        ),
+        (
+            "gateway",
+            outcomes::DESTINATION_TIMEOUT,
+            3,
+            "GatewayTimeout",
+        ),
+        (
+            "other",
+            outcomes::DESTINATION_QUERY_FAILED,
+            3,
+            "BadArgumentError",
+        ),
         (
             "answered-then-timeout",
             outcomes::DESTINATION_ROW_MISSING,
             3,
+            outcomes::DESTINATION_ROW_MISSING,
         ),
-        ("answered-then-failed", outcomes::DESTINATION_ROW_MISSING, 3),
+        (
+            "answered-then-failed",
+            outcomes::DESTINATION_ROW_MISSING,
+            3,
+            outcomes::DESTINATION_ROW_MISSING,
+        ),
+        // A partial answer at the deadline may have dropped the probe row: never "row missing".
+        (
+            "answered-then-incomplete",
+            outcomes::DESTINATION_QUERY_FAILED,
+            3,
+            outcomes::QUERY_INCOMPLETE_CODE,
+        ),
     ] {
         let clock = SteppingClock::new();
         let destination = Arc::new(FailingDestination {
@@ -390,6 +432,11 @@ async fn destination_failures_stay_distinct() {
         assert_eq!(bundle.mode, modes::FAILED, "{failure}");
         assert_eq!(bundle.probe.unwrap().outcome, outcome, "{failure}");
         assert_eq!(bundle.arrival.attempts, attempts, "{failure}");
+        assert_eq!(
+            bundle.arrival.query_error.as_deref(),
+            Some(query_error),
+            "{failure}"
+        );
         assert!(!bundle.arrival.found);
     }
 }

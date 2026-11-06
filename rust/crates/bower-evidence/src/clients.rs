@@ -211,7 +211,7 @@ impl LogAnalyticsQueryClient {
         if root.get("error").is_some_and(|error| !error.is_null()) {
             return Ok(QueryRows {
                 rows: Vec::new(),
-                error: Some("query-incomplete".to_owned()),
+                error: Some(crate::probe::outcomes::QUERY_INCOMPLETE_CODE.to_owned()),
             });
         }
         let table = match root

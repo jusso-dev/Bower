@@ -176,6 +176,9 @@ public static class ProbeOutcomes
     /// <summary>Query error code when the query call failed in transport.</summary>
     public const string QueryTransportCode = "query-transport-failed";
 
+    /// <summary>Query error code when an HTTP 200 answer carries an error (partial results).</summary>
+    public const string QueryIncompleteCode = "query-incomplete";
+
     /// <summary>Paths a parser probe never exercises; every parser bundle lists them.</summary>
     public static IReadOnlyList<string> UntestedPaths { get; } =
     [

@@ -141,14 +141,16 @@ public sealed partial class ParserProbeEvidenceTests
     }
 
     [Theory]
-    [InlineData("permission", ProbeOutcomes.DestinationPermissionDenied, 1)]
-    [InlineData("missing", ProbeOutcomes.DestinationRowMissing, 3)]
-    [InlineData("timeout", ProbeOutcomes.DestinationTimeout, 3)]
-    [InlineData("gateway", ProbeOutcomes.DestinationTimeout, 3)]
-    [InlineData("other", ProbeOutcomes.DestinationQueryFailed, 3)]
-    [InlineData("answered-then-timeout", ProbeOutcomes.DestinationRowMissing, 3)]
-    [InlineData("answered-then-failed", ProbeOutcomes.DestinationRowMissing, 3)]
-    public async Task ParserProbe_DestinationFailuresStayDistinct(string failure, string outcome, int attempts)
+    [InlineData("permission", ProbeOutcomes.DestinationPermissionDenied, 1, "InsufficientAccessError")]
+    [InlineData("missing", ProbeOutcomes.DestinationRowMissing, 3, ProbeOutcomes.DestinationRowMissing)]
+    [InlineData("timeout", ProbeOutcomes.DestinationTimeout, 3, ProbeOutcomes.QueryTimeoutCode)]
+    [InlineData("gateway", ProbeOutcomes.DestinationTimeout, 3, "GatewayTimeout")]
+    [InlineData("other", ProbeOutcomes.DestinationQueryFailed, 3, "BadArgumentError")]
+    [InlineData("answered-then-timeout", ProbeOutcomes.DestinationRowMissing, 3, ProbeOutcomes.DestinationRowMissing)]
+    [InlineData("answered-then-failed", ProbeOutcomes.DestinationRowMissing, 3, ProbeOutcomes.DestinationRowMissing)]
+    // A partial answer at the deadline may have dropped the probe row: never "row missing".
+    [InlineData("answered-then-incomplete", ProbeOutcomes.DestinationQueryFailed, 3, ProbeOutcomes.QueryIncompleteCode)]
+    public async Task ParserProbe_DestinationFailuresStayDistinct(string failure, string outcome, int attempts, string queryError)
     {
         FakeClock clock = new(TestEvents.Now);
         EvidenceRunner runner = new(new FakeCollector(), new FailingDestination(failure, clock), null, clock);
@@ -167,6 +169,7 @@ public sealed partial class ParserProbeEvidenceTests
         Assert.Equal(EvidenceModes.Failed, bundle.Mode);
         Assert.Equal(outcome, bundle.Probe!.Outcome);
         Assert.Equal(attempts, bundle.Arrival.Attempts);
+        Assert.Equal(queryError, bundle.Arrival.QueryError);
         Assert.False(bundle.Arrival.Found);
     }
 
@@ -219,6 +222,10 @@ public sealed partial class ParserProbeEvidenceTests
     [InlineData("""{"error":{"code":"PartialError"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     [InlineData("""{"error":{},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     [InlineData("""{"error":{"code":"sensitive query marker"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
+    // Any non-null error, even a falsy scalar, is a partial result (same as the Rust client).
+    [InlineData("""{"error":false,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
+    [InlineData("""{"error":"","tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
+    [InlineData("""{"error":0,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     public async Task LogAnalyticsQuery_DoesNotUseRowsFromPartialSuccess(string body, string expectedError)
     {
         using HttpClient http = new(new StubHandler(System.Net.HttpStatusCode.OK, body));
@@ -672,6 +679,8 @@ public sealed partial class ParserProbeEvidenceTests
                 "missing" => Task.FromResult(new QueryRows([], null)),
                 "timeout" or "answered-then-timeout" => Task.FromException<QueryRows>(new TaskCanceledException("synthetic timeout")),
                 "gateway" => Task.FromResult(new QueryRows([], "GatewayTimeout")),
+                "answered-then-incomplete" => Task.FromResult(new QueryRows(
+                    [new Dictionary<string, JsonNode?> { ["EventId"] = "candidate" }], ProbeOutcomes.QueryIncompleteCode)),
                 _ => Task.FromResult(new QueryRows([], "BadArgumentError"))
             };
         }

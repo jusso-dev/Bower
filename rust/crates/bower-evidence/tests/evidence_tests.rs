@@ -417,6 +417,15 @@ fn query_parser_reads_log_analytics_response() {
     .unwrap();
     assert_eq!(unsafe_code.error.as_deref(), Some("query-incomplete"));
     assert!(unsafe_code.rows.is_empty());
+    // Any non-null error, even a falsy scalar, is a partial result (same as the C# client).
+    for error in ["false", r#""""#, "0"] {
+        let falsy = LogAnalyticsQueryClient::parse(&format!(
+            r#"{{"error":{error},"tables":[{{"columns":[{{"name":"EventId"}}],"rows":[["e1"]]}}]}}"#
+        ))
+        .unwrap();
+        assert_eq!(falsy.error.as_deref(), Some("query-incomplete"), "{error}");
+        assert!(falsy.rows.is_empty(), "{error}");
+    }
     // An explicit null error is not a partial result.
     let null_error = LogAnalyticsQueryClient::parse(
         r#"{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,

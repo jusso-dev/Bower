@@ -91,7 +91,7 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         {
             // A successful HTTP response can contain partial results and an error.
             // Do not use those rows as complete evidence.
-            return new QueryRows([], "query-incomplete");
+            return new QueryRows([], ProbeOutcomes.QueryIncompleteCode);
         }
 
         JsonObject? table = (root?["tables"] as JsonArray)?.FirstOrDefault() as JsonObject;
