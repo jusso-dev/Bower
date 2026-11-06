@@ -235,6 +235,7 @@ class ExpiryGuardTests(unittest.TestCase):
         workflow, grant = template['resources']
         self.assertEqual(workflow['identity'], {'type': 'SystemAssigned'})
         self.assertNotIn('scope', grant)   # assigned at the deployment's resource group only
+        self.assertEqual(template['variables']['contributor'], 'b24988ac-6180-42a0-ab88-20f7382dd24c')   # built-in Contributor
         self.assertIn('resourceGroup().name', template['variables']['group'])
         self.assertNotIn('/subscriptions/', text.replace("'https://management.azure.com/subscriptions/'", ''))
         actions = workflow['properties']['definition']['actions']

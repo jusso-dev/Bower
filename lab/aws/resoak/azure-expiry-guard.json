@@ -11,7 +11,7 @@
   },
   "variables": {
     "name": "[concat(resourceGroup().name, '-expiry')]",
-    "contributor": "b24988ac-6181-42a0-ab88-20f7382dd24c",
+    "contributor": "b24988ac-6180-42a0-ab88-20f7382dd24c",
     "group": "[concat('https://management.azure.com/subscriptions/', subscription().subscriptionId, '/resourceGroups/', resourceGroup().name)]",
     "msi": { "type": "ManagedServiceIdentity", "audience": "https://management.azure.com/" }
   },

@@ -168,9 +168,10 @@ def candidate(ci_run):
     if subprocess.run(['git', '-C', str(REPO), 'merge-base', '--is-ancestor', info['headSha'], 'HEAD']).returncode:
         raise SystemExit('The harness checkout does not contain the candidate commit; rebase it on origin/main')
     jobs = {j['name']: j['conclusion'] for j in info['jobs']}
-    needed = ('build-test', 'windows-event-log', 'package-linux', 'package-windows', 'install-linux', 'install-windows')
-    if info['conclusion'] != 'success' or any(jobs.get(name) != 'success' for name in needed) \
-            or jobs.get('publish (osx-arm64, macos-latest)') != 'success':
+    # The soak needs the packages built, tested and installed. Other failed jobs are recorded in
+    # jobsNotSucceeded (release check 0, CI green, is separate from the soak).
+    needed = ('build-test', 'package-linux', 'package-windows', 'install-linux', 'install-windows', 'publish (osx-arm64, macos-latest)')
+    if any(jobs.get(name) != 'success' for name in needed):
         raise SystemExit('The CI run did not build and install the packages (a push run skips them; dispatch CI on main)')
     root = private(LAB / 'candidate')
     for name in ('bower-packages-linux', 'bower-packages-windows', 'bower-osx-arm64'):
