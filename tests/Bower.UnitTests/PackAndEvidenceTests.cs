@@ -203,6 +203,25 @@ public sealed class PackAndEvidenceTests
 
         IReadOnlyDictionary<string, JsonNode?> row = Assert.Single(rows.Rows);
         Assert.Equal("e1", row["EventId"]!.GetValue<string>());
+
+        // An explicit null error is not a partial result.
+        QueryRows nullError = LogAnalyticsQueryClient.Parse(
+            """{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""");
+        Assert.Null(nullError.Error);
+        Assert.Equal("e1", Assert.Single(nullError.Rows)["EventId"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Evidence_DoesNotVerifyRowsAccompaniedByQueryError()
+    {
+        EvidenceRunner runner = new(new FakeSender(202), new PartialQuery(), null, new FakeClock(TestEvents.Now));
+        EvidenceOptions options = Options("workspace-1") with { Timeout = TimeSpan.Zero, PollInterval = TimeSpan.FromSeconds(1) };
+
+        EvidenceBundle bundle = await runner.RunAsync(options, TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.False(bundle.Arrival.Found);
+        Assert.Equal("query-incomplete", bundle.Arrival.QueryError);
     }
 
     private static EvidenceOptions Options(string? workspace) =>
@@ -258,6 +277,12 @@ public sealed class PackAndEvidenceTests
                     }],
                     null));
         }
+    }
+
+    private sealed class PartialQuery : ILogAnalyticsQuery
+    {
+        public Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken) =>
+            Task.FromResult(new QueryRows([new Dictionary<string, JsonNode?> { ["EventId"] = "candidate" }], "query-incomplete"));
     }
 
     private sealed class FakeArm(int totalDays, string region) : IArmReader

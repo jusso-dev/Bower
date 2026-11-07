@@ -119,6 +119,8 @@ pub mod outcomes {
     pub const QUERY_TIMEOUT_CODE: &str = "query-timeout";
     /// Query error code when the query call failed in transport.
     pub const QUERY_TRANSPORT_CODE: &str = "query-transport-failed";
+    /// Query error code when an HTTP 200 answer carries an error (partial results).
+    pub const QUERY_INCOMPLETE_CODE: &str = "query-incomplete";
 }
 
 /// Paths a parser probe never exercises; every parser bundle lists them.

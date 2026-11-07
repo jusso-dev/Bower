@@ -27,7 +27,10 @@ def az_rest(method, url, body=None, resource=None):
     if resource:
         command += ["--resource", resource]
     if body is not None:
-        command += ["--body", json.dumps(body), "--headers", "Content-Type=application/json"]
+        headers = ["Content-Type=application/json"]
+        if resource and resource.rstrip("/") == API:
+            headers.append("Cache-Control=no-cache")
+        command += ["--body", json.dumps(body), "--headers", *headers]
     result = subprocess.run(command, check=True, capture_output=True, text=True)
     return json.loads(result.stdout) if result.stdout.strip() else {}
 
@@ -35,7 +38,7 @@ def az_rest(method, url, body=None, resource=None):
 def query(workspace, kql, timespan="P3D"):
     data = az_rest("post", f"{API}/v1/workspaces/{workspace}/query", {"query": kql, "timespan": timespan}, API)
     if "error" in data:
-        raise SystemExit(json.dumps(data["error"]))
+        raise SystemExit("Log Analytics query failed or returned partial results.")
     table = data["tables"][0]
     names = [column["name"] for column in table["columns"]]
     return [dict(zip(names, row)) for row in table["rows"]]

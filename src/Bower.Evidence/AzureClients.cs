@@ -57,6 +57,9 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
                 "application/json")
         };
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.Token);
+        // Log Analytics caches query responses by default. Polling must see fresh
+        // destination state rather than repeatedly receiving a cached empty result.
+        request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true };
         using HttpResponseMessage response = await http.SendAsync(request, cancellationToken);
         string body = await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -83,7 +86,15 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
 
     internal static QueryRows Parse(string body)
     {
-        JsonObject? table = (JsonNode.Parse(body)?["tables"] as JsonArray)?.FirstOrDefault() as JsonObject;
+        JsonNode? root = JsonNode.Parse(body);
+        if (root is JsonObject envelope && envelope.TryGetPropertyValue("error", out JsonNode? error) && error is not null)
+        {
+            // A successful HTTP response can contain partial results and an error.
+            // Do not use those rows as complete evidence.
+            return new QueryRows([], ProbeOutcomes.QueryIncompleteCode);
+        }
+
+        JsonObject? table = (root?["tables"] as JsonArray)?.FirstOrDefault() as JsonObject;
         if (table is null)
         {
             return new QueryRows([], null);

@@ -243,6 +243,7 @@ class FirewallReconciliationTests(unittest.TestCase):
             self.assertEqual({'tables': []}, data)
             request = opener.return_value.open.call_args.args[0]
             self.assertEqual({'query': 'scoped query', 'timespan': 'PT900S'}, json.loads(request.data))
+            self.assertEqual('no-cache', request.get_header('Cache-control'))
             for call in cli.call_args_list:
                 self.assertEqual(str(directory / 'azure-cli-verifier'), call.kwargs['env']['AZURE_CONFIG_DIR'])
                 self.assertNotIn('synthetic-token', str(call.args))

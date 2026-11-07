@@ -47,7 +47,7 @@ def summarize(rows):
 
 
 def report_for(data, windows_since, linux_since=None):
-    if data.get('error'):
+    if data.get('error') is not None:
         raise ValueError('Partial or failed query results cannot establish delivery')
     tables = data.get('tables', [])
     if len(tables) != 1:
@@ -123,7 +123,7 @@ def main():
     token = az('account', 'get-access-token', '--resource', 'https://api.loganalytics.io/')['accessToken']
     request = urllib.request.Request('https://api.loganalytics.io/v1/workspaces/' + args.workspace_id + '/query',
         data=json.dumps({'query': QUERY}).encode(), method='POST',
-        headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+        headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json', 'Cache-Control': 'no-cache'})
     del token
     try:
         with urllib.request.build_opener(NoRedirect).open(request, timeout=60) as response:

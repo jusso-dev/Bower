@@ -388,6 +388,23 @@ public sealed partial class SetupApiTests
         Assert.NotEqual(SetupStepStates.Complete, Step(result, SetupStepIds.Proof).State);
     }
 
+    [Theory]
+    [InlineData(null, ProbeOutcomes.DestinationRowMissing)]
+    [InlineData("not-found-before-timeout", ProbeOutcomes.DestinationRowMissing)]
+    [InlineData(ProbeOutcomes.QueryIncompleteCode, ProbeOutcomes.DestinationQueryFailed)]
+    [InlineData(ProbeOutcomes.QueryTimeoutCode, ProbeOutcomes.DestinationTimeout)]
+    [InlineData("http-403", ProbeOutcomes.DestinationPermissionDenied)]
+    public void Classify_GenericCanaryQueryErrorMapsToProbeOutcome(string? queryError, string outcome)
+    {
+        EvidenceBundle bundle = new(
+            EvidenceBundle.CurrentSchema, EvidenceModes.Failed, TestEvents.Now, "test",
+            new CanaryRecord("bower-canary-1", TestEvents.Now, "collector.test", 202, null, null),
+            new ArrivalRecord(false, WorkspaceId, "BowerSecurityEvents_CL", null, 3, null, null, null, null, queryError),
+            null, null, [], []);
+
+        Assert.Equal(outcome, SetupOutcomes.Classify(bundle));
+    }
+
     [Fact]
     public async Task Canary_UnreachableCollectorKeepsRawDetailServerSide()
     {
