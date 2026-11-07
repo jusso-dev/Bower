@@ -242,6 +242,27 @@ accidental disclosure; a producer that wants to leak data can encode it in many 
 and no person writes a TFN, card number or IBAN as a UUID. If you need to treat
 UUID-shaped values as sensitive, add a custom detector; custom detectors still see them.
 
+The exemption follows the token, not the words around it. A labelled value whose
+digits form a canonical token, such as `TFN: 10040680-0000-0000-0000-000000000000` or
+`passport A1234567-0000-0000-0000-000000000000`, is exempt too, within the same
+accepted limit: the label does not turn the UUID back into a TFN or passport number.
+Add a custom detector if your data writes identifiers that way.
+
+Only a bare token is exempt. An id with a prefix or suffix joined by a hyphen,
+underscore, letter or digit is one longer token and is scanned as before:
+`evt-<uuid>`, `order-<uuid>`, `<uuid>-1` and AWS X-Ray-style trace ids
+(`1-67123456-<24 hex digits>`) can still pass a checksum by chance and be quarantined
+as `event-id-redacted`, about 1 time in 450 for a random UUIDv4 inside them.
+Producers should send a bare UUID (or a UUIDv7) as `eventId` and carry any prefix in
+another field.
+
+The custom-log parser preview (`CustomLogParser`) does not apply this exemption: its
+privacy floor masks any sample value a built-in detector matches, so a UUID that passes
+a checksum stays masked in the preview. That is deliberate. The preview only hides
+sample values from the console and never quarantines an event, so masking more is the
+safe side, and the floor stays a plain "any detector match" rule that a configuration
+cannot argue its way around.
+
 The rule is engine behaviour, not profile content, so privacy profile versions and
 hashes do not change. The C# and Rust engines apply the same rule
 (`CanonicalIdentifierTokens`, `identifier_tokens.rs`) and are pinned by the shared parity

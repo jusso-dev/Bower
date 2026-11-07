@@ -226,9 +226,9 @@ internal static class TestEvents
         new(2026, 7, 26, 2, 14, 19, TimeSpan.Zero);
 
     /// <summary>
-    /// A process-unique event id no privacy detector matches. Not a random GUID: about 1 in 450
-    /// has an all-digit first group that passes the TFN checksum, so the redactor masks it and
-    /// the collector quarantines the event as event-id-redacted (503).
+    /// A process-unique event id no privacy detector matches. Not a random GUID: those are
+    /// exempt from the structured number detectors now (canonical identifier tokens), but a
+    /// fixed sequence keeps these tests independent of that rule and reproducible.
     /// </summary>
     public static string UniqueEventId() =>
         "test-event-" + Interlocked.Increment(ref lastEventId).ToString(System.Globalization.CultureInfo.InvariantCulture);
