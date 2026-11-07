@@ -268,7 +268,10 @@ Roll out in this order:
 7. Switch producers to `https://bower-collector.<namespace>.svc:4319`, send a
    controlled event, and query `BowerSecurity_CL` for its ID.
 
-To roll back, re-apply the previous manifest; the queue on `bower-data` is kept. If the
+To roll back, re-apply the previous manifest; the queue on `bower-data` is kept. The
+previous manifest listens on plain HTTP only, so producers already switched in step 7
+cannot reach it: switch them back to the previous `http://` endpoint in the same change
+window, and expect them to buffer and retry until both sides match. If the
 upgrade also moved to a newer collector image, check the downgrade rules in
 [upgrade, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md)
 first: an older image may refuse a queue a newer one has migrated. `kubectl apply` does
