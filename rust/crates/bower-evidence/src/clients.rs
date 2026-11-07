@@ -244,10 +244,19 @@ impl LogAnalyticsQueryClient {
             .iter()
             .map(|column| column.as_object()?.get("name")?.as_str().map(str::to_owned))
             .collect::<Option<Vec<String>>>()?;
+        // A repeated column name would make the cell kept for it ambiguous.
+        let mut seen = std::collections::HashSet::new();
+        if !columns.iter().all(|column| seen.insert(column.as_str())) {
+            return None;
+        }
         let mut rows = Vec::new();
         for row in table.get("rows")?.as_array()? {
+            // A row must have one cell per column: a short row is not a record of anything.
+            let cells = row
+                .as_array()
+                .filter(|cells| cells.len() == columns.len())?;
             let mut record = Map::new();
-            for (column, value) in columns.iter().zip(row.as_array()?) {
+            for (column, value) in columns.iter().zip(cells) {
                 record.insert(column.clone(), value.clone());
             }
             rows.push(record);

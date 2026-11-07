@@ -256,6 +256,10 @@ public sealed class PackAndEvidenceTests
     [InlineData("""{"\ud800":1,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""")]
     [InlineData("""{"tables":[{"columns":[{"name":"\ud800"}],"rows":[["e1"]]}]}""")]
     [InlineData("""{"tables":[{"columns":[{"name":"EventId"}],"rows":[["\ud800"]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"},{"name":"EventId"}],"rows":[["e1","e2"]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"},{"name":"PolicyHash"}],"rows":[["e1"]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"}],"rows":[[]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1","sensitive body marker"]]}]}""")]
     public void QueryParser_RejectsUnusableBodies(string body)
     {
         QueryRows rows = LogAnalyticsQueryClient.Parse(body);

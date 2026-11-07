@@ -348,6 +348,7 @@ public sealed partial class SetupApiTests
     [InlineData(HttpStatusCode.NoContent, "")]
     [InlineData(HttpStatusCode.OK, "<html><body>sensitive body marker</body></html>")]
     [InlineData(HttpStatusCode.OK, """["sensitive body marker"]""")]
+    [InlineData(HttpStatusCode.OK, """{"tables":[{"columns":[{"name":"EventId"}],"rows":[[]]}]}""")]
     public async Task Canary_InvalidQueryResponseBodyIsAFailedQuery(HttpStatusCode code, string body)
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

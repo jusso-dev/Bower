@@ -116,7 +116,8 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         List<string> columns = [];
         foreach (JsonNode? column in columnNodes)
         {
-            if (column is not JsonObject named || ProbeOutcomes.Text(named["name"]) is not { } name)
+            // A repeated column name would make the cell kept for it ambiguous.
+            if (column is not JsonObject named || ProbeOutcomes.Text(named["name"]) is not { } name || columns.Contains(name))
             {
                 return Invalid;
             }
@@ -127,13 +128,14 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         List<IReadOnlyDictionary<string, JsonNode?>> rows = [];
         foreach (JsonNode? rowNode in rowNodes)
         {
-            if (rowNode is not JsonArray row)
+            // A row must have one cell per column: a short row is not a record of anything.
+            if (rowNode is not JsonArray row || row.Count != columns.Count)
             {
                 return Invalid;
             }
 
             Dictionary<string, JsonNode?> values = new(StringComparer.Ordinal);
-            for (int index = 0; index < columns.Count && index < row.Count; index++)
+            for (int index = 0; index < columns.Count; index++)
             {
                 values[columns[index]] = row[index]?.DeepClone();
             }

@@ -59,13 +59,17 @@ empty result, when its body is empty (including `204 No Content`), not JSON, not
 object, nested more than 64 levels deep or has a duplicate key anywhere, or when it has
 no usable first table: `tables` missing, not an array or empty, a first table that is not
 an object, `columns` or `rows` that are not arrays, a column that is not an object with
-a string `name`, or a row that is not an array. Log Analytics always returns at least
-the `PrimaryResult` table, so a real zero-row answer (one table with columns and an
-empty `rows` array) is still a clean empty result. The body, its keys and any parser
+a string `name`, a repeated column name, a row that is not an array, or a row whose cell
+count differs from the column count, or when a string cannot be decoded. Log Analytics
+always returns at least the `PrimaryResult` table, so a real zero-row answer (one table
+with columns and an empty `rows` array) is still a clean empty result. The body, its keys and any parser
 message are not recorded. The C# and Rust clients behave the same.
 
-A failed query does not end polling by itself. A later valid answer can still verify
-delivery; if the last query is invalid or incomplete the run is `failed` and the parser
+An invalid or incomplete answer (and, for parser probes, a timeout or transport
+failure) does not end polling: a later valid answer can still verify delivery. Two
+failures do end it: a parser probe stops at once on a permission error
+(`destination-permission-denied`), and a transport failure ends a generic canary run.
+If the last query is invalid or incomplete the run is `failed` and the parser
 probe reports `destination-query-failed` with that query error, even if an earlier
 query answered cleanly, because the bad answer may have hidden the probe row. The
 generic canary always reports the last query's error (or `not-found-before-timeout`),
