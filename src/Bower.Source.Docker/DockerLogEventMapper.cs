@@ -219,7 +219,8 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
     // DockerLogReaderOptions.MaximumLineBytes characters, so no match timeout is used. A
     // wall-clock timeout made the mapping depend on machine load: a cold or descheduled
     // match timed out and a real authentication failure was dropped as unrecognised. The
-    // timeout is explicit so a host-wide default cannot reintroduce one.
+    // timeout is explicit so a host-wide default cannot reintroduce one. The source generator
+    // does not support NonBacktracking, so it emits a cached runtime-constructed Regex.
 
     [GeneratedRegex(
         @"maximum authentication attempts exceeded for (?:invalid user )?(?<user>\S+) from (?<ip>[0-9a-fA-F:.]+)",

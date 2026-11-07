@@ -546,7 +546,9 @@ public sealed class DockerSourceTests
     [Fact]
     public void Mapper_MapsAMaximumLengthAdversarialLine()
     {
-        // Quadratic for a backtracking engine (each lazy step rescans the whitespace run).
+        // A line at the reader's maximum length still maps. The engine and timeout themselves are
+        // pinned by the regex-options test above: a timeout and a non-match both give Unrecognised,
+        // so no outcome-only test can tell the two engines apart.
         string head = "pam_unix(sshd:auth): authentication failure;" + string.Concat(Enumerable.Repeat(" rhost=1", 100));
         const string Tail = " user=deploy";
         string line = head + new string(' ', 65_536 - head.Length - Tail.Length) + Tail;
