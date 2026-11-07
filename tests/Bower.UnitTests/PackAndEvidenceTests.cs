@@ -204,6 +204,15 @@ public sealed class PackAndEvidenceTests
         IReadOnlyDictionary<string, JsonNode?> row = Assert.Single(rows.Rows);
         Assert.Equal("e1", row["EventId"]!.GetValue<string>());
 
+        // An empty, non-JSON or non-object body is a failed query, never an empty result,
+        // and the body is not echoed (same as the Rust client).
+        foreach (string body in new[] { "", "<html>sensitive body marker</html>", """["sensitive body marker"]""", "42" })
+        {
+            QueryRows invalid = LogAnalyticsQueryClient.Parse(body);
+            Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, invalid.Error);
+            Assert.Empty(invalid.Rows);
+        }
+
         // An explicit null error is not a partial result.
         QueryRows nullError = LogAnalyticsQueryClient.Parse(
             """{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""");

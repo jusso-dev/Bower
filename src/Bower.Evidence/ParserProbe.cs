@@ -179,6 +179,9 @@ public static class ProbeOutcomes
     /// <summary>Query error code when an HTTP 200 answer carries an error (partial results).</summary>
     public const string QueryIncompleteCode = "query-incomplete";
 
+    /// <summary>Query error code when a 2xx answer is empty, not JSON or not a JSON object.</summary>
+    public const string QueryInvalidResponseCode = "query-invalid-response";
+
     /// <summary>Paths a parser probe never exercises; every parser bundle lists them.</summary>
     public static IReadOnlyList<string> UntestedPaths { get; } =
     [

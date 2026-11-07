@@ -86,15 +86,21 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
 
     internal static QueryRows Parse(string body)
     {
-        JsonNode? root = JsonNode.Parse(body);
-        if (root is JsonObject envelope && envelope.TryGetPropertyValue("error", out JsonNode? error) && error is not null)
+        // A 2xx answer must be a JSON object. An empty body (204 No Content) or a gateway's
+        // non-JSON page is a failed query, never an empty result; the body is not kept.
+        if (ParseObject(body) is not JsonObject root)
+        {
+            return new QueryRows([], ProbeOutcomes.QueryInvalidResponseCode);
+        }
+
+        if (root.TryGetPropertyValue("error", out JsonNode? error) && error is not null)
         {
             // A successful HTTP response can contain partial results and an error.
             // Do not use those rows as complete evidence.
             return new QueryRows([], ProbeOutcomes.QueryIncompleteCode);
         }
 
-        JsonObject? table = (root?["tables"] as JsonArray)?.FirstOrDefault() as JsonObject;
+        JsonObject? table = (root["tables"] as JsonArray)?.FirstOrDefault() as JsonObject;
         if (table is null)
         {
             return new QueryRows([], null);
@@ -116,6 +122,18 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         }
 
         return new QueryRows(rows, null);
+    }
+
+    private static JsonObject? ParseObject(string body)
+    {
+        try
+        {
+            return JsonNode.Parse(body) as JsonObject;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }
 

@@ -427,6 +427,23 @@ fn query_parser_reads_log_analytics_response() {
         assert!(falsy.rows.is_empty(), "{error}");
     }
     // An explicit null error is not a partial result.
+    // An empty, non-JSON or non-object body is a failed query, never an empty result,
+    // and the body is not echoed (same as the C# client).
+    for body in [
+        "",
+        "<html>sensitive body marker</html>",
+        r#"["sensitive body marker"]"#,
+        "42",
+    ] {
+        assert_eq!(
+            LogAnalyticsQueryClient::parse(body).unwrap(),
+            QueryRows {
+                rows: Vec::new(),
+                error: Some("query-invalid-response".to_owned()),
+            },
+            "{body}"
+        );
+    }
     let null_error = LogAnalyticsQueryClient::parse(
         r#"{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
     )

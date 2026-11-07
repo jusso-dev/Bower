@@ -54,7 +54,10 @@ Every Log Analytics query sends `Cache-Control: no-cache`, so polling sees curre
 destination state rather than a cached empty result. A query answered with HTTP 200
 and any non-null `error` (partial results) is a failed query with code
 `query-incomplete`: its rows are never used as evidence and the error details are not
-recorded. The C# and Rust clients behave the same.
+recorded. A 2xx answer whose body is empty (including `204 No Content`), not JSON or
+not a JSON object is a failed query with code `query-invalid-response`, never an empty
+result: the run completes as `failed` (parser probes report `destination-query-failed`)
+and the body is not recorded. The C# and Rust clients behave the same.
 
 ## Parser probes (opt-in)
 
@@ -129,7 +132,7 @@ fixture was not sent.
 | `destination-wrong-event` | A row came back but it is not the exact probe event. |
 | `configuration-mismatch` | The exact probe row arrived, but its policy hash differs from the one the collector reported for the probe. |
 | `destination-timeout` | No query was ever answered: they timed out (including gateway 408/504 with any body). |
-| `destination-query-failed` | No query was ever answered: they failed with another error. Also reported, with `query-incomplete`, when the last query returned partial results, because the dropped rows may have held the probe row. |
+| `destination-query-failed` | No query was ever answered: they failed with another error (for example `query-invalid-response`). Also reported, with `query-incomplete`, when the last query returned partial results, because the dropped rows may have held the probe row. |
 
 Every parser bundle lists what it did not test: generic intake, other packs and parsers,
 other event types and privacy rules of the pack, upstream agents and readers, and any

@@ -781,6 +781,95 @@ async fn non_json_query_error_body_is_a_timeout_not_a_crash() {
     }
 }
 
+/// C# `InvalidQueryResponseBody_IsAFailedQueryNotACrash`: a 2xx answer that is empty
+/// (200 or 204), not JSON or not a JSON object is a failed query, never an empty result,
+/// and its body is never echoed.
+#[tokio::test]
+async fn invalid_query_response_body_is_a_failed_query_not_a_crash() {
+    for (status, body) in [
+        (axum::http::StatusCode::OK, ""),
+        (axum::http::StatusCode::NO_CONTENT, ""),
+        (
+            axum::http::StatusCode::OK,
+            "<html><body>sensitive body marker</body></html>",
+        ),
+        (axum::http::StatusCode::OK, r#"["sensitive body marker"]"#),
+        (axum::http::StatusCode::OK, r#""sensitive body marker""#),
+    ] {
+        let app = Router::new().route(
+            "/v1/workspaces/{workspace}/query",
+            post(move || async move { (status, body) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = Arc::new(
+            bower_evidence::LogAnalyticsQueryClient::new(
+                bower_evidence::default_http_client(),
+                Arc::new(StaticToken),
+            )
+            .with_endpoint(base),
+        );
+
+        let rows = client
+            .query(
+                WORKSPACE,
+                "BowerSecurity_CL | take 1",
+                Duration::from_secs(3_600),
+            )
+            .await
+            .unwrap();
+        let mut probe_options = options(Some(WORKSPACE));
+        probe_options.timeout = Duration::from_millis(30);
+        probe_options.poll_interval = Duration::from_millis(10);
+        let parser = runner(FakeCollector::new(200), Some(client.clone()))
+            .run(&probe_options)
+            .await
+            .unwrap();
+        let mut generic_options = probe_options.clone();
+        generic_options.probe_profile = probe::GENERIC.to_owned();
+        let generic = runner(FakeCollector::new(200), Some(client))
+            .run(&generic_options)
+            .await
+            .unwrap();
+
+        let label = format!("{status} {body:?}");
+        assert_eq!(
+            rows,
+            QueryRows {
+                rows: Vec::new(),
+                error: Some(outcomes::QUERY_INVALID_RESPONSE_CODE.to_owned()),
+            },
+            "{label}"
+        );
+        assert_eq!(parser.mode, modes::FAILED, "{label}");
+        assert!(!parser.arrival.found, "{label}");
+        assert_eq!(
+            parser.probe.as_ref().unwrap().outcome,
+            outcomes::DESTINATION_QUERY_FAILED,
+            "{label}"
+        );
+        assert_eq!(
+            parser.arrival.query_error.as_deref(),
+            Some(outcomes::QUERY_INVALID_RESPONSE_CODE),
+            "{label}"
+        );
+        assert_eq!(generic.mode, modes::FAILED, "{label}");
+        assert!(!generic.arrival.found, "{label}");
+        assert_eq!(
+            generic.arrival.query_error.as_deref(),
+            Some(outcomes::QUERY_INVALID_RESPONSE_CODE),
+            "{label}"
+        );
+        for bundle in [&parser, &generic] {
+            let text = EvidenceRunner::sign(bundle, None)
+                .unwrap()
+                .to_json_indented();
+            assert!(!text.contains("sensitive body marker"), "{label}");
+        }
+    }
+}
+
 /// C# `StalledStatus_TimesOutAsUnreadable_AndTheCanaryProceeds`: a `/v1/status` that never
 /// answers hits the client timeout (`EvidenceError::Http`), reads as unreadable status, and
 /// the canary is still sent. The Rust runner has no caller token; dropping the run future

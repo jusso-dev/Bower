@@ -206,6 +206,46 @@ public sealed partial class ParserProbeEvidenceTests
         Assert.Null(generic.Probe);
     }
 
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.OK, "")]
+    [InlineData(System.Net.HttpStatusCode.NoContent, "")]
+    [InlineData(System.Net.HttpStatusCode.OK, "<html><body>sensitive body marker</body></html>")]
+    [InlineData(System.Net.HttpStatusCode.OK, """["sensitive body marker"]""")]
+    [InlineData(System.Net.HttpStatusCode.OK, "\"sensitive body marker\"")]
+    public async Task InvalidQueryResponseBody_IsAFailedQueryNotACrash(System.Net.HttpStatusCode status, string body)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        LogAnalyticsQueryClient client = new(new HttpClient(new StubHandler(status, body)), new StaticCredential());
+
+        QueryRows rows = await client.QueryAsync(Workspace, "BowerSecurity_CL | take 1", TimeSpan.FromHours(1), cancellation);
+        EvidenceOptions options = new()
+        {
+            CollectorUrl = new Uri("http://collector.test:4319/"),
+            WorkspaceId = Workspace,
+            Timeout = TimeSpan.FromMilliseconds(30),
+            PollInterval = TimeSpan.FromMilliseconds(10)
+        };
+        EvidenceBundle parser = await new EvidenceRunner(new FakeCollector(), client, null, TimeProvider.System)
+            .RunAsync(options with { ProbeProfile = Profile }, cancellation);
+        EvidenceBundle generic = await new EvidenceRunner(new FakeCollector(), client, null, TimeProvider.System)
+            .RunAsync(options, cancellation);
+
+        Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, rows.Error);
+        Assert.Empty(rows.Rows);
+        Assert.Equal(EvidenceModes.Failed, parser.Mode);
+        Assert.False(parser.Arrival.Found);
+        Assert.Equal(ProbeOutcomes.DestinationQueryFailed, parser.Probe!.Outcome);
+        Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, parser.Arrival.QueryError);
+        Assert.Equal(EvidenceModes.Failed, generic.Mode);
+        Assert.False(generic.Arrival.Found);
+        Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, generic.Arrival.QueryError);
+        foreach (EvidenceBundle bundle in new[] { parser, generic })
+        {
+            string json = EvidenceRunner.Sign(bundle, null).Bundle.ToJsonString();
+            Assert.DoesNotContain("sensitive body marker", json, StringComparison.Ordinal);
+        }
+    }
+
     [Fact]
     public async Task LogAnalyticsQuery_BypassesCachedEmptyResults()
     {

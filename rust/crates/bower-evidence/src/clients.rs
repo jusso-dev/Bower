@@ -203,11 +203,16 @@ impl LogAnalyticsQueryClient {
     }
 
     /// Parses a query response into column-name rows (first table only). A non-null
-    /// `error` (partial results) yields no rows and the `query-incomplete` code.
+    /// `error` (partial results) yields no rows and the `query-incomplete` code. A body
+    /// that is empty (204 No Content), not JSON or not a JSON object is a failed query
+    /// with the `query-invalid-response` code, never an empty result; the body is not kept.
     pub fn parse(body: &str) -> Result<QueryRows, EvidenceError> {
-        let root: Value = serde_json::from_str(body).map_err(|_| {
-            EvidenceError::InvalidData("Query response is not valid JSON.".to_owned())
-        })?;
+        let Ok(Value::Object(root)) = serde_json::from_str::<Value>(body) else {
+            return Ok(QueryRows {
+                rows: Vec::new(),
+                error: Some(crate::probe::outcomes::QUERY_INVALID_RESPONSE_CODE.to_owned()),
+            });
+        };
         if root.get("error").is_some_and(|error| !error.is_null()) {
             return Ok(QueryRows {
                 rows: Vec::new(),
