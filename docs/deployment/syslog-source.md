@@ -338,7 +338,8 @@ counters since start: `activeConnections`, `connectionsAccepted`,
 `submitFailures`, `receiveErrors` (UDP socket receive errors; the listener backs off
 100 ms to 1 s and keeps listening), `halfCloses` (connections Bower half-closed at an
 idle timeout or stop), `drainedFrames` (frames received after that half-close),
-`peerResets` (observed resets; best effort), `relpAcknowledged` (RELP transactions answered
+`peerResets` (observed resets, including a reset before connection setup, which still frees
+its connection slot; best effort), `relpAcknowledged` (RELP transactions answered
 `200 OK`), `relpServerCloses` (RELP sessions Bower ended with `serverclose`: stop, idle or
 busy), `relpBusyCloses` (RELP sessions ended because the queue kept refusing) and `lastFrameAt`. TLS and platform error reporting can prevent reset
 classification. Do not treat a zero count as proof of no resets.
