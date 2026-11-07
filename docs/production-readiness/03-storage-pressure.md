@@ -533,13 +533,18 @@ needed).
    exceeds it, and evicts pods under node `nodefs`/`imagefs` pressure (defaults
    `nodefs.available<10%`). The queue on the PVC is not ephemeral and survives eviction
    and rescheduling (`ReadWriteOnce`, `strategy: Recreate`).
-3. Apply and verify.
+3. Apply and verify. The manifest listens on HTTPS: create the `bower-intake-tls` secret
+   (and the `bower-ingest` secret and reviewed scopes) **before** applying, or the new pod
+   waits in `ContainerCreating` after `Recreate` has stopped the old one. See
+   [upgrading an existing Kubernetes installation](../deployment/hosted-collectors.md#upgrading-an-existing-kubernetes-installation).
 
    ```bash
+   kubectl --context YOUR-CONTEXT -n bower get secret bower-ingest bower-intake-tls
    kubectl --context YOUR-CONTEXT -n bower apply -f deploy/kubernetes/deployment.yaml
    kubectl --context YOUR-CONTEXT -n bower get pvc bower-data
    kubectl --context YOUR-CONTEXT -n bower port-forward deploy/bower-collector 4319:4319 &
-   curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:4319/v1/status | jq .storage
+   curl -s --cacert ca.pem --connect-to bower-collector.bower.svc:4319:127.0.0.1:4319 \
+     -H "Authorization: Bearer $TOKEN" https://bower-collector.bower.svc:4319/v1/status | jq .storage
    ```
 
 4. To grow the queue: patch the claim (`resources.requests.storage`), wait for

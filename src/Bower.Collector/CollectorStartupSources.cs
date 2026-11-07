@@ -85,7 +85,9 @@ public sealed record CollectorStartupSources(
             expectations,
             syslog,
             windowsEventLog,
-            new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain),
+            settings.ProducerScopesJson is null
+                ? new ProducerAuthorization(settings.ProducerScopesFile, settings.SingleTrustDomain)
+                : ProducerAuthorization.FromJson(settings.ProducerScopesJson),
             new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile),
             downstreams,
             fileTail);

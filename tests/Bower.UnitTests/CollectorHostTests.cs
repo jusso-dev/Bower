@@ -458,6 +458,109 @@ public sealed class CollectorHostTests
     }
 
     [Theory]
+    [InlineData("@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)")]
+    [InlineData("  @microsoft.keyvault(SecretUri=https://example.vault.azure.net/secrets/ingest/)")]
+    public void Settings_RejectUnresolvedKeyVaultReferenceWithoutEchoingIt(string reference)
+    {
+        CollectorSettings settings = BaseSettings("unused") with { IngestToken = reference };
+
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(settings.Validate);
+        Assert.Contains("unresolved Key Vault or App Configuration reference", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(reference, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InlineProducerScopes_AllowOnlyTheConfiguredIdentity()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const string scopes = """[{"producer":"default","application":{"name":"TestApplication","environment":"test"},"source":{"ipAddress":"192.0.2.10"}}]""";
+        await using WebApplication app = await StartAsync(directory, Token, cancellation,
+            settings => settings with { SingleTrustDomain = false, ProducerScopesJson = scopes });
+        using HttpClient client = app.GetTestClient();
+        SecurityEventEnvelope candidate = AuthenticationFailure();
+        using HttpRequestMessage permitted = Post(candidate, Token);
+        using HttpResponseMessage accepted = await client.SendAsync(permitted, cancellation);
+        Assert.Equal(HttpStatusCode.Accepted, accepted.StatusCode);
+
+        using HttpRequestMessage forged = Post(candidate with
+        {
+            EventId = "different-event",
+            Application = candidate.Application with { Name = "OtherApplication" }
+        }, Token);
+        using HttpResponseMessage denied = await client.SendAsync(forged, cancellation);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+    }
+
+    [Fact]
+    public async Task InlineProducerScopes_InvalidConfigurationFailsClosedWithoutEchoingIt()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        const string invalid = "sensitive-configuration-marker";
+        FormatException error = await Assert.ThrowsAsync<FormatException>(() => StartAsync(directory, Token, cancellation,
+            settings => settings with { SingleTrustDomain = false, ProducerScopesJson = invalid }));
+        Assert.DoesNotContain(invalid, error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InlineProducerScopes_EmptyArrayDeniesIngest()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, Token, cancellation,
+            settings => settings with { SingleTrustDomain = false, ProducerScopesJson = "[]" });
+        using HttpClient client = app.GetTestClient();
+        using HttpRequestMessage request = Post(AuthenticationFailure(), Token);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task InlineProducerScopes_RejectsOversizedDocuments()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string oversized = new('x', Bower.Core.ProducerAuthorization.MaximumScopesBytes + 1);
+        await Assert.ThrowsAsync<FormatException>(() => StartAsync(directory, Token, cancellation,
+            settings => settings with { SingleTrustDomain = false, ProducerScopesJson = oversized }));
+    }
+
+    [Theory]
+    [InlineData(true, null, "[]")]
+    [InlineData(false, "scopes.json", "[]")]
+    public void Settings_RejectConflictingProducerScopeSources(bool singleTrustDomain, string? file, string json)
+    {
+        CollectorSettings settings = BaseSettings("unused") with
+        {
+            SingleTrustDomain = singleTrustDomain,
+            ProducerScopesFile = file,
+            ProducerScopesJson = json
+        };
+        Assert.Throws<InvalidOperationException>(settings.Validate);
+    }
+
+    [Fact]
+    public void Settings_ReadInlineScopesAndIncludeThemInConfigurationHash()
+    {
+        CollectorSettings original = BaseSettings("unused") with { SingleTrustDomain = false };
+        CollectorSettings first = original with { ProducerScopesJson = "[]" };
+        CollectorSettings second = original with { ProducerScopesJson = "[{\"producer\":\"different\"}]" };
+        // Shared vector for the Rust collector's inline-scope configuration hash.
+        Assert.Equal("sha256:82030a56551266744926a51e40db705ffc5c45500d52ecb28af907582a23c6d5", first.ConfigurationHash());
+        Assert.NotEqual(original.ConfigurationHash(), first.ConfigurationHash());
+        Assert.NotEqual(first.ConfigurationHash(), second.ConfigurationHash());
+
+        CollectorSettings fromEnvironment = CollectorSettings.FromEnvironment(key => key switch
+        {
+            "BOWER_COLLECTOR_ID" => "test-collector",
+            "BOWER_PRODUCER_SCOPES_JSON" => "[]",
+            _ => null
+        });
+        Assert.Equal("[]", fromEnvironment.ProducerScopesJson);
+    }
+
+    [Theory]
     [InlineData("http://management.example.test", false)]
     [InlineData("https://management.example.test", true)]
     [InlineData("http://127.0.0.1:4320", true)]

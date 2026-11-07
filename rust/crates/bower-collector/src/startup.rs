@@ -91,10 +91,13 @@ pub fn load(
         expectations,
         syslog,
         file_tail,
-        authorization: ProducerAuthorization::new(
-            settings.producer_scopes_file.as_deref(),
-            settings.single_trust_domain,
-        )?,
+        authorization: match &settings.producer_scopes_json {
+            Some(json) => ProducerAuthorization::from_json(json)?,
+            None => ProducerAuthorization::new(
+                settings.producer_scopes_file.as_deref(),
+                settings.single_trust_domain,
+            )?,
+        },
         auth: IngestAuthentication::with_clock(
             settings.ingest_token.as_deref(),
             settings.ingest_tokens_file.as_deref(),

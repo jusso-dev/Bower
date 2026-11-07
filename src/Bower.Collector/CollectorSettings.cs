@@ -47,6 +47,9 @@ public sealed record CollectorSettings
 
     public string? ProducerScopesFile { get; init; }
 
+    /// <summary>Inline producer scopes for hosts without a mounted configuration file.</summary>
+    public string? ProducerScopesJson { get; init; }
+
     /// <summary>Explicit legacy mode: every producer belongs to one trusted domain.</summary>
     public bool SingleTrustDomain { get; init; }
 
@@ -321,6 +324,7 @@ public sealed record CollectorSettings
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
             IngestTokensFile = Blank(read("BOWER_INGEST_TOKENS_FILE")),
             ProducerScopesFile = Blank(read("BOWER_PRODUCER_SCOPES_FILE")),
+            ProducerScopesJson = Blank(read("BOWER_PRODUCER_SCOPES_JSON")),
             SingleTrustDomain = string.Equals(read("BOWER_SINGLE_TRUST_DOMAIN"), "true", StringComparison.OrdinalIgnoreCase),
             Packs = SplitList(read("BOWER_PACKS")),
             PackTrustedKeyFiles = SplitList(read("BOWER_PACK_TRUSTED_KEYS")),
@@ -417,6 +421,15 @@ public sealed record CollectorSettings
         }
 
         ArgumentException.ThrowIfNullOrWhiteSpace(CollectorId);
+        // App Service passes an unresolved Key Vault or App Configuration reference
+        // literally, including when it is quoted or wrapped. Never accept that
+        // predictable configuration string as a bearer credential.
+        if (IngestToken is not null && ContainsSettingReference(IngestToken))
+        {
+            throw new InvalidOperationException(
+                "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference.");
+        }
+
         if (IngestToken is not null && IngestToken.Length < MinimumIngestTokenLength)
         {
             throw new InvalidOperationException(
@@ -432,9 +445,10 @@ public sealed record CollectorSettings
                 "only on an isolated network you control.");
         }
 
-        if (SingleTrustDomain && ProducerScopesFile is not null)
+        if ((ProducerScopesFile is not null && ProducerScopesJson is not null)
+            || (SingleTrustDomain && (ProducerScopesFile is not null || ProducerScopesJson is not null)))
         {
-            throw new InvalidOperationException("Producer scopes and single trust domain mode are mutually exclusive.");
+            throw new InvalidOperationException("Producer scopes file, inline scopes and single trust domain mode are mutually exclusive.");
         }
 
         if (Packs.Count > 0 && PackTrustedKeyFiles.Count == 0)
@@ -756,7 +770,8 @@ public sealed record CollectorSettings
 
     /// <summary>
     /// Hash of non-secret settings reported to management, so configuration drift is
-    /// visible. Tokens, keys and file contents are excluded.
+    /// visible. Tokens, keys and mounted file contents are excluded; inline scopes
+    /// participate in the hash without being exposed as configuration values.
     /// </summary>
     public string ConfigurationHash()
     {
@@ -776,6 +791,10 @@ public sealed record CollectorSettings
             PrivacyHmacKeyId,
             SingleTrustDomain.ToString(),
             ProducerScopesFile ?? string.Empty);
+        if (ProducerScopesJson is not null)
+        {
+            material += '\u001f' + "producer-scopes-json:" + ProducerScopesJson;
+        }
         // Appended only when set so existing configuration hashes are unchanged.
         if (DeliveryLeaseDuration != TimeSpan.FromMinutes(5) || DeliveryTimeout != TimeSpan.FromMinutes(4))
         {
@@ -955,6 +974,26 @@ public sealed record CollectorSettings
         };
 
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
+
+    /// <summary>
+    /// True when an App Service reference marker appears anywhere in the value. ASCII
+    /// case folding only, so no culture or Unicode mapping can differ from the Rust port.
+    /// </summary>
+    private static bool ContainsSettingReference(string value)
+    {
+        foreach (string marker in (ReadOnlySpan<string>)["@Microsoft.KeyVault(", "@Microsoft.AppConfiguration("])
+        {
+            for (int start = 0; start + marker.Length <= value.Length; start++)
+            {
+                if (System.Text.Ascii.EqualsIgnoreCase(value.AsSpan(start, marker.Length), marker))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 
     private static string[] SplitList(string? value) =>
         string.IsNullOrWhiteSpace(value)

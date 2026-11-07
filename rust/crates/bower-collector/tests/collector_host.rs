@@ -1341,6 +1341,58 @@ fn configuration_hash_excludes_secrets() {
     assert!(first.starts_with("sha256:"));
 }
 
+#[test]
+fn settings_reject_unresolved_vault_references_and_conflicting_scopes() {
+    let mut settings = base_settings(Path::new("unused"));
+    settings.ingest_token =
+        Some("  @microsoft.keyvault(SecretUri=https://example.test/secrets/ingest/)".into());
+    let error = settings.validate().unwrap_err();
+    assert_eq!(
+        error.message,
+        "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference."
+    );
+    assert!(!error.message.contains("example.test"));
+
+    settings.ingest_token = Some(TOKEN.into());
+    settings.producer_scopes_json = Some("[]".into());
+    settings.single_trust_domain = true;
+    assert!(settings.validate().is_err());
+    settings.single_trust_domain = false;
+    settings.producer_scopes_file = Some("scopes.json".into());
+    assert!(settings.validate().is_err());
+    settings.producer_scopes_file = None;
+    let scoped_hash = settings.configuration_hash();
+    settings.producer_scopes_json = None;
+    assert_ne!(scoped_hash, settings.configuration_hash());
+}
+
+#[test]
+fn inline_scope_configuration_hash_matches_csharp_vector() {
+    let mut settings = base_settings(Path::new("unused"));
+    settings.producer_scopes_json = Some("[]".into());
+    assert_eq!(
+        settings.configuration_hash(),
+        "sha256:82030a56551266744926a51e40db705ffc5c45500d52ecb28af907582a23c6d5"
+    );
+}
+
+#[tokio::test]
+async fn inline_producer_scopes_allow_only_the_configured_identity() {
+    let directory = tempfile::tempdir().unwrap();
+    let collector = start(directory.path(), Some(TOKEN), |settings| {
+        settings.single_trust_domain = false;
+        settings.producer_scopes_json = Some(r#"[{"producer":"default","application":{"name":"TestApplication","environment":"test"},"source":{"ipAddress":"192.0.2.10"}}]"#.into());
+    }).await;
+    let event = authentication_failure(&new_id());
+    let (status, _, _) = send(&collector.router, post(&event, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    let mut forged = event;
+    forged.event_id = new_id();
+    forged.application.name = "OtherApplication".into();
+    let (status, _, _) = send(&collector.router, post(&forged, Some(TOKEN))).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
 /// Real listener on 127.0.0.1:0: serve, ingest, then a clean shutdown.
 #[tokio::test]
 async fn serves_on_a_real_listener_and_shuts_down_cleanly() {

@@ -58,6 +58,7 @@ pub struct CollectorSettings {
     /// One revocable credential per producer: lines of `<producer> sha256:<hex>`.
     pub ingest_tokens_file: Option<PathBuf>,
     pub producer_scopes_file: Option<PathBuf>,
+    pub producer_scopes_json: Option<String>,
     pub single_trust_domain: bool,
     pub packs: Vec<String>,
     pub pack_trusted_key_files: Vec<String>,
@@ -204,6 +205,7 @@ impl CollectorSettings {
             ingest_token: None,
             ingest_tokens_file: None,
             producer_scopes_file: None,
+            producer_scopes_json: None,
             single_trust_domain: false,
             packs: Vec::new(),
             pack_trusted_key_files: Vec::new(),
@@ -318,6 +320,7 @@ impl CollectorSettings {
             ingest_token: token.filter(|value| !is_blank(value)),
             ingest_tokens_file: blank(read("BOWER_INGEST_TOKENS_FILE")).map(PathBuf::from),
             producer_scopes_file: blank(read("BOWER_PRODUCER_SCOPES_FILE")).map(PathBuf::from),
+            producer_scopes_json: blank(read("BOWER_PRODUCER_SCOPES_JSON")),
             single_trust_domain: read("BOWER_SINGLE_TRUST_DOMAIN")
                 .is_some_and(|value| value.eq_ignore_ascii_case("true")),
             packs: split_list(read("BOWER_PACKS").as_deref()),
@@ -479,6 +482,19 @@ impl CollectorSettings {
             ));
         }
 
+        // App Service passes an unresolved Key Vault or App Configuration reference
+        // literally, including when it is quoted or wrapped. Never accept that
+        // predictable configuration string as a bearer credential.
+        if self
+            .ingest_token
+            .as_deref()
+            .is_some_and(contains_setting_reference)
+        {
+            return Err(invalid(
+                "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference.",
+            ));
+        }
+
         if let Some(token) = &self.ingest_token
             && token.encode_utf16().count() < MINIMUM_INGEST_TOKEN_LENGTH
         {
@@ -500,9 +516,12 @@ impl CollectorSettings {
             ));
         }
 
-        if self.single_trust_domain && self.producer_scopes_file.is_some() {
+        if (self.producer_scopes_file.is_some() && self.producer_scopes_json.is_some())
+            || (self.single_trust_domain
+                && (self.producer_scopes_file.is_some() || self.producer_scopes_json.is_some()))
+        {
             return Err(invalid(
-                "Producer scopes and single trust domain mode are mutually exclusive.",
+                "Producer scopes file, inline scopes and single trust domain mode are mutually exclusive.",
             ));
         }
 
@@ -895,6 +914,11 @@ impl CollectorSettings {
                 .unwrap_or_default(),
         ]
         .join("\u{1f}");
+        if let Some(scopes) = &self.producer_scopes_json {
+            material.push('\u{1f}');
+            material.push_str("producer-scopes-json:");
+            material.push_str(scopes);
+        }
         // Appended only when set so existing configuration hashes are unchanged.
         if let Some(path) = &self.source_expectations_path {
             material.push('\u{1f}');
@@ -1031,6 +1055,19 @@ pub(crate) fn is_blank(value: &str) -> bool {
 
 fn blank(value: Option<String>) -> Option<String> {
     value.filter(|value| !is_blank(value))
+}
+
+/// C# `ContainsSettingReference`: an App Service reference marker anywhere in the value,
+/// ASCII case folding only (non-ASCII UTF-8 bytes never fold, as in C# `Ascii`).
+fn contains_setting_reference(value: &str) -> bool {
+    ["@Microsoft.KeyVault(", "@Microsoft.AppConfiguration("]
+        .iter()
+        .any(|marker| {
+            value
+                .as_bytes()
+                .windows(marker.len())
+                .any(|window| window.eq_ignore_ascii_case(marker.as_bytes()))
+        })
 }
 
 fn split_list(value: Option<&str>) -> Vec<String> {

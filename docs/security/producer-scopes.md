@@ -24,9 +24,12 @@ Set `BOWER_PRODUCER_SCOPES_FILE` to a local JSON array, for example:
 ```
 
 The producer is the ID in `BOWER_INGEST_TOKENS_FILE`; a shared token uses
-`default`, and unauthenticated loopback uses `anonymous`. The
-[Azure Functions collector](../deployment/azure-function.md) uses the same file
-format and semantics (or the same JSON in `BOWER_PRODUCER_SCOPES_JSON`); there the
+`default`, and unauthenticated loopback uses `anonymous`. Both collectors also
+accept the same JSON in `BOWER_PRODUCER_SCOPES_JSON` for hosts without a mounted
+file. The file and inline setting are mutually exclusive. The
+[Azure Functions collector](../deployment/azure-function.md) uses the same
+format and semantics. The AWS Lambda collector currently requires the file and
+refuses the inline setting. For Azure Functions, the
 producer is the caller's Entra `oid` (service principal object ID, lower-case GUID),
 or its `azp` client ID with `BOWER_PRODUCER_CLAIM=azp`. Each array entry is one
 complete tuple: application name, environment, tenant ID, instance, source
@@ -61,8 +64,9 @@ Before upgrading, inventory producer IDs and exact identity tuples; install scop
 and test legitimate and impersonated events. Otherwise authenticated requests
 receive 403 by default. Existing deployment examples require this configuration
 or the explicit single-domain setting; older manifests do not imply permission.
-The configuration hash now includes the scope path and trust mode; it does not
-attest file contents. Scope changes require controlled restart in both runtimes.
+The HTTP collector configuration hash includes the scope path and trust mode, or
+the inline scope content when configured; it does not attest mounted file contents.
+Scope changes require controlled restart in both runtimes.
 
 No event schema or database migration is required. Existing queued payloads are
 not rewritten: pre-upgrade events may still contain secrets or unauthorized

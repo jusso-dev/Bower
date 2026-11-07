@@ -19,6 +19,9 @@ spec:
       automountServiceAccountToken: true
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1654
+        runAsGroup: 1654
+        fsGroup: 1654
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -26,13 +29,19 @@ spec:
           image: ghcr.io/replace-me/bower:0.1.0
           imagePullPolicy: IfNotPresent
           ports:
-            - name: http
+            - name: https
               containerPort: 4319
           env:
             - name: BOWER_LISTEN_URL
-              value: http://0.0.0.0:4319
+              value: https://0.0.0.0:4319
             - name: BOWER_INGEST_TOKEN_FILE
               value: /var/run/secrets/bower/ingest-token
+            - name: BOWER_PRODUCER_SCOPES_FILE
+              value: /etc/bower/producer-scopes/scopes.json
+            - name: ASPNETCORE_Kestrel__Certificates__Default__Path
+              value: /var/run/secrets/bower-tls/tls.crt
+            - name: ASPNETCORE_Kestrel__Certificates__Default__KeyPath
+              value: /var/run/secrets/bower-tls/tls.key
             - name: BOWER_AZURE_CREDENTIAL
               value: workload-identity
             - name: BOWER_QUEUE_PATH
@@ -69,15 +78,25 @@ spec:
             - name: ingest-token
               mountPath: /var/run/secrets/bower
               readOnly: true
+            - name: producer-scopes
+              mountPath: /etc/bower/producer-scopes
+              readOnly: true
+            - name: tls
+              mountPath: /var/run/secrets/bower-tls
+              readOnly: true
+            - name: temporary
+              mountPath: /tmp
           readinessProbe:
             httpGet:
               path: /health
-              port: http
+              port: https
+              scheme: HTTPS
           # Liveness avoids queue reads so a busy database cannot restart a healthy process.
           livenessProbe:
             httpGet:
               path: /health/live
-              port: http
+              port: https
+              scheme: HTTPS
             initialDelaySeconds: 30
             periodSeconds: 20
             timeoutSeconds: 5
@@ -101,11 +120,21 @@ spec:
         - name: data
           persistentVolumeClaim:
             claimName: bower-data
-        # kubectl create secret generic bower-ingest --from-literal=ingest-token="$(bower token generate)"
+        # Provision the token through the cluster's approved secret-management process.
         - name: ingest-token
           secret:
             secretName: bower-ingest
-            defaultMode: 0400
+            defaultMode: 0440
+        - name: producer-scopes
+          configMap:
+            name: bower-producer-scopes
+        - name: tls
+          secret:
+            secretName: bower-intake-tls
+            defaultMode: 0440
+        - name: temporary
+          emptyDir:
+            sizeLimit: 64Mi
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -125,6 +154,14 @@ metadata:
     azure.workload.identity/client-id: replace-me
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bower-producer-scopes
+data:
+  # Default deny: replace with exact, reviewed producer identity tuples.
+  scopes.json: '[]'
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: bower-collector
@@ -132,12 +169,12 @@ spec:
   selector:
     app.kubernetes.io/name: bower-collector
   ports:
-    - name: http
+    - name: https
       port: 4319
-      targetPort: http
+      targetPort: https
 ---
-# Only pods labelled as Bower producers may reach the collector. Egress is limited to
-# DNS and HTTPS (Entra ID, Azure Monitor ingestion, management API).
+# Only labelled producer pods in this namespace may reach the collector. Egress
+# permits DNS and HTTPS (including Entra ID and Azure Monitor ingestion).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -149,8 +186,7 @@ spec:
   policyTypes: ["Ingress", "Egress"]
   ingress:
     - from:
-        - namespaceSelector: {}
-          podSelector:
+        - podSelector:
             matchLabels:
               bower.io/producer: "true"
       ports:

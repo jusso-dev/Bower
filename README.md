@@ -469,10 +469,11 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_LISTEN_URL` | `http://127.0.0.1:4319` | HTTP listener. Non-loopback requires a token. |
 | `BOWER_SETTINGS_FILE` | MSI: `%ProgramData%\Bower\bower.env` | C#: `KEY=VALUE` file (`BOWER_*` and `AZURE_*` only; other keys stop startup) that installer upgrades keep; its values override the service environment. Windows: only SYSTEM, Administrators or TrustedInstaller may own or write it. Linux: owned by root or the collector account, not group- or world-writable. An untrusted file stops startup. [Details](docs/deployment/installers.md) |
 | `BOWER_COLLECTOR_ID` | `collector-id` file beside the queue, else the host name | Stable collector identity; Sentinel deduplication keys on `(CollectorId, EventId)`. When unset, the first start records the host name in `collector-id` beside the queue and later starts reuse it, so a recreated container keeps its id if the data volume persists. [Details](docs/production-readiness/04-upgrade-backup-recovery.md) |
-| `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. |
+| `BOWER_INGEST_TOKEN` / `BOWER_INGEST_TOKEN_FILE` | — | Shared bearer token (≥ 32 characters) for `/v1/events` and `/v1/status`. An unresolved App Service `@Microsoft.KeyVault(...)` reference stops startup. |
 | `BOWER_INGEST_TOKENS_FILE` | — | Per-producer revocable credentials (`<producer> sha256:<hex>` lines, hot reloaded). |
 | `BOWER_PRODUCER_SCOPES_FILE` | — | Exact per-producer application/environment/tenant/instance/source tuples; restart to reload. Missing scope denies ingest. |
-| `BOWER_SINGLE_TRUST_DOMAIN` | `false` | Explicit legacy trust mode; every producer may assert any identity. Mutually exclusive with scopes file. |
+| `BOWER_PRODUCER_SCOPES_JSON` | — | The same scopes as an inline JSON array, for hosts without a mounted file. `[]` denies all. Mutually exclusive with the scopes file. [Details](docs/security/producer-scopes.md) |
+| `BOWER_SINGLE_TRUST_DOMAIN` | `false` | Explicit legacy trust mode; every producer may assert any identity. Mutually exclusive with scopes file and inline scopes. |
 | `BOWER_PACKS` / `BOWER_PACK_TRUSTED_KEYS` | — | Signed `.bowerpack` files to load, and the public keys trusted to sign them. |
 | `BOWER_PRIVACY_PROFILE` | — | Privacy profile YAML (detector actions, custom detectors, secret field names, field rules, length limits). |
 | `BOWER_PRIVACY_PROFILE_SOURCE` | `local` | `management` takes the privacy profile from the management console (signed, verified, cached). |

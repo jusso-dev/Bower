@@ -6,6 +6,9 @@ on:
       - 'docs/**'
       - 'docs-site/**'
       - 'tools/docs/**'
+      - 'deploy/azure-webapp/**'
+      - 'deploy/docker/hosted/**'
+      - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
       - '.github/workflows/docs.yml'
@@ -15,6 +18,9 @@ on:
       - 'docs/**'
       - 'docs-site/**'
       - 'tools/docs/**'
+      - 'deploy/azure-webapp/**'
+      - 'deploy/docker/hosted/**'
+      - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
       - '.github/workflows/docs.yml'
@@ -68,6 +74,27 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: site
+
+  bicep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build and lint the Web App template
+        run: |
+          az bicep install --version v0.45.6
+          az bicep build --file deploy/azure-webapp/main.bicep --stdout > /dev/null
+          # Lint exits non-zero only on errors; fail on any linter finding, warnings included.
+          az bicep lint --file deploy/azure-webapp/main.bicep --diagnostics-format sarif > "$RUNNER_TEMP/bicep-lint.sarif"
+          python3 - "$RUNNER_TEMP/bicep-lint.sarif" <<'PYTHON'
+          import json, sys
+          results = [r for run in json.load(open(sys.argv[1]))['runs'] for r in run.get('results', [])]
+          for result in results:
+              print(f"{result.get('level', 'warning')}: {result.get('ruleId')}: {result['message']['text']}")
+          sys.exit(1 if results else 0)
+          PYTHON
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

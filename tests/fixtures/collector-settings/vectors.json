@@ -1,0 +1,189 @@
+{
+  "_comment": "Shared collector settings vectors (C# CollectorSettings and Rust bower-collector settings). Tokens are test-only. 'file' tokens are written to a file as UTF-8 and read through BOWER_INGEST_TOKEN_FILE. Hashes come from the C# collector.",
+  "environment": {
+    "BOWER_COLLECTOR_ID": "collector-test",
+    "BOWER_SINGLE_TRUST_DOMAIN": "true"
+  },
+  "referenceRefusal": "BOWER_INGEST_TOKEN contains an unresolved Key Vault or App Configuration reference.",
+  "ingestTokens": [
+    {
+      "name": "key-vault-reference",
+      "source": "environment",
+      "value": "@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)",
+      "accepted": false
+    },
+    {
+      "name": "double-quoted",
+      "source": "environment",
+      "value": "\"@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)\"",
+      "accepted": false
+    },
+    {
+      "name": "single-quoted",
+      "source": "environment",
+      "value": "'@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)'",
+      "accepted": false
+    },
+    {
+      "name": "prefixed",
+      "source": "environment",
+      "value": "token=@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)",
+      "accepted": false
+    },
+    {
+      "name": "embedded-after-text",
+      "source": "environment",
+      "value": "0123456789abcdef0123456789abcdef@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)",
+      "accepted": false
+    },
+    {
+      "name": "mixed-case",
+      "source": "environment",
+      "value": "@mIcRoSoFt.kEyVaUlT(SecretUri=https://example.vault.azure.net/secrets/ingest/)",
+      "accepted": false
+    },
+    {
+      "name": "leading-and-trailing-whitespace",
+      "source": "environment",
+      "value": " \t @Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/) \r\n",
+      "accepted": false
+    },
+    {
+      "name": "vault-name-form",
+      "source": "environment",
+      "value": "@Microsoft.KeyVault(VaultName=example;SecretName=ingest)",
+      "accepted": false
+    },
+    {
+      "name": "app-configuration-reference",
+      "source": "environment",
+      "value": "@Microsoft.AppConfiguration(Endpoint=https://example.azconfig.io; Key=bower:ingest-token)",
+      "accepted": false
+    },
+    {
+      "name": "app-configuration-mixed-case-quoted",
+      "source": "environment",
+      "value": "\"@MICROSOFT.APPCONFIGURATION(Endpoint=https://example.azconfig.io; Key=bower:ingest-token)\"",
+      "accepted": false
+    },
+    {
+      "name": "file-key-vault-reference",
+      "source": "file",
+      "value": "@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)\n",
+      "accepted": false
+    },
+    {
+      "name": "file-wrapped-app-configuration-reference",
+      "source": "file",
+      "value": "  Bearer \"@Microsoft.AppConfiguration(Endpoint=https://example.azconfig.io; Key=bower:ingest-token)\"\r\n",
+      "accepted": false
+    },
+    {
+      "name": "random-token",
+      "source": "environment",
+      "value": "k3Z9vR2mQ8xL5nT7wB4cF6hJ1pD0sG2aY8uE3iO5qW7",
+      "accepted": true
+    },
+    {
+      "name": "random-token-from-file",
+      "source": "file",
+      "value": "k3Z9vR2mQ8xL5nT7wB4cF6hJ1pD0sG2aY8uE3iO5qW7\n",
+      "accepted": true
+    },
+    {
+      "name": "marker-text-without-at-sign",
+      "source": "environment",
+      "value": "rotated-Microsoft.KeyVault(2026-11-06)-0123456789",
+      "accepted": true
+    },
+    {
+      "name": "marker-text-without-parenthesis",
+      "source": "environment",
+      "value": "@Microsoft.KeyVaultRotation-0123456789abcdefghij",
+      "accepted": true
+    },
+    {
+      "name": "non-ascii-lookalike-long-s",
+      "source": "environment",
+      "value": "@Microſoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)",
+      "accepted": true
+    },
+    {
+      "name": "non-ascii-lookalike-kelvin-sign",
+      "source": "file",
+      "value": "@Microsoft.KeyVault(SecretUri=https://example.vault.azure.net/secrets/ingest/)",
+      "accepted": true
+    }
+  ],
+  "producerScopeSources": [
+    {
+      "name": "whitespace-inline-scopes-fall-back-to-file",
+      "environment": {
+        "BOWER_PRODUCER_SCOPES_JSON": " \r\n\t ",
+        "BOWER_PRODUCER_SCOPES_FILE": "scopes.json"
+      },
+      "inlineScopes": null,
+      "scopesFile": "scopes.json",
+      "valid": true
+    },
+    {
+      "name": "whitespace-inline-scopes-fall-back-to-single-trust-domain",
+      "environment": {
+        "BOWER_PRODUCER_SCOPES_JSON": "  ",
+        "BOWER_SINGLE_TRUST_DOMAIN": "true"
+      },
+      "inlineScopes": null,
+      "scopesFile": null,
+      "valid": true
+    },
+    {
+      "name": "inline-scopes-and-file-conflict",
+      "environment": {
+        "BOWER_PRODUCER_SCOPES_JSON": "[]",
+        "BOWER_PRODUCER_SCOPES_FILE": "scopes.json"
+      },
+      "valid": false
+    },
+    {
+      "name": "inline-scopes-and-single-trust-domain-conflict",
+      "environment": {
+        "BOWER_PRODUCER_SCOPES_JSON": "[]",
+        "BOWER_SINGLE_TRUST_DOMAIN": "true"
+      },
+      "valid": false
+    }
+  ],
+  "configurationHashes": [
+    {
+      "name": "no-inline-scopes",
+      "environment": {
+        "BOWER_COLLECTOR_ID": "collector-test"
+      },
+      "expected": "sha256:d8230c6801496d272b8ee86499369ff14eba662aacfb9cf2e953b9429a7e366e"
+    },
+    {
+      "name": "whitespace-inline-scopes-hash-as-unset",
+      "environment": {
+        "BOWER_COLLECTOR_ID": "collector-test",
+        "BOWER_PRODUCER_SCOPES_JSON": " \n "
+      },
+      "expected": "sha256:d8230c6801496d272b8ee86499369ff14eba662aacfb9cf2e953b9429a7e366e"
+    },
+    {
+      "name": "empty-inline-scopes",
+      "environment": {
+        "BOWER_COLLECTOR_ID": "collector-test",
+        "BOWER_PRODUCER_SCOPES_JSON": "[]"
+      },
+      "expected": "sha256:82030a56551266744926a51e40db705ffc5c45500d52ecb28af907582a23c6d5"
+    },
+    {
+      "name": "non-ascii-multi-line-inline-scopes",
+      "environment": {
+        "BOWER_COLLECTOR_ID": "collector-test",
+        "BOWER_PRODUCER_SCOPES_JSON": "[\r\n  {\"producer\": \"default\",\n   \"application\": {\"name\": \"Café Zoë 東京\", \"environment\": \"prod\"}},\n  {\"producer\": \"default\", \"application\": {\"name\": \"🦉 owl\", \"environment\": \"prod\"}}\n]\n"
+      },
+      "expected": "sha256:73b0ea8c480039fd9375aa377b79f8799a721313a91cf0b58f9af14e19e21a23"
+    }
+  ]
+}
