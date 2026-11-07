@@ -1003,9 +1003,10 @@ public sealed class FileTailSourceTests
         Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.X86));
         Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm));
         Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.RiscV64));
-        if (OperatingSystem.IsLinux())
+        if (OperatingSystem.IsLinux() && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                is System.Runtime.InteropServices.Architecture.X64 or System.Runtime.InteropServices.Architecture.Arm64)
         {
-            // CI runs this on x64 and arm64: both must use the native O_NOFOLLOW open.
+            // The shipped architectures (CI runs both) must use the native O_NOFOLLOW open.
             Assert.NotNull(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
         }
     }
