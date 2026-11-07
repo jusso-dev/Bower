@@ -243,6 +243,9 @@ public sealed class SyslogSource : IAsyncDisposable
     /// </summary>
     public TimeSpan StopTimeout { get; init; } = TimeSpan.FromSeconds(20);
 
+    /// <summary>Test hook: runs on each accepted connection before its setup, so a test can reset the peer first.</summary>
+    internal Func<Socket, CancellationToken, Task>? BeforeConnectionSetup { get; init; }
+
     /// <summary>Bound endpoints by listener id (after <see cref="StartAsync"/>).</summary>
     public IReadOnlyDictionary<string, IPEndPoint> Endpoints => endpoints;
 
@@ -462,14 +465,26 @@ public sealed class SyslogSource : IAsyncDisposable
         SyslogListenerOptions options = listener.Options;
         TimeSpan? idle = options.IdleTimeoutSeconds == 0 ? null : TimeSpan.FromSeconds(options.IdleTimeoutSeconds);
         TimeSpan frameTimeout = TimeSpan.FromSeconds(options.FrameTimeoutSeconds);
-        ConfigureKeepAlive(socket);
-        NetworkStream network = new(socket, ownsSocket: true);
-        Stream stream = network;
+        Stream? stream = null;
         SyslogTlsSession? session = null;
         StrongBox<Task?> reading = new();
         Task? pending = null;
+        // Setup is inside the guarded region: whatever fails, the slot is released and the
+        // socket disposed, or a sender that resets early could exhaust maximumConnections.
         try
         {
+            if (BeforeConnectionSetup is { } hook)
+            {
+                await hook(socket, cancellationToken);
+            }
+
+            // The stream is opened before keepalive: the NetworkStream constructor is the only
+            // place that checks Socket.Connected, and a refused keepalive option (macOS and BSD
+            // after an early reset, or a platform without per-socket timing) clears that flag.
+            // Keepalive stays best effort, as in Rust; a reset surfaces on the first read.
+            NetworkStream network = new(socket, ownsSocket: true);
+            stream = network;
+            ConfigureKeepAlive(socket);
             if (listener.Tls is { } tls)
             {
                 // Bound unauthenticated connections even when established-session idle is disabled.
@@ -628,7 +643,15 @@ public sealed class SyslogSource : IAsyncDisposable
         }
         finally
         {
-            await stream.DisposeAsync();
+            if (stream is null)
+            {
+                socket.Dispose();
+            }
+            else
+            {
+                await stream.DisposeAsync();
+            }
+
             pending ??= reading.Value;
             if (pending is not null)
             {

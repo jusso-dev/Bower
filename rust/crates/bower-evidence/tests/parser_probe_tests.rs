@@ -242,6 +242,7 @@ impl LogAnalyticsQuery for FailingDestination {
                     rows: vec![object(json!({"EventId": "candidate"}))],
                     error: Some(outcomes::QUERY_INCOMPLETE_CODE.to_owned()),
                 }),
+                "answered-then-invalid" => error(outcomes::QUERY_INVALID_RESPONSE_CODE),
                 _ => error("BadArgumentError"),
             }
         };
@@ -415,6 +416,13 @@ async fn destination_failures_stay_distinct() {
             3,
             outcomes::QUERY_INCOMPLETE_CODE,
         ),
+        // So may an invalid one: a later valid answer can still verify, but the last one decides.
+        (
+            "answered-then-invalid",
+            outcomes::DESTINATION_QUERY_FAILED,
+            3,
+            outcomes::QUERY_INVALID_RESPONSE_CODE,
+        ),
     ] {
         let clock = SteppingClock::new();
         let destination = Arc::new(FailingDestination {
@@ -439,6 +447,33 @@ async fn destination_failures_stay_distinct() {
         );
         assert!(!bundle.arrival.found);
     }
+}
+
+/// C# `GenericCanary_InvalidLastAnswerFailsAfterACleanOne`: the generic canary reports the
+/// last query's error, so it fails closed too.
+#[tokio::test]
+async fn generic_canary_invalid_last_answer_fails_after_a_clean_one() {
+    let clock = SteppingClock::new();
+    let destination = Arc::new(FailingDestination {
+        failure: "answered-then-invalid",
+        clock: clock.clone(),
+        probe_queries: Mutex::new(0),
+    });
+    let mut options = options(Some(WORKSPACE));
+    options.probe_profile = probe::GENERIC.to_owned();
+    options.timeout = Duration::from_secs(60);
+    let bundle = runner(FakeCollector::new(200), Some(destination))
+        .with_clock(clock)
+        .run(&options)
+        .await
+        .unwrap();
+    assert_eq!(bundle.mode, modes::FAILED);
+    assert_eq!(bundle.arrival.attempts, 3);
+    assert_eq!(
+        bundle.arrival.query_error.as_deref(),
+        Some(outcomes::QUERY_INVALID_RESPONSE_CODE)
+    );
+    assert!(!bundle.arrival.found);
 }
 
 #[tokio::test]
@@ -778,6 +813,109 @@ async fn non_json_query_error_body_is_a_timeout_not_a_crash() {
         assert_eq!(generic.mode, modes::FAILED);
         assert_eq!(generic.arrival.query_error.as_deref(), Some("http-504"));
         assert!(generic.probe.is_none());
+    }
+}
+
+/// C# `InvalidQueryResponseBody_IsAFailedQueryNotACrash`: a 2xx answer that is empty
+/// (200 or 204), not JSON or not a JSON object is a failed query, never an empty result,
+/// and its body is never echoed.
+#[tokio::test]
+async fn invalid_query_response_body_is_a_failed_query_not_a_crash() {
+    for (status, body) in [
+        (axum::http::StatusCode::OK, ""),
+        (axum::http::StatusCode::NO_CONTENT, ""),
+        (
+            axum::http::StatusCode::OK,
+            "<html><body>sensitive body marker</body></html>",
+        ),
+        (axum::http::StatusCode::OK, r#"["sensitive body marker"]"#),
+        (axum::http::StatusCode::OK, r#""sensitive body marker""#),
+        (axum::http::StatusCode::OK, "{}"),
+        (axum::http::StatusCode::OK, r#"{"tables":[]}"#),
+        (
+            axum::http::StatusCode::OK,
+            r#"{"sensitive body marker":1,"sensitive body marker":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[]}]}"#,
+        ),
+        (
+            axum::http::StatusCode::OK,
+            r#"{"tables":[{"columns":[{"name":1}],"rows":[]}]}"#,
+        ),
+        (
+            axum::http::StatusCode::OK,
+            r#"{"tables":[{"columns":["sensitive body marker"],"rows":[]}]}"#,
+        ),
+    ] {
+        let app = Router::new().route(
+            "/v1/workspaces/{workspace}/query",
+            post(move || async move { (status, body) }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = Arc::new(
+            bower_evidence::LogAnalyticsQueryClient::new(
+                bower_evidence::default_http_client(),
+                Arc::new(StaticToken),
+            )
+            .with_endpoint(base),
+        );
+
+        let rows = client
+            .query(
+                WORKSPACE,
+                "BowerSecurity_CL | take 1",
+                Duration::from_secs(3_600),
+            )
+            .await
+            .unwrap();
+        let mut probe_options = options(Some(WORKSPACE));
+        probe_options.timeout = Duration::from_millis(30);
+        probe_options.poll_interval = Duration::from_millis(10);
+        let parser = runner(FakeCollector::new(200), Some(client.clone()))
+            .run(&probe_options)
+            .await
+            .unwrap();
+        let mut generic_options = probe_options.clone();
+        generic_options.probe_profile = probe::GENERIC.to_owned();
+        let generic = runner(FakeCollector::new(200), Some(client))
+            .run(&generic_options)
+            .await
+            .unwrap();
+
+        let label = format!("{status} {body:?}");
+        assert_eq!(
+            rows,
+            QueryRows {
+                rows: Vec::new(),
+                error: Some(outcomes::QUERY_INVALID_RESPONSE_CODE.to_owned()),
+            },
+            "{label}"
+        );
+        assert_eq!(parser.mode, modes::FAILED, "{label}");
+        assert!(!parser.arrival.found, "{label}");
+        assert_eq!(
+            parser.probe.as_ref().unwrap().outcome,
+            outcomes::DESTINATION_QUERY_FAILED,
+            "{label}"
+        );
+        assert_eq!(
+            parser.arrival.query_error.as_deref(),
+            Some(outcomes::QUERY_INVALID_RESPONSE_CODE),
+            "{label}"
+        );
+        assert_eq!(generic.mode, modes::FAILED, "{label}");
+        assert!(!generic.arrival.found, "{label}");
+        assert_eq!(
+            generic.arrival.query_error.as_deref(),
+            Some(outcomes::QUERY_INVALID_RESPONSE_CODE),
+            "{label}"
+        );
+        for bundle in [&parser, &generic] {
+            let text = EvidenceRunner::sign(bundle, None)
+                .unwrap()
+                .to_json_indented();
+            assert!(!text.contains("sensitive body marker"), "{label}");
+        }
     }
 }
 

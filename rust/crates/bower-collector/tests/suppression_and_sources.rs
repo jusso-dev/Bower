@@ -107,7 +107,18 @@ fn candidate_at(original_id: &str, at: Timestamp) -> String {
     let now = bower_contracts::time::format_json(&at);
     format!(
         r#"{{"schemaVersion":"1.0.0","eventId":"{}","eventOriginalId":"{original_id}","timeGenerated":"{now}","eventCategory":"authentication","eventType":"authentication_failure","eventAction":"authentication.attempt","eventResult":"failure","eventOutcomeReason":"InvalidPassword","application":{{"name":"TestApplication","environment":"test"}},"actor":{{"username":"test-user"}},"source":{{"ipAddress":"192.0.2.10"}},"request":{{"correlationId":"correlation-1"}}}}"#,
-        uuid::Uuid::new_v4()
+        unique_event_id()
+    )
+}
+
+/// A process-unique event id no privacy detector matches. Not a random UUID: about 1 in 450
+/// has an all-digit first group that passes the TFN checksum, so the redactor masks it and
+/// the collector quarantines the event as `event-id-redacted` (503).
+fn unique_event_id() -> String {
+    static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!(
+        "test-event-{}",
+        LAST.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
     )
 }
 
@@ -156,7 +167,10 @@ async fn ingest_reports_suppression_and_status_shows_pipeline_and_expected_sourc
     .unwrap();
     let mut settings = settings(directory.path(), policies);
     settings.source_expectations_path = Some(expectations);
-    let collector = start(settings).await;
+    // A fixed clock keeps the three events in one epoch-aligned suppression window; on the
+    // wall clock they can straddle a minute boundary and the third is not suppressed.
+    let clock = FakeClock(Arc::new(Mutex::new(bower_contracts::time::now())));
+    let collector = start_at(settings, &clock).await;
 
     let mut bodies = Vec::new();
     for index in 0..3 {
@@ -260,6 +274,10 @@ async fn start_expecting(directory: &Path, clock: &FakeClock, sources: &[&str]) 
     .unwrap();
     let mut settings = settings(directory, policies);
     settings.source_expectations_path = Some(expectations);
+    start_at(settings, clock).await
+}
+
+async fn start_at(settings: CollectorSettings, clock: &FakeClock) -> Collector {
     let bundle = bundle::load(&settings).unwrap();
     let options = BuildOptions {
         clock: Some(Arc::new(clock.clone())),

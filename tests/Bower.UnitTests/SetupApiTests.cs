@@ -343,6 +343,42 @@ public sealed partial class SetupApiTests
         Assert.Contains(proof.Checks, check => check.State == SetupCheckStates.Fail && !string.IsNullOrWhiteSpace(check.Fix));
     }
 
+    [Theory]
+    [InlineData(HttpStatusCode.OK, "")]
+    [InlineData(HttpStatusCode.NoContent, "")]
+    [InlineData(HttpStatusCode.OK, "<html><body>sensitive body marker</body></html>")]
+    [InlineData(HttpStatusCode.OK, """["sensitive body marker"]""")]
+    [InlineData(HttpStatusCode.OK, """{"tables":[{"columns":[{"name":"EventId"}],"rows":[[]]}]}""")]
+    public async Task Canary_InvalidQueryResponseBodyIsAFailedQuery(HttpStatusCode code, string body)
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        using HttpClient http = new(new QueryStub(code, body));
+        ManualTimeProvider clock = new(DateTimeOffset.UtcNow);
+        await using WebApplication app = await StartConfiguredAsync(
+            directory, new FakeCollector(), new LogAnalyticsQueryClient(http, new StaticCredential()), cancellationToken,
+            "--Bower:Setup:Canary:TimeoutMinutes=1", clock: clock);
+        await ReadyAsync(app, ProbeProfiles.Generic, cancellationToken);
+        HttpClient admin = ManagementApiTests.Client(app, BowerRoles.Administrator);
+
+        await admin.PostAsync("/api/setup/canary", null, cancellationToken);
+        SetupStatus status;
+        do
+        {
+            await Task.Delay(50, cancellationToken);
+            clock.Advance(TimeSpan.FromSeconds(30));
+            status = await StatusAsync(admin, cancellationToken);
+        }
+        while (status.LatestRun!.State == SetupCanaryRunStates.Running);
+        string json = await admin.GetStringAsync("/api/setup", cancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, status.LatestRun!.Mode);
+        Assert.True(status.LatestRun.CollectorAccepted);
+        Assert.Equal(ProbeOutcomes.DestinationQueryFailed, status.LatestRun.Outcome);
+        Assert.NotEqual(SetupStepStates.Complete, Step(status, SetupStepIds.Proof).State);
+        Assert.DoesNotContain("sensitive body marker", json, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task Canary_WithoutVerifierIsSimulatedAndNeverProof()
     {
@@ -392,6 +428,7 @@ public sealed partial class SetupApiTests
     [InlineData(null, ProbeOutcomes.DestinationRowMissing)]
     [InlineData("not-found-before-timeout", ProbeOutcomes.DestinationRowMissing)]
     [InlineData(ProbeOutcomes.QueryIncompleteCode, ProbeOutcomes.DestinationQueryFailed)]
+    [InlineData(ProbeOutcomes.QueryInvalidResponseCode, ProbeOutcomes.DestinationQueryFailed)]
     [InlineData(ProbeOutcomes.QueryTimeoutCode, ProbeOutcomes.DestinationTimeout)]
     [InlineData("http-403", ProbeOutcomes.DestinationPermissionDenied)]
     public void Classify_GenericCanaryQueryErrorMapsToProbeOutcome(string? queryError, string outcome)
@@ -560,7 +597,7 @@ public sealed partial class SetupApiTests
     private static async Task<WebApplication> StartConfiguredAsync(
         TemporaryDirectory directory,
         FakeCollector collector,
-        FakeQuery? query,
+        ILogAnalyticsQuery? query,
         CancellationToken cancellationToken,
         string? extra = null,
         FakeArm? arm = null,
@@ -734,6 +771,21 @@ public sealed partial class SetupApiTests
 
         [GeneratedRegex("EventId == \"([^\"]+)\"")]
         private static partial Regex EventIdPattern();
+    }
+
+    private sealed class QueryStub(HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body) });
+    }
+
+    private sealed class StaticCredential : Azure.Core.TokenCredential
+    {
+        public override Azure.Core.AccessToken GetToken(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            new("synthetic", DateTimeOffset.UtcNow.AddHours(1));
+
+        public override ValueTask<Azure.Core.AccessToken> GetTokenAsync(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            ValueTask.FromResult(GetToken(requestContext, cancellationToken));
     }
 
     private sealed class FakeArm : Dictionary<string, JsonObject>, IArmReader

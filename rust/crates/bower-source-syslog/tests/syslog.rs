@@ -552,7 +552,8 @@ impl SyslogSink for FakeSink {
     ) -> Result<SubmitOutcome, SinkFailure> {
         self.attempts.fetch_add(1, Ordering::SeqCst);
         if let Some(block) = self.block.lock().unwrap().as_ref() {
-            let _ = block.recv_timeout(Duration::from_secs(10));
+            // Longer than any flood bound: a blocked sink stays blocked until released.
+            let _ = block.recv_timeout(Duration::from_secs(120));
         }
         if self.fail {
             return Err(SinkFailure);
@@ -1033,26 +1034,73 @@ async fn udp_is_best_effort_and_counts_drops_under_backpressure() {
         .await
         .unwrap();
     let status = running
-        .wait_for(|status| status.queued == 1 && status.dropped == 1 && status.oversized == 1)
+        .wait_for(|status| {
+            status.frames_received == 3
+                && status.queued == 1
+                && status.dropped == 1
+                && status.oversized == 1
+        })
         .await;
     assert_eq!(status.retries, 0);
     assert_eq!(field(&sink.records()[0], "message"), "accepted");
 
     // A blocked sink fills the bounded datagram queue; further datagrams are dropped.
+    // The kernel may also drop datagrams before the listener reads them, so the flood goes on
+    // in paced bursts until the listener counts a drop rather than assuming every one arrives.
     let (release, blocked) = std::sync::mpsc::channel();
     *sink.block.lock().unwrap() = Some(blocked);
-    for index in 0..UDP_QUEUE_CAPACITY + 64 {
-        client
-            .send_to(
-                format!("<38>Oct 11 22:14:15 gw01 sshd: flood {index}").as_bytes(),
-                running.endpoint,
-            )
-            .await
-            .unwrap();
-    }
-    let status = running.wait_for(|status| status.dropped > 1).await;
+    let (received, queued, dropped) = (status.frames_received, status.queued, status.dropped);
+    let mut sent = 0i64;
+    let status = tokio::time::timeout(Duration::from_secs(30), async {
+        loop {
+            let status = running.status();
+            if status.dropped > dropped {
+                return status;
+            }
+            for _ in 0..32 {
+                client
+                    .send_to(
+                        format!("<38>Oct 11 22:14:15 gw01 sshd: flood {sent}").as_bytes(),
+                        running.endpoint,
+                    )
+                    .await
+                    .unwrap();
+                sent += 1;
+            }
+            // Let the listener read the burst so the kernel buffer rarely overflows; move on
+            // if part of it was lost.
+            for _ in 0..25 {
+                if running.status().frames_received - received >= sent {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        }
+    })
+    .await
+    .expect("a full queue drops datagrams");
+
+    // Frames read but neither queued nor dropped wait in the bounded queue, in the blocked
+    // worker, or between the two counters. The first drop needs a full queue, so that is the
+    // capacity give or take the two in flight.
+    let capacity = i64::try_from(UDP_QUEUE_CAPACITY).unwrap();
+    let waiting =
+        status.frames_received - received - (status.queued - queued) - (status.dropped - dropped);
+    assert!(
+        (capacity - 2..=capacity + 2).contains(&waiting),
+        "{waiting} frames waiting"
+    );
     drop(release);
-    assert!(status.frames_received <= i64::try_from(UDP_QUEUE_CAPACITY + 64 + 3).unwrap());
+
+    // Every frame read is accounted for once, and a drop needs a full queue first.
+    let status = running
+        .wait_for(|status| {
+            status.queued + status.dropped + status.oversized == status.frames_received
+        })
+        .await;
+    assert!((capacity + 1..=sent).contains(&(status.frames_received - received)));
+    assert!(status.queued - queued >= capacity);
+    assert_eq!(status.retries, 0);
     running.stop().await;
 }
 

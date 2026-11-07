@@ -183,6 +183,7 @@ jobs:
     # service: a dedicated test log and event source, allow-list filtering by the
     # service, restart from the bookmark and a cleared log. The platform-neutral
     # source and collector tests run here too. The variable makes a skip a failure.
+    # Detailed output keeps passing tests' output (the test log registration waits).
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -202,6 +203,7 @@ jobs:
           dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
           --configuration Release --no-build
           --filter-class "Bower.UnitTests.WindowsEventLog*"
+          --output Detailed
       - name: Windows settings handle and ACL tests
         env:
           BOWER_REQUIRE_WINDOWS_SETTINGS_TESTS: "1"

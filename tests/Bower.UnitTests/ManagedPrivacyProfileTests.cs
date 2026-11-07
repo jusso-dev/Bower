@@ -613,7 +613,7 @@ public sealed class ManagedPrivacyProfileTests
         Authorized(new HttpRequestMessage(HttpMethod.Post, "/v1/events")
         {
             Content = System.Net.Http.Json.JsonContent.Create(
-                TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId: Guid.NewGuid().ToString()),
+                TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId: TestEvents.UniqueEventId()),
                 options: Bower.Contracts.BowerJson.Options)
         });
 
