@@ -4,16 +4,22 @@
 //! while real identifiers in text still are.
 
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 use bower_redaction::checksum::is_valid_tfn;
 use bower_redaction::identifier_tokens::{self, STRUCTURED_NUMBER_DETECTOR_IDS};
 use bower_redaction::{
-    DetectionMatch, PrivacyEngine, PrivacyPolicy, ScanText, default_value_detectors, detector_ids,
-    load_privacy_profile,
+    DetectionMatch, PrivacyEngine, PrivacyPolicy, ScanText, SensitiveDetector,
+    default_value_detectors, detector_ids, load_privacy_profile,
 };
 use serde_json::Value;
 
-const SAMPLES: usize = 200_000;
+/// Ids per shape that the structured number detectors alone match: the cases the rule is for.
+const HITS_PER_SHAPE: usize = 400;
+/// Draws before giving up. Dashless ids hit least often, about 1 in 1,800 (the IBAN check).
+const MAXIMUM_DRAWS: usize = 2_000_000;
+/// The full sweep (`--ignored`) checks this many ids per shape, hit or not.
+const SWEEP_SAMPLES: usize = 200_000;
 
 // First group passes the TFN checksum.
 const TFN_FIRST_GROUP_UUID: &str = "10040680-c19c-4eec-8ca0-056e33f7f420";
@@ -103,13 +109,18 @@ fn identifier(random: &mut Random, shape: &str) -> String {
     }
 }
 
+static STRUCTURED_DETECTORS: LazyLock<Vec<Box<dyn SensitiveDetector>>> = LazyLock::new(|| {
+    default_value_detectors()
+        .into_iter()
+        .filter(|detector| STRUCTURED_NUMBER_DETECTOR_IDS.contains(&detector.id()))
+        .collect()
+});
+
 fn structured_matches(text: &str) -> Vec<DetectionMatch> {
     let scan = ScanText::new(text);
     let mut matches = Vec::new();
-    for detector in default_value_detectors() {
-        if STRUCTURED_NUMBER_DETECTOR_IDS.contains(&detector.id()) {
-            detector.detect(&scan, "$", &mut matches);
-        }
+    for detector in STRUCTURED_DETECTORS.iter() {
+        detector.detect(&scan, "$", &mut matches);
     }
     matches
 }
@@ -127,31 +138,45 @@ fn redacted_event_id(engine: &PrivacyEngine, value: &str) -> String {
     redacted["eventId"].as_str().unwrap().to_owned()
 }
 
-/// 200,000 ids per shape, each as a root `eventId` (default policy) and, for every tenth,
-/// in free text and under the opt-in policy.
+/// How many of the four checks alter `id`: as a root `eventId` and in free text, under the
+/// default and opt-in policies.
+fn alterations(engines: &[PrivacyEngine; 2], id: &str, in_text: bool) -> usize {
+    let [defaults, opt_in] = engines;
+    let event = format!(r#"{{"eventId":"{id}"}}"#);
+    let mut changed = altered(defaults, &event, id);
+    if in_text {
+        let text = format!(
+            r#"{{"message":"request {id} failed (ref={id}); retry \"{id}\"","ids":["{id}"]}}"#
+        );
+        changed +=
+            altered(opt_in, &event, id) + altered(defaults, &text, id) + altered(opt_in, &text, id);
+    }
+    changed
+}
+
+/// The first `HITS_PER_SHAPE` ids from the fixed seed that the structured number detectors
+/// alone match, each checked four ways. Ids no detector matches cannot be altered by the rule,
+/// so checking them only costs time; the full sweep below still does.
 fn assert_never_altered(shape: &str) {
-    let [defaults, opt_in] = engines();
+    let engines = engines();
     let mut random = Random(20_261_107);
-    let mut raw_detector_hits = 0;
+    let mut hits = 0;
     let mut changed = 0;
-    for sample in 0..SAMPLES {
+    for _ in 0..MAXIMUM_DRAWS {
         let id = identifier(&mut random, shape);
-        raw_detector_hits += structured_matches(&id).len();
-        let event = format!(r#"{{"eventId":"{id}"}}"#);
-        changed += altered(&defaults, &event, &id);
-        if sample % 10 == 0 {
-            let text = format!(
-                r#"{{"message":"request {id} failed (ref={id}); retry \"{id}\"","ids":["{id}"]}}"#
-            );
-            changed += altered(&opt_in, &event, &id)
-                + altered(&defaults, &text, &id)
-                + altered(&opt_in, &text, &id);
+        if structured_matches(&id).is_empty() {
+            continue;
+        }
+        hits += 1;
+        changed += alterations(&engines, &id, true);
+        if hits == HITS_PER_SHAPE {
+            break;
         }
     }
-    // The corpus exercises the defect: the detectors alone still fire on these ids.
-    assert!(
-        raw_detector_hits > 50,
-        "{shape}: only {raw_detector_hits} raw detector hits"
+    // The corpus exercises the defect: the detectors alone fire on every id checked.
+    assert_eq!(
+        hits, HITS_PER_SHAPE,
+        "{shape}: only {hits} raw detector hits"
     );
     assert_eq!(changed, 0, "{shape}");
 }
@@ -184,6 +209,38 @@ fn random_v4_braced_ids_are_never_altered() {
 #[test]
 fn v7_ids_with_all_digit_first_groups_are_never_altered() {
     assert_never_altered("v7-digits");
+}
+
+/// Every one of `SWEEP_SAMPLES` ids per shape, hit or not, as a root `eventId` (default
+/// policy) and, for every tenth, in free text and under the opt-in policy. About 10 s in
+/// release, two minutes in debug:
+/// `cargo test --release -p bower-redaction --test canonical_identifier -- --ignored`
+#[test]
+#[ignore = "full sweep: run with --release -- --ignored"]
+fn random_ids_of_every_shape_are_never_altered_full_sweep() {
+    let engines = engines();
+    for shape in [
+        "dashed",
+        "dashed-upper",
+        "dashless",
+        "dashless-upper",
+        "braced",
+        "v7-digits",
+    ] {
+        let mut random = Random(20_261_107);
+        let mut raw_detector_hits = 0;
+        let mut changed = 0;
+        for sample in 0..SWEEP_SAMPLES {
+            let id = identifier(&mut random, shape);
+            raw_detector_hits += structured_matches(&id).len();
+            changed += alterations(&engines, &id, sample % 10 == 0);
+        }
+        assert!(
+            raw_detector_hits > 50,
+            "{shape}: only {raw_detector_hits} raw detector hits"
+        );
+        assert_eq!(changed, 0, "{shape}");
+    }
 }
 
 // ABNs are public business numbers and allowed by default, so they are not listed.
@@ -287,7 +344,8 @@ fn near_canonical_shapes_get_no_exemption() {
 }
 
 /// Accepted limit, documented in docs/privacy/privacy-secret-engine.md: a producer that
-/// deliberately writes an eight-digit TFN as the first group of a UUID is not caught.
+/// deliberately writes an eight-digit TFN as the first group of a UUID is not caught, even
+/// with a label in front of it.
 #[test]
 fn attacker_chosen_uuid_with_tfn_first_group_is_an_identifier_not_a_tfn() {
     assert!(is_valid_tfn("10040680"));
@@ -296,17 +354,26 @@ fn attacker_chosen_uuid_with_tfn_first_group_is_an_identifier_not_a_tfn() {
         "10040680-0000-0000-0000-000000000000".to_owned(),
         TFN_FIRST_GROUP_UUID.to_owned(),
         format!("{{{TFN_FIRST_GROUP_UUID}}}"),
+        // A label outside the token does not make it a TFN or passport number.
+        "TFN: 10040680-0000-0000-0000-000000000000".to_owned(),
+        "passport A1234567-0000-0000-0000-000000000000".to_owned(),
     ] {
         assert_eq!(redacted_event_id(&engine, &id), id);
     }
-    // The same eight digits anywhere else are still a TFN.
-    assert!(
-        !engine
-            .redact_json(r#"{"note":"TFN 10040680 c19c"}"#)
-            .redacted_json
-            .unwrap()
-            .contains("10040680")
-    );
+    // The same digits anywhere else are still a TFN or passport number.
+    for (note, identifier) in [
+        ("TFN 10040680 c19c", "10040680"),
+        ("passport A1234567", "A1234567"),
+    ] {
+        assert!(
+            !engine
+                .redact_json(&serde_json::json!({ "note": note }).to_string())
+                .redacted_json
+                .unwrap()
+                .contains(identifier),
+            "{note}"
+        );
+    }
 }
 
 #[test]
@@ -358,4 +425,55 @@ fn find_returns_bounded_tokens_only() {
     }
     assert!(!identifier_tokens::applies_to(detector_ids::PAY_ID));
     assert!(!identifier_tokens::applies_to(detector_ids::API_KEY));
+}
+
+/// 22,000 tokens, each followed by a TFN, fill a 1 MiB value. Checking every match against
+/// every token cost about 484 million comparisons; one binary search per match costs about 16.
+#[test]
+fn containment_check_is_one_binary_search_per_match() {
+    const UNIT: &str = "10040680-c19c-4eec-8ca0-056e33f7f420 123456782 ";
+    const REPEATS: usize = 22_000;
+    let value = UNIT.repeat(REPEATS);
+    let tokens = identifier_tokens::find(&value);
+    assert_eq!(tokens.len(), REPEATS);
+    let mut matches = structured_matches(&value);
+    let checked = matches.len();
+    // Matches in the token (offsets 0..36 of each unit) go; the TFN after it (37..46) stays.
+    let outside: Vec<DetectionMatch> = matches
+        .iter()
+        .filter(|found| found.start % UNIT.len() >= 37)
+        .cloned()
+        .collect();
+    assert!(outside.len() >= REPEATS && checked - outside.len() >= REPEATS);
+
+    let examined = identifier_tokens::remove_contained(&tokens, &mut matches, 0);
+    // A binary search over 22,000 tokens is about 16 comparisons; a scan of them is 22,000.
+    assert!(
+        examined <= checked * 32,
+        "{examined} comparisons for {checked} matches"
+    );
+    assert_eq!(matches, outside);
+}
+
+/// Every TFN in the value above is still found and masked; the tokens next to them are kept.
+#[test]
+fn a_value_full_of_identifier_tokens_and_tfns_is_redacted() {
+    const UNIT: &str = "abcdefab-cdef-abcd-efab-cdefabcdefab 123456782 ";
+    let json = serde_json::json!({ "note": UNIT.repeat(22_000) }).to_string();
+    assert!(json.len() <= bower_redaction::MAXIMUM_PAYLOAD_BYTES);
+    let result = PrivacyEngine::with_default_policy().redact_json(&json);
+    assert!(result.succeeded);
+    let tfns = result
+        .findings
+        .iter()
+        .filter(|finding| finding.detector_id == detector_ids::TFN)
+        .count();
+    assert_eq!(tfns, 22_000);
+    let redacted = result.redacted_json.unwrap();
+    assert!(!redacted.contains("123456782"));
+    // The stored value is truncated to the field length limit, so only its start is compared.
+    assert!(redacted.starts_with(&format!(
+        r#"{{"note":"{}"#,
+        "abcdefab-cdef-abcd-efab-cdefabcdefab *****6782 ".repeat(100)
+    )));
 }

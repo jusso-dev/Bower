@@ -39,6 +39,11 @@ fn large_values() {
     let dense: String = (0..20_000).map(|i| format!("u{i}@ex.io ")).collect();
     time("dense-emails", &engine, &dense);
     time("max-emails", &engine, &"a@b.io ".repeat(n / 7));
+    time(
+        "uuid-tfns",
+        &engine,
+        &"abcdefab-cdef-abcd-efab-cdefabcdefab 123456782 ".repeat(22_000),
+    );
 
     let value = "\u{E9} ".repeat(n / 3);
     let scan = ScanText::new(&value);

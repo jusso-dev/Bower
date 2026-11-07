@@ -76,20 +76,32 @@ pub fn find(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// Removes matches at or after `from` that lie wholly inside a token, keeping order.
-pub(crate) fn remove_contained(
+/// `tokens` must come from [`find`] (disjoint and in order), so each match costs one binary
+/// search, not a scan of every token. Returns the token ranges examined; tests use it to
+/// bound the work.
+pub fn remove_contained(
     tokens: &[(usize, usize)],
     matches: &mut Vec<DetectionMatch>,
     from: usize,
-) {
+) -> usize {
     if tokens.is_empty() {
-        return;
+        return 0;
     }
-    let tail = matches.split_off(from);
-    matches.extend(tail.into_iter().filter(|found| {
-        !tokens
-            .iter()
-            .any(|&(start, end)| start <= found.start && found.end <= end)
-    }));
+    let mut examined = 0;
+    let mut index = 0;
+    matches.retain(|found| {
+        index += 1;
+        if index <= from {
+            return true;
+        }
+        // Only the last token starting at or before the match can contain it.
+        let after = tokens.partition_point(|&(start, _)| {
+            examined += 1;
+            start <= found.start
+        });
+        after == 0 || found.end > tokens[after - 1].1
+    });
+    examined
 }
 
 fn is_token_byte(byte: u8) -> bool {

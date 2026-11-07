@@ -14,7 +14,14 @@ namespace Bower.UnitTests;
 /// </summary>
 public sealed class CanonicalIdentifierTokenTests
 {
-    private const int Samples = 200_000;
+    // Ids per shape that the structured number detectors alone match: the cases the rule is for.
+    private const int HitsPerShape = 400;
+
+    // Draws before giving up. Dashless ids hit least often, about 1 in 1,800 (the IBAN check).
+    private const int MaximumDraws = 2_000_000;
+
+    // The full sweep checks this many ids per shape, hit or not.
+    private const int SweepSamples = 200_000;
 
     // First group passes the TFN checksum (the CollectorHostTests ids before this rule).
     private const string TfnFirstGroupUuid = "10040680-c19c-4eec-8ca0-056e33f7f420";
@@ -27,8 +34,16 @@ public sealed class CanonicalIdentifierTokenTests
             StringComparer.Ordinal)
     };
 
+    private static readonly ISensitiveDetector[] StructuredDetectors =
+        [.. DetectorCatalog.CreateDefaultValueDetectors().Where(detector => CanonicalIdentifierTokens.StructuredNumberDetectorIds.Contains(detector.Id))];
+
     public static TheoryData<string> Shapes => ["dashed", "dashed-upper", "dashless", "dashless-upper", "braced", "v7-digits"];
 
+    /// <summary>
+    /// The first <see cref="HitsPerShape"/> ids from the fixed seed that the structured number
+    /// detectors alone match, each checked four ways. Ids no detector matches cannot be altered
+    /// by the rule, so checking them only costs time; the full sweep below still does.
+    /// </summary>
     [Theory]
     [MemberData(nameof(Shapes))]
     public void RandomIdentifiers_AreNeverAlteredAsEventIdsOrInText(string shape)
@@ -36,25 +51,95 @@ public sealed class CanonicalIdentifierTokenTests
         Random random = new(20261107);
         PrivacyEngine defaults = new();
         PrivacyEngine optIn = new(OptIn);
-        int rawDetectorHits = 0;
+        int hits = 0;
         int altered = 0;
-        for (int sample = 0; sample < Samples; sample++)
+        for (int draw = 0; draw < MaximumDraws && hits < HitsPerShape; draw++)
         {
             string id = Identifier(random, shape);
-            rawDetectorHits += RawStructuredHits(id);
-            string eventJson = $$"""{"eventId":"{{id}}"}""";
-            altered += Altered(defaults, eventJson, id);
-            if (sample % 10 == 0)
+            if (RawStructuredHits(id) > 0)
             {
-                // Opt-in detectors add no structured number detector; sampled to bound run time.
-                string text = $$"""{"message":"request {{id}} failed (ref={{id}}); retry \"{{id}}\"","ids":["{{id}}"]}""";
-                altered += Altered(optIn, eventJson, id) + Altered(defaults, text, id) + Altered(optIn, text, id);
+                hits++;
+                altered += Alterations(defaults, optIn, id, inText: true);
             }
         }
 
-        // The corpus exercises the defect: the detectors alone still fire on these ids.
+        // The corpus exercises the defect: the detectors alone fire on every id checked.
+        Assert.True(hits == HitsPerShape, $"{shape}: only {hits} raw detector hits");
+        Assert.Equal(0, altered);
+    }
+
+    /// <summary>
+    /// Every one of <see cref="SweepSamples"/> ids per shape, hit or not, as a root eventId
+    /// (default policy) and, for every tenth, in free text and under the opt-in policy. About
+    /// 20 s in Release: <c>BOWER_FULL_IDENTIFIER_SWEEP=1 dotnet test --project
+    /// tests/Bower.UnitTests -c Release --filter-class Bower.UnitTests.CanonicalIdentifierTokenTests</c>.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(Shapes))]
+    public void RandomIdentifiers_FullSweep_AreNeverAltered(string shape)
+    {
+        Assert.SkipUnless(
+            Environment.GetEnvironmentVariable("BOWER_FULL_IDENTIFIER_SWEEP") == "1",
+            "Full sweep: set BOWER_FULL_IDENTIFIER_SWEEP=1.");
+        Random random = new(20261107);
+        PrivacyEngine defaults = new();
+        PrivacyEngine optIn = new(OptIn);
+        int rawDetectorHits = 0;
+        int altered = 0;
+        for (int sample = 0; sample < SweepSamples; sample++)
+        {
+            string id = Identifier(random, shape);
+            rawDetectorHits += RawStructuredHits(id);
+            altered += Alterations(defaults, optIn, id, inText: sample % 10 == 0);
+        }
+
         Assert.True(rawDetectorHits > 50, $"{shape}: only {rawDetectorHits} raw detector hits");
         Assert.Equal(0, altered);
+    }
+
+    /// <summary>
+    /// 22,000 tokens, each followed by a TFN, fill a 1 MiB value. Checking every match against
+    /// every token cost about 484 million comparisons; one binary search per match costs about 16.
+    /// </summary>
+    [Fact]
+    public void ContainmentCheck_IsOneBinarySearchPerMatch()
+    {
+        const string unit = "10040680-c19c-4eec-8ca0-056e33f7f420 123456782 ";
+        const int repeats = 22_000;
+        string value = string.Concat(Enumerable.Repeat(unit, repeats));
+        List<(int Start, int End)> tokens = CanonicalIdentifierTokens.Find(value);
+        Assert.Equal(repeats, tokens.Count);
+        List<DetectionMatch> matches = StructuredMatches(value);
+        int checkedCount = matches.Count;
+
+        // Matches in the token (offsets 0..36 of each unit) go; the TFN after it (37..46) stays.
+        List<DetectionMatch> outside = matches.FindAll(match => match.Start % unit.Length >= 37);
+        Assert.True(outside.Count >= repeats && checkedCount - outside.Count >= repeats);
+
+        int examined = CanonicalIdentifierTokens.RemoveContained(tokens, matches, 0);
+
+        // A binary search over 22,000 tokens is about 16 comparisons; a scan of them is 22,000.
+        Assert.True(examined <= checkedCount * 32, $"{examined} comparisons for {checkedCount} matches");
+        Assert.Equal(outside, matches);
+    }
+
+    /// <summary>Every TFN in the value above is still found and masked; the tokens next to them are kept.</summary>
+    [Fact]
+    public void ValueFullOfIdentifierTokensAndTfns_IsRedacted()
+    {
+        const string unit = "abcdefab-cdef-abcd-efab-cdefabcdefab 123456782 ";
+        string json = $$"""{"note":"{{string.Concat(Enumerable.Repeat(unit, 22_000))}}"}""";
+        Assert.True(json.Length <= PrivacyEngine.MaximumPayloadBytes);
+        PrivacyScanResult result = new PrivacyEngine().RedactJson(json);
+        Assert.True(result.Succeeded);
+        Assert.Equal(22_000, result.Findings.Count(finding => finding.DetectorId == DetectorIds.Tfn));
+        Assert.DoesNotContain("123456782", result.RedactedJson, StringComparison.Ordinal);
+
+        // The stored value is truncated to the field length limit, so only its start is compared.
+        Assert.StartsWith(
+            "{\"note\":\"" + string.Concat(Enumerable.Repeat("abcdefab-cdef-abcd-efab-cdefabcdefab *****6782 ", 100)),
+            result.RedactedJson,
+            StringComparison.Ordinal);
     }
 
     // ABNs are public business numbers and allowed by default, so they are not listed.
@@ -119,22 +204,29 @@ public sealed class CanonicalIdentifierTokenTests
 
     /// <summary>
     /// Accepted limit, documented in docs/privacy/privacy-secret-engine.md: a producer that
-    /// deliberately writes an eight-digit TFN as the first group of a UUID is not caught. A
-    /// producer that wants to leak data can always encode it; redaction stops accidental
-    /// disclosure, and no person writes a TFN, card or IBAN as a UUID.
+    /// deliberately writes an eight-digit TFN as the first group of a UUID is not caught, even
+    /// with a label in front of it. A producer that wants to leak data can always encode it;
+    /// redaction stops accidental disclosure, and no person writes a TFN, card or IBAN as a UUID.
     /// </summary>
     [Fact]
     public void AttackerChosenUuidWithTfnFirstGroup_IsAnIdentifierNotATfn()
     {
         Assert.True(ChecksumAlgorithms.IsValidTfn("10040680"));
-        foreach (string id in new[] { "10040680-0000-0000-0000-000000000000", TfnFirstGroupUuid, "{" + TfnFirstGroupUuid + "}" })
+        string[] ids =
+        [
+            "10040680-0000-0000-0000-000000000000", TfnFirstGroupUuid, "{" + TfnFirstGroupUuid + "}",
+            // A label outside the token does not make it a TFN or passport number.
+            "TFN: 10040680-0000-0000-0000-000000000000", "passport A1234567-0000-0000-0000-000000000000"
+        ];
+        foreach (string id in ids)
         {
             string redacted = new PrivacyEngine().RedactJson($$"""{"eventId":"{{id}}"}""").RedactedJson!;
             Assert.Equal(id, JsonNode.Parse(redacted)!["eventId"]!.GetValue<string>());
         }
 
-        // The same eight digits anywhere else are still a TFN.
+        // The same digits anywhere else are still a TFN or passport number.
         Assert.DoesNotContain("10040680", new PrivacyEngine().RedactJson("""{"note":"TFN 10040680 c19c"}""").RedactedJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("A1234567", new PrivacyEngine().RedactJson("""{"note":"passport A1234567"}""").RedactedJson, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -180,28 +272,36 @@ public sealed class CanonicalIdentifierTokenTests
         return result.Findings.Count == 0 && result.RedactedJson!.Contains(id, StringComparison.Ordinal) ? 0 : 1;
     }
 
-    private static int RawStructuredHits(string id)
+    // How many of the four checks alter the id: as a root eventId and in free text, under the
+    // default and opt-in policies.
+    private static int Alterations(PrivacyEngine defaults, PrivacyEngine optIn, string id, bool inText)
     {
-        List<DetectionMatch> matches = [];
-        new TfnDetector().Detect(id, "$", matches);
-        new CreditCardDetector().Detect(id, "$", matches);
-        new IbanDetector().Detect(id, "$", matches);
-        return matches.Count;
-    }
-
-    private static bool IsChecksumValid(string identifier)
-    {
-        List<DetectionMatch> matches = [];
-        foreach (ISensitiveDetector detector in DetectorCatalog.CreateDefaultValueDetectors())
+        string eventJson = $$"""{"eventId":"{{id}}"}""";
+        int altered = Altered(defaults, eventJson, id);
+        if (inText)
         {
-            if (CanonicalIdentifierTokens.StructuredNumberDetectorIds.Contains(detector.Id))
-            {
-                detector.Detect(identifier, "$", matches);
-            }
+            string text = $$"""{"message":"request {{id}} failed (ref={{id}}); retry \"{{id}}\"","ids":["{{id}}"]}""";
+            altered += Altered(optIn, eventJson, id) + Altered(defaults, text, id) + Altered(optIn, text, id);
         }
 
-        return matches.Exists(match => match.Validated && match.Length == identifier.Length);
+        return altered;
     }
+
+    private static List<DetectionMatch> StructuredMatches(string text)
+    {
+        List<DetectionMatch> matches = [];
+        foreach (ISensitiveDetector detector in StructuredDetectors)
+        {
+            detector.Detect(text, "$", matches);
+        }
+
+        return matches;
+    }
+
+    private static int RawStructuredHits(string id) => StructuredMatches(id).Count;
+
+    private static bool IsChecksumValid(string identifier) =>
+        StructuredMatches(identifier).Exists(match => match.Validated && match.Length == identifier.Length);
 
     /// <summary>Random version 4 ids, and version 7 ids from 2024-08 to 2025-12 whose first group is all digits.</summary>
     internal static string Identifier(Random random, string shape)

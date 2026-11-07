@@ -113,12 +113,17 @@ for (int i = 0; i < 5_000; i++)
 
 string licenceEvent = licences.Append("\"}").ToString();
 
+// Identifier value: 22,000 UUID tokens, each followed by a TFN (containment check per match).
+string identifierEvent = "{\"eventId\":\"evt-6\",\"note\":\"" +
+    string.Concat(Enumerable.Repeat("abcdefab-cdef-abcd-efab-cdefabcdefab 123456782 ", 22_000)) + "\"}";
+
 (double cleanOps, double cleanUs) = Measure(engine, cleanEvent, iterations);
 (double dirtyOps, double dirtyUs) = Measure(engine, dirtyEvent, iterations);
 (double permissionOps, double permissionUs) = Measure(engine, permissionEvent, iterations);
 (double wideOps, double wideUs) = Measure(engine, wideEvent, 500);
 (double denseOps, double denseUs) = Measure(engine, denseEvent, 3);
 (double licenceOps, double licenceUs) = Measure(engine, licenceEvent, 20);
+(double identifierOps, double identifierUs) = Measure(engine, identifierEvent, 3);
 // Privacy profile with 32 custom detectors (the maximum), half whole-word, a third
 // case-insensitive, on the clean, dirty and wide events.
 System.Text.StringBuilder customProfile = new(
@@ -157,6 +162,7 @@ Console.WriteLine($"  cloud permission event: {permissionOps:F0} ops/s  mean {pe
 Console.WriteLine($"  wide event (200 fields): {wideOps:F0} ops/s  mean {wideUs:F1} µs");
 Console.WriteLine($"  dense value (20k emails, {denseEvent.Length / 1024} KiB): mean {denseUs / 1000:F1} ms");
 Console.WriteLine($"  licence value (10k licence tokens, {licenceEvent.Length / 1024} KiB): mean {licenceUs / 1000:F1} ms");
+Console.WriteLine($"  identifier value (22k UUIDs + TFNs, {identifierEvent.Length / 1024} KiB): mean {identifierUs / 1000:F1} ms");
 Console.WriteLine($"  detectors:   {engine.Detectors.Count}");
 Console.WriteLine($"  32 custom detectors, clean event: {customCleanOps:F0} ops/s  mean {customCleanUs:F1} µs");
 Console.WriteLine($"  32 custom detectors, dirty event: {customDirtyOps:F0} ops/s  mean {customDirtyUs:F1} µs");

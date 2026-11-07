@@ -91,22 +91,54 @@ public static class CanonicalIdentifierTokens
         return found;
     }
 
-    /// <summary>Removes matches at or after <paramref name="from"/> that lie wholly inside a token.</summary>
-    internal static void RemoveContained(List<(int Start, int End)> tokens, List<DetectionMatch> matches, int from)
+    /// <summary>
+    /// Removes matches at or after <paramref name="from"/> that lie wholly inside a token,
+    /// keeping order. <paramref name="tokens"/> must come from <see cref="Find"/> (disjoint and
+    /// in order), so each match costs one binary search, not a scan of every token.
+    /// </summary>
+    /// <returns>Token ranges examined; tests use it to bound the work.</returns>
+    public static int RemoveContained(List<(int Start, int End)> tokens, List<DetectionMatch> matches, int from)
     {
         if (tokens.Count == 0)
         {
-            return;
+            return 0;
         }
 
-        for (int index = matches.Count - 1; index >= from; index--)
+        int examined = 0;
+        int kept = from;
+        for (int index = from; index < matches.Count; index++)
         {
             DetectionMatch match = matches[index];
-            if (tokens.Exists(token => token.Start <= match.Start && match.End <= token.End))
+            if (!IsContained(tokens, match, ref examined))
             {
-                matches.RemoveAt(index);
+                matches[kept++] = match;
             }
         }
+
+        matches.RemoveRange(kept, matches.Count - kept);
+        return examined;
+    }
+
+    // Only the last token starting at or before the match can contain it.
+    private static bool IsContained(List<(int Start, int End)> tokens, DetectionMatch match, ref int examined)
+    {
+        int low = 0;
+        int high = tokens.Count;
+        while (low < high)
+        {
+            examined++;
+            int middle = low + ((high - low) / 2);
+            if (tokens[middle].Start <= match.Start)
+            {
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle;
+            }
+        }
+
+        return low > 0 && match.End <= tokens[low - 1].End;
     }
 
     private static bool IsTokenCharacter(char character) =>
