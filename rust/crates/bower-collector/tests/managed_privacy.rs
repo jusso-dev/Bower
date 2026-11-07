@@ -1084,10 +1084,21 @@ fn status_request() -> Request<Body> {
         .unwrap()
 }
 
+/// A process-unique event id no privacy detector matches. Not a random UUID: about 1 in 450
+/// has an all-digit first group that passes the TFN checksum, so the redactor masks it and
+/// the collector quarantines the event as `event-id-redacted` (503).
+fn unique_event_id() -> String {
+    static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    format!(
+        "test-event-{}",
+        LAST.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1
+    )
+}
+
 /// `TestEvents.AuthenticationFailure` serialized like `BowerJson.Options`.
 fn event_request() -> Request<Body> {
     let now = bower_contracts::time::format_json(&bower_contracts::time::now());
-    let event_id = uuid::Uuid::new_v4();
+    let event_id = unique_event_id();
     let json = format!(
         r#"{{"schemaVersion":"1.0.0","eventId":"{event_id}","eventOriginalId":"source-1","timeGenerated":"{now}",
         "eventCategory":"authentication","eventType":"authentication_failure","eventAction":"authentication.attempt",
