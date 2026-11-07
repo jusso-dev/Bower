@@ -246,9 +246,7 @@ public sealed class WindowsEventLogWindowsTests
                     return;
                 }
             }
-            catch (Exception exception) when (exception is Win32Exception { NativeErrorCode: 5 }
-                or InvalidOperationException { InnerException: Win32Exception { NativeErrorCode: 5 } }
-                or WindowsEventChannelException { Code: WindowsEventChannelFailures.AccessDenied or WindowsEventChannelFailures.ChannelNotFound })
+            catch (Exception exception) when (NotServedYet(exception))
             {
                 unavailable = exception;
             }
@@ -261,6 +259,15 @@ public sealed class WindowsEventLogWindowsTests
             Thread.Sleep(100);
         }
     }
+
+    private static bool NotServedYet(Exception exception) => exception switch
+    {
+        Win32Exception { NativeErrorCode: 5 } => true,
+        // OpenForRead keeps only the Win32 message: "Cannot open log ... Access is denied."
+        InvalidOperationException => exception.Message.EndsWith(new Win32Exception(5).Message, StringComparison.Ordinal),
+        WindowsEventChannelException { Code: WindowsEventChannelFailures.AccessDenied or WindowsEventChannelFailures.ChannelNotFound } => true,
+        _ => false
+    };
 
     private static async Task PollUntil(WindowsEventLogSource source, RecordingWindowsEventSink sink, int records, CancellationToken cancellation)
     {
