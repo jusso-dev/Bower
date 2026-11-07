@@ -72,7 +72,7 @@ public sealed class FunctionIngestTests
     {
         using Harness harness = new();
         JsonObject candidate = JsonNode.Parse(Harness.Event())!.AsObject();
-        candidate["eventId"] = "10040680-c19c-4eec-8ca0-056e33f7f420";
+        candidate["eventId"] = "tfn-123456782";
         CollectorResponse response = await harness.PostAsync(candidate.ToJsonString(), harness.Entra.Token());
         Assert.Equal(503, response.StatusCode);
         Assert.Equal("10", response.Headers["Retry-After"]);

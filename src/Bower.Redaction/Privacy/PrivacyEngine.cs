@@ -482,6 +482,7 @@ public sealed partial class PrivacyEngine : IEventRedactor
 
         List<DetectionMatch> matches = [];
         List<DetectionMatch>? observed = null;
+        List<(int Start, int End)>? identifiers = null;
         ReadOnlySpan<char> span = text.AsSpan();
         foreach (ISensitiveDetector detector in detectors)
         {
@@ -501,7 +502,15 @@ public sealed partial class PrivacyEngine : IEventRedactor
                 continue;
             }
 
+            int before = matches.Count;
             detector.Detect(span, path, matches);
+            if (matches.Count > before && CanonicalIdentifierTokens.StructuredNumberDetectorIds.Contains(detector.Id))
+            {
+                // A UUID or dashless GUID is an identifier, not a TFN, card or IBAN that
+                // happens to pass a checksum (see CanonicalIdentifierTokens).
+                identifiers ??= CanonicalIdentifierTokens.Find(span);
+                CanonicalIdentifierTokens.RemoveContained(identifiers, matches, before);
+            }
         }
 
         string result = matches.Count == 0 ? text : ApplySelected(text, path, matches, findings);
