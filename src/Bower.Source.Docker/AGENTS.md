@@ -10,6 +10,9 @@ Read-only Docker source for the sidecar.
 - Event ids derive from container id, file fingerprint and offset so replays
   deduplicate.
 - Keep reads bounded (line, batch and byte limits) and consume only complete lines.
+- Match signal patterns with `RegexOptions.NonBacktracking` and no match timeout. A
+  timeout makes the mapping depend on machine load (a real failure dropped as
+  unrecognised); the line limit bounds the linear engine instead.
 - File identity, rotation, truncation and the start position come from the shared tailer
   (`Bower.Source.File.FileTailFiles.Plan`); this project owns only the json-file decoder
   (entries, 16 KiB chunk join, malformed entries, oversized discard, bounds). Docker keeps
