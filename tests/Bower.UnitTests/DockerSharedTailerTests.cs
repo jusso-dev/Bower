@@ -227,9 +227,10 @@ public sealed class DockerSharedTailerTests
         Assert.Equal(expected.Count, actual.Count);
         for (int index = 0; index < expected.Count; index++)
         {
-            Assert.Equal(expected[index].Records, actual[index].Records);
-            Assert.Equal(expected[index].Cursor, actual[index].Cursor);
-            Assert.Equal(expected[index].Cursor.Serialize(), actual[index].Cursor.Serialize());
+            // Compared without what the old reader did not have (see DockerReaderDifferentialTests).
+            Assert.Equal(expected[index].Records, actual[index].Records.Select(DockerReaderDifferentialTests.Unresumed));
+            Assert.Equal(expected[index].Cursor, DockerReaderDifferentialTests.Legacy(actual[index].Cursor));
+            Assert.Equal(expected[index].Cursor.Serialize(), DockerReaderDifferentialTests.Legacy(actual[index].Cursor).Serialize());
             Assert.Equal(
                 (expected[index].Malformed, expected[index].Oversized, expected[index].RotationGap),
                 (actual[index].Malformed, actual[index].Oversized, actual[index].RotationGap));

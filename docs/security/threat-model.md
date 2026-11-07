@@ -353,6 +353,16 @@ event ID under a provider name it registers, so prefer restricted channels, list
 read are lost and counted (`gaps`); a log cleared and refilled past the bookmark while
 the collector is stopped is not detected as a reset.
 
+Docker container output is trusted as the application's own: the sidecar forwards a
+whole line that is a Bower envelope, so an application that writes untrusted text as a
+line of its own lets that text claim to be an event (the collector still validates,
+redacts and applies policy). Text inside a longer line cannot become a line of its own:
+the sidecar keys each line on its stream and Docker time, joins a line split by rotation
+before mapping it, and never maps a fragment (the part of a line whose other part could
+not be read). With `mode: non-blocking` Docker can drop a line's last chunk, and the rest
+is then read as a whole line when its stream writes again; collect containers in the
+default blocking mode.
+
 The installers delete files with `shred -u` (Linux, where available) or a plain delete
 (Windows). Neither guarantees the token bytes are gone from journaling, copy-on-write or
 SSD storage; the token's single use and short expiry are the control that matters. A

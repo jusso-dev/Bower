@@ -287,6 +287,8 @@ public static class FileTailFiles
             }
 
             // A path.1 that is never written again: its unfinished last line ends at its end.
+            // fingerprint is never null here under the Docker policy (it waits while the current
+            // file is unidentified); kept as a defence for a policy that does not.
             bool final = policy.RenamedFileIsFinal && policy.RotationGracePolls is null && fingerprint is not null;
             (TBatch batch, bool capped) = CountDrainPoll(decoder.Scan(file, at, final, false), at, file);
             if (capped)

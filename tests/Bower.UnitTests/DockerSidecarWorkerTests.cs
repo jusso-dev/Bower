@@ -3,6 +3,7 @@ using Bower.Agent.Docker;
 using Bower.Forwarding;
 using Bower.Persistence;
 using Bower.Source.Docker;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Bower.UnitTests;
@@ -118,6 +119,106 @@ public sealed class DockerSidecarWorkerTests
         Assert.True(result.Backpressure);
     }
 
+    [Fact]
+    public async Task Pass_LogsALineOpenAtRotationOnceWhenTheMoveIsCommitted()
+    {
+        // Event 3006 belongs to the move to the new file. A pass that rewinds into .1 under
+        // backpressure reads the rotation again, so only the pass that commits it logs it.
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "before rotation, long enough to fingerprint\n");
+        HttpStatusCode status = HttpStatusCode.Accepted;
+        RecordingHandler handler = new(_ => status);
+        RecordingLogger logger = new();
+        (DockerSidecarWorker worker, _) = await CreateAsync(root, handler, cancellationToken, logger);
+        await worker.ProcessOnceAsync(cancellationToken);
+        DockerFixture.Append(container, "Invalid user a from 192.0.2.1 port 1\n", "Invalid user b from 192.0.2.2 port ");
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "1\n");
+
+        status = HttpStatusCode.ServiceUnavailable;
+        SidecarPassResult refused = await worker.ProcessOnceAsync(cancellationToken);
+        int afterRefusal = logger.Count(3006);
+        status = HttpStatusCode.Accepted;
+        SidecarPassResult moved = await worker.ProcessOnceAsync(cancellationToken);
+        int afterMove = logger.Count(3006);
+        SidecarPassResult joined = await worker.ProcessOnceAsync(cancellationToken);
+
+        Assert.True(refused.Backpressure);
+        Assert.Equal((0, 1), (afterRefusal, afterMove));
+        Assert.Equal(1, logger.Count(3006));
+        Assert.Equal((1, 1), (moved.Forwarded, joined.Forwarded));
+        Assert.Contains("\"username\":\"b\"", handler.Bodies[^1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Pass_DropsAndCountsFragmentsWithoutSendingThem()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "before rotation, long enough to fingerprint\n");
+        RecordingHandler handler = new(_ => HttpStatusCode.Accepted);
+        RecordingLogger logger = new();
+        (DockerSidecarWorker worker, _) = await CreateAsync(root, handler, cancellationToken, logger);
+        await worker.ProcessOnceAsync(cancellationToken);
+        DockerFixture.Append(container, "comment from a user: ");
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, DockerLineIdentityTests.Envelope() + "\n");
+        await worker.ProcessOnceAsync(cancellationToken);
+        // The head is lost before the rest is read: the rest, a whole envelope, is a fragment.
+        File.Delete(container.LogPath + ".1");
+
+        SidecarPassResult result = await worker.ProcessOnceAsync(cancellationToken);
+
+        Assert.Equal((1, 0, 0), (result.Fragments, result.Forwarded, result.Dropped));
+        Assert.Empty(handler.Bodies);
+        // The lost head is a gap (event 3003); the pass summary (3001) carries the count.
+        Assert.Equal(1, logger.Count(3003));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task Pass_RewindsToTheRecordsResumeCursorSoInterleavedLinesKeepTheirIds(int refusedSend)
+    {
+        // A stderr line between two chunks of a stdout line. Whichever send is refused, the
+        // retry re-reads both lines whole, with the same event ids as a pass that was not refused.
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        List<string> expected = await IdsAsync(refuse: null);
+        List<string> retried = await IdsAsync(refusedSend);
+
+        Assert.Equal(2, expected.Count);
+        Assert.Equal(expected.Order(StringComparer.Ordinal), retried.Distinct().Order(StringComparer.Ordinal));
+
+        async Task<List<string>> IdsAsync(int? refuse)
+        {
+            using TemporaryDirectory root = new();
+            DockerContainer container = DockerFixture.Catalogued(root);
+            DockerFixture.AppendAt(container, "stdout", DockerFixture.Time(1), "sshd[1]: Failed password for root from 10.0.0.");
+            DockerFixture.AppendAt(container, "stderr", DockerFixture.Time(2), "Invalid user a from 192.0.2.1 port 1\n");
+            DockerFixture.AppendAt(container, "stdout", DockerFixture.Time(1), "12 port 22 ssh2\n");
+            int sends = 0;
+            List<string> accepted = [];
+            RecordingHandler handler = new(body =>
+            {
+                if (sends++ == refuse)
+                {
+                    return HttpStatusCode.ServiceUnavailable;
+                }
+
+                accepted.Add(body);
+                return HttpStatusCode.Accepted;
+            });
+            (DockerSidecarWorker worker, _) = await CreateAsync(root, handler, cancellationToken);
+            await worker.ProcessOnceAsync(cancellationToken);
+            await worker.ProcessOnceAsync(cancellationToken);
+            Assert.Contains(accepted, body => body.Contains("\"ipAddress\":\"10.0.0.12\"", StringComparison.Ordinal));
+            return [.. accepted.Select(EventId)];
+        }
+    }
+
     [Theory]
     [InlineData("http://bower-collector:4319", true)]
     [InlineData("http://127.0.0.1:4319", true)]
@@ -164,7 +265,8 @@ public sealed class DockerSidecarWorkerTests
     private static async Task<(DockerSidecarWorker Worker, EfSourceCursorStore Store)> CreateAsync(
         TemporaryDirectory root,
         RecordingHandler handler,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ILogger<DockerSidecarWorker>? logger = null)
     {
         SidecarSettings settings = Settings(root.Path);
         EfSourceCursorStore store = new(Path.Combine(root.Path, "cursors.db"));
@@ -175,7 +277,7 @@ public sealed class DockerSidecarWorkerTests
             store,
             new CollectorClient(client, settings.IngestToken),
             TimeProvider.System,
-            NullLogger<DockerSidecarWorker>.Instance);
+            logger ?? NullLogger<DockerSidecarWorker>.Instance);
         return (worker, store);
     }
 
@@ -191,6 +293,22 @@ public sealed class DockerSidecarWorkerTests
             DockerRoot = root,
             ReadExistingLogs = true
         };
+
+    /// <summary>Counts log events by id (metadata only: the sidecar never logs line content).</summary>
+    private sealed class RecordingLogger : ILogger<DockerSidecarWorker>
+    {
+        private readonly List<int> events = [];
+
+        public int Count(int eventId) => events.Count(id => id == eventId);
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
+            events.Add(eventId.Id);
+    }
 
     private sealed class RecordingHandler(Func<string, HttpStatusCode> respond) : HttpMessageHandler
     {

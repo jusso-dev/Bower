@@ -13,15 +13,26 @@ namespace Bower.UnitTests;
 /// current one over the same files; records, offsets, fingerprints, counters, gap flags and
 /// serialised cursors must be identical after every read.
 /// <para>
-/// One deliberate difference: the current reader treats a renamed <c>.1</c> as final, so a
-/// line left open at its end within the limits (split across the rotation, or ended by a
-/// stream without a newline), or a torn entry, no longer holds the cursor on <c>.1</c> while
-/// the new file goes unread and is later lost. The random histories therefore end such a line
-/// before they rotate, as the readers see it from their cursor, but leave an oversized one
-/// open so the discard carried across rotation is still compared;
-/// <see cref="LineSplitAcrossRotation_IsClosedWhereThePreRefactorReaderLostTheNextFile"/> pins
-/// the difference.
+/// Deliberate differences, kept out of the random histories and pinned by targeted tests:
 /// </para>
+/// <list type="bullet">
+/// <item>The current reader treats a renamed <c>.1</c> as final, so a line left open at its end
+/// within the limits, or a torn entry, no longer holds the cursor on <c>.1</c> while the new file
+/// goes unread and is later lost: the line is re-read from <c>.1</c> and joined with its rest.
+/// The histories end such a line before they rotate, as the readers see it from their cursor,
+/// but leave an oversized one open so the discard carried across rotation is still compared;
+/// <see cref="LineSplitAcrossRotation_IsJoinedWhereThePreRefactorReaderLostTheNextFile"/> pins
+/// it.</item>
+/// <item>The current reader keys a line on its stream and Docker time, so another stream's
+/// entries between its chunks are neither merged into it nor skipped by its discard, and an
+/// entry of the same stream with another time ends it. The old reader joined whatever came
+/// next. The histories are therefore single-stream, with one time, where both must agree;
+/// interleaving is covered by <c>DockerSourceTests</c>.</item>
+/// <item>The current cursor also names the lines open at it (<see cref="DockerLogCursor.Pending"/>),
+/// and each record carries the cursor it is re-read from (<see cref="DockerLogRecord.Resume"/>).
+/// Both are compared apart: cursors without <c>Pending</c>, and each resume cursor with the
+/// position the old sidecar rewound to, its record's start.</item>
+/// </list>
 /// </summary>
 public sealed class DockerReaderDifferentialTests
 {
@@ -56,8 +67,7 @@ public sealed class DockerReaderDifferentialTests
                         Append(path, Entries(random, random.Next(1, 5)));
                         break;
                     case 2:
-                        // One logical line in partial chunks, sometimes not finished yet, sometimes
-                        // with a complete stderr line copied in between its chunks.
+                        // One logical line in partial chunks, sometimes not finished yet.
                         Append(path, Chunks(random, random.Next(2, 6), terminate: random.Next(3) != 0));
                         break;
                     case 3:
@@ -131,10 +141,11 @@ public sealed class DockerReaderDifferentialTests
                             break;
                         }
 
-                        Assert.True(legacy.Records.SequenceEqual(current!.Records), $"{where}: records differ");
-                        Assert.True(legacy.Cursor == current.Cursor, $"{where}: cursor {legacy.Cursor} vs {current.Cursor}");
-                        Assert.Equal(legacy.Cursor.Serialize(), current.Cursor.Serialize());
-                        Assert.True((legacy.Malformed, legacy.Oversized, legacy.RotationGap, legacy.ClosedAtRotation) == (current.Malformed, current.Oversized, current.RotationGap, current.ClosedAtRotation),
+                        Assert.True(legacy.Records.SequenceEqual(current!.Records.Select(Unresumed)), $"{where}: records differ");
+                        Assert.All(current.Records, record => Assert.Equal(LegacyRewind(record), record.Resume));
+                        Assert.True(legacy.Cursor == Legacy(current.Cursor), $"{where}: cursor {legacy.Cursor} vs {current.Cursor}");
+                        Assert.Equal(legacy.Cursor.Serialize(), Legacy(current.Cursor).Serialize());
+                        Assert.True((legacy.Malformed, legacy.Oversized, legacy.RotationGap, legacy.OpenAtRotation) == (current.Malformed, current.Oversized, current.RotationGap, current.OpenAtRotation),
                             $"{where}: counters differ");
                         legacyCursor = legacy.Cursor;
                         currentCursor = current.Cursor;
@@ -153,8 +164,56 @@ public sealed class DockerReaderDifferentialTests
             $"reads {reads}, records {records}, gaps {gaps}, discarding {discarding}, carried {carried}, rotations {rotations}, restarts {restarts}, failures {failures}");
     }
 
+    [Theory]
+    [InlineData(65_536, 1_000, 4 * 1_048_576)]
+    [InlineData(64, 2, 400)]
+    [InlineData(200, 1, 250)]
+    public void OrdinarySingleStreamLogs_KeepTheirRecordsOffsetsCursorsAndEventIds(int lineBytes, int records, int bytes)
+    {
+        // Ordinary logs (one stream, Docker's own time on every chunk) read exactly as before:
+        // the same records at the same offsets, the same cursors and the same event ids.
+        DockerLogReaderOptions options = new() { StartAtEnd = false, MaximumLineBytes = lineBytes, MaximumRecordsPerBatch = records, MaximumBytesPerBatch = bytes };
+        DockerLogEventMapper mapper = new(new DockerMapperOptions { SidecarId = "sidecar-test" });
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogCursor? legacyCursor = null, currentCursor = null;
+        List<string> legacyIds = [], currentIds = [];
+        string[] history =
+        [
+            Entry("Server listening on 0.0.0.0 port 22.\n"),
+            Entry("Failed password for root from 203.0.113.5 port 22 ssh2\n"),
+            Entry("Invalid user oracle from "), Entry("192.0.2.44 "), Entry("port 50022\n"),
+            Entry(new string('o', 300) + "\n"),
+            "not json at all\n",
+            Entry("Accepted publickey for deploy from 192.0.2.4 port 50000 ssh2\n"),
+            Entry(new string('a', 40)), Entry(new string('b', 40)), Entry(new string('c', 40)), Entry("Invalid user b from 192.0.2.2 port 1\n"),
+            Entry("still being written "),
+            Entry("Invalid user c from 192.0.2.3 port 1\n")
+        ];
+        foreach (string entries in history)
+        {
+            Append(container.LogPath, entries);
+            for (int poll = 0; poll < 3; poll++)
+            {
+                DockerLogBatch legacy = LegacyDockerJsonLogReader.Read(container, legacyCursor, options);
+                DockerLogBatch current = DockerJsonLogReader.Read(container, currentCursor, options);
+                Assert.Equal(legacy.Records, current.Records.Select(Unresumed));
+                Assert.All(current.Records, record => Assert.Equal(LegacyRewind(record), record.Resume));
+                Assert.Equal(legacy.Cursor, Legacy(current.Cursor));
+                Assert.Equal(legacy.Cursor.Serialize(), Legacy(current.Cursor).Serialize());
+                Assert.Equal((legacy.Malformed, legacy.Oversized, legacy.RotationGap), (current.Malformed, current.Oversized, current.RotationGap));
+                legacyIds.AddRange(legacy.Records.Select(record => mapper.Map(container, record, DateTimeOffset.UnixEpoch).Json ?? "-"));
+                currentIds.AddRange(current.Records.Select(record => mapper.Map(container, record, DateTimeOffset.UnixEpoch).Json ?? "-"));
+                (legacyCursor, currentCursor) = (legacy.Cursor, current.Cursor);
+            }
+        }
+
+        Assert.Equal(legacyIds, currentIds);
+        Assert.True(currentIds.Count(json => json != "-") >= 2, string.Join(", ", currentIds));
+    }
+
     [Fact]
-    public void LineSplitAcrossRotation_IsClosedWhereThePreRefactorReaderLostTheNextFile()
+    public void LineSplitAcrossRotation_IsJoinedWhereThePreRefactorReaderLostTheNextFile()
     {
         using TemporaryDirectory root = new();
         DockerContainer container = DockerFixture.Catalogued(root);
@@ -162,7 +221,7 @@ public sealed class DockerReaderDifferentialTests
         DockerLogReaderOptions options = new() { StartAtEnd = false };
         DockerLogCursor? legacyCursor = null, currentCursor = null;
         List<string> legacyLines = [], currentLines = [];
-        int currentOversized = 0, currentClosed = 0;
+        int currentOversized = 0, currentOpen = 0;
         bool legacyGap = false, currentGap = false;
         DockerFixture.Append(container, "file A line one\n", "first chunk of a split line ");
         Read();
@@ -183,11 +242,11 @@ public sealed class DockerReaderDifferentialTests
 
         Assert.Equal(["file A line one", "file C line one"], legacyLines);
         Assert.True(legacyGap);
-        // The head is emitted as it stood in .1, the rest as its own fragment record.
+        // The head is read again from .1 and joined with its rest in the new file.
         Assert.Equal(
-            ["file A line one", "first chunk of a split line ", "rest of the split line", "file B line one", "file B line two", "file C line one"],
+            ["file A line one", "first chunk of a split line rest of the split line", "file B line one", "file B line two", "file C line one"],
             currentLines);
-        Assert.Equal((0, 1), (currentOversized, currentClosed));
+        Assert.Equal((0, 1), (currentOversized, currentOpen));
         Assert.False(currentGap);
 
         void Read()
@@ -198,7 +257,7 @@ public sealed class DockerReaderDifferentialTests
             legacyLines.AddRange(legacy.Records.Select(record => record.Text));
             currentLines.AddRange(current.Records.Select(record => record.Text));
             currentOversized += current.Oversized;
-            currentClosed += current.ClosedAtRotation;
+            currentOpen += current.OpenAtRotation;
             legacyGap |= legacy.RotationGap;
             currentGap |= current.RotationGap;
         }
@@ -241,8 +300,18 @@ public sealed class DockerReaderDifferentialTests
         }
     }
 
-    private static string Entry(string log, string stream = "stdout") =>
-        JsonSerializer.Serialize(new { log, stream, time = "2026-10-07T10:00:00.123456789Z" }) + "\n";
+    /// <summary>Without <see cref="DockerLogRecord.Resume"/>, which the old reader did not have.</summary>
+    internal static DockerLogRecord Unresumed(DockerLogRecord record) => record with { Resume = null };
+
+    /// <summary>Without <see cref="DockerLogCursor.Pending"/>, which the old reader did not write.</summary>
+    internal static DockerLogCursor Legacy(DockerLogCursor cursor) => cursor with { Pending = null };
+
+    /// <summary>Where the old sidecar rewound to on backpressure: the record's start, with nothing open.</summary>
+    internal static DockerLogCursor LegacyRewind(DockerLogRecord record) =>
+        new(DockerLogCursor.CurrentSchemaVersion, record.FileFingerprint, record.StartOffset);
+
+    private static string Entry(string log) =>
+        JsonSerializer.Serialize(new { log, stream = "stdout", time = "2026-10-07T10:00:00.123456789Z" }) + "\n";
 
     private static string Entries(Random random, int count)
     {
@@ -262,11 +331,6 @@ public sealed class DockerReaderDifferentialTests
         {
             bool last = index == count - 1;
             text.Append(Entry(new string((char)('a' + index), random.Next(5, 80)) + (last && terminate ? "\n" : string.Empty)));
-            if (!last && random.Next(4) == 0)
-            {
-                // Docker copies stdout and stderr into the same file concurrently.
-                text.Append(Entry("interleaved " + random.Next() + "\n", "stderr"));
-            }
         }
 
         return text.ToString();

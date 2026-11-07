@@ -17,7 +17,14 @@ public enum DockerMappingKind
     SemanticEvent,
 
     /// <summary>A recognised authentication line mapped to a typed event.</summary>
-    RecognisedSignal
+    RecognisedSignal,
+
+    /// <summary>
+    /// Part of a line whose other part could not be read (<see cref="DockerLogRecord.Fragment"/>):
+    /// never mapped, whatever it looks like, so a cut line can neither alter a signal nor pass
+    /// as a Bower envelope. Dropped and counted at the sidecar.
+    /// </summary>
+    Fragment
 }
 
 public sealed record DockerMappedEvent(DockerMappingKind Kind, string? Json, string? Detector);
@@ -47,6 +54,11 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
     {
         ArgumentNullException.ThrowIfNull(container);
         ArgumentNullException.ThrowIfNull(record);
+
+        if (record.Fragment)
+        {
+            return new DockerMappedEvent(DockerMappingKind.Fragment, null, null);
+        }
 
         string text = record.Text.Trim();
         if (text.Length == 0)

@@ -73,6 +73,107 @@ public sealed class DockerCursorCompatibilityTests
     }
 
     [Fact]
+    public void DiscardingCursorPersistedByTheOldReader_TakesItsKeyFromTheChunkItSkippedLast()
+    {
+        // The old cursor names no line: the chunk ending at its offset is the one it skipped
+        // last, so its stream and time key the discard, and a stderr line in between is kept.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, First, new string('x', 40));
+        long offset = new FileInfo(container.LogPath).Length;
+        DockerFixture.AppendAt(container, "stderr", DockerFixture.Time(5), "a stderr line\n");
+        DockerFixture.Append(container, new string('y', 40) + "\n", "after the long line\n");
+        string persisted = $$"""{"schemaVersion":1,"fingerprint":"{{DockerFingerprint(container)}}","offset":{{offset}},"discarding":true}""";
+
+        DockerLogBatch batch = DockerJsonLogReader.Read(container, DockerLogCursor.Deserialize(persisted), new DockerLogReaderOptions { MaximumLineBytes = 32 });
+
+        Assert.Equal(["a stderr line", "after the long line"], batch.Records.Select(record => record.Text));
+        Assert.Equal(1, batch.Oversized);
+        Assert.Equal(new DockerLogCursor(1, DockerFingerprint(container), new FileInfo(container.LogPath).Length), batch.Cursor);
+    }
+
+    [Fact]
+    public void DiscardingCursorPersistedByTheOldReaderAtTheStartOfAFile_KeepsTheOldRuleForThatLine()
+    {
+        // Carried across a rotation, the old cursor sits at offset 0 with no chunk before it,
+        // so no key can be recovered: as the old reader did, entries are skipped up to and
+        // including the first that ends with a newline, whatever its stream (the documented
+        // limit: a stderr line first in the file is skipped, as it was before the upgrade).
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "rest of the long line from before the rotation\n", "kept\n");
+        string persisted = $$"""{"schemaVersion":1,"fingerprint":"{{DockerFingerprint(container)}}","offset":0,"discarding":true}""";
+
+        DockerLogBatch batch = DockerJsonLogReader.Read(container, DockerLogCursor.Deserialize(persisted), new DockerLogReaderOptions());
+
+        Assert.Equal("kept", Assert.Single(batch.Records).Text);
+        Assert.Equal(1, batch.Oversized);
+        Assert.Equal(new DockerLogCursor(1, DockerFingerprint(container), new FileInfo(container.LogPath).Length), batch.Cursor);
+    }
+
+    [Fact]
+    public void DiscardingCursorPersistedByTheOldReaderWhileTheChunkIsBeingWritten_KeepsItsDiscardUntilItEnds()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, First, new string('x', 40));
+        long offset = new FileInfo(container.LogPath).Length;
+        string persisted = $$"""{"schemaVersion":1,"fingerprint":"{{DockerFingerprint(container)}}","offset":{{offset}},"discarding":true}""";
+        DockerLogReaderOptions options = new() { MaximumLineBytes = 32 };
+
+        DockerLogBatch waiting = DockerJsonLogReader.Read(container, DockerLogCursor.Deserialize(persisted), options);
+        DockerFixture.Append(container, new string('y', 40) + "\n", "after the long line\n");
+        DockerLogBatch finished = DockerJsonLogReader.Read(container, waiting.Cursor, options);
+
+        // Nothing more yet: the recovered key is written back, additively, next to the flag.
+        Assert.Empty(waiting.Records);
+        Assert.Equal(
+            $$"""{"schemaVersion":1,"fingerprint":"{{DockerFingerprint(container)}}","offset":{{offset}},"discarding":true,"pending":[{"stream":"stdout","time":"{{DockerFixture.Time(0)}}","discarding":true}]}""",
+            waiting.Cursor.Serialize());
+        Assert.Equal("after the long line", Assert.Single(finished.Records).Text);
+        Assert.Equal(1, finished.Oversized);
+    }
+
+    [Fact]
+    public void PendingLines_AreAdditiveAndValidated()
+    {
+        const string written = """{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":[{"stream":"stdout","time":"2026-10-07T10:00:00.123456789Z","discarding":true},{"stream":"stderr","time":"2026-10-07T10:00:01.123456789Z","file":"def","start":7,"length":5}]}""";
+        DockerLogCursor cursor = new(1, "abc", 42, Discarding: true, Pending:
+        [
+            new DockerPendingLine("stdout", "2026-10-07T10:00:00.123456789Z", Discarding: true),
+            new DockerPendingLine("stderr", "2026-10-07T10:00:01.123456789Z", File: "def", Start: 7, Length: 5)
+        ]);
+
+        Assert.Equal(cursor, DockerLogCursor.Deserialize(written));
+        Assert.Equal(written, cursor.Serialize());
+        Assert.Equal(cursor.GetHashCode(), DockerLogCursor.Deserialize(written)!.GetHashCode());
+        Assert.Equal(
+            """{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":null,"fragment":true}]}""",
+            (cursor with { Discarding = false, Pending = [new DockerPendingLine("stdout", null, Fragment: true)] }).Serialize());
+
+        // A damaged cursor is refused as a whole, as any other damaged Docker cursor.
+        foreach (string pending in new[]
+        {
+            """[]""",
+            """[{"stream":"stdin","time":"t","discarding":true}]""",
+            """[{"stream":"stdout","time":"t","discarding":true},{"stream":"stdout","time":"u","fragment":true}]""",
+            """[{"stream":"stdout","time":"t"}]""",
+            """[{"stream":"stdout","time":"t","start":1,"length":1}]""",
+            """[{"stream":"stdout","time":"t","file":"f","start":-1,"length":1}]""",
+            """[{"stream":"stdout","time":"t","discarding":true,"start":1}]""",
+            $$"""[{"stream":"stdout","time":"{{new string('9', DockerLogCursor.MaximumTimeLength + 1)}}","discarding":true}]""",
+            """[null]"""
+        })
+        {
+            Assert.Null(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":{{pending}}}"""));
+        }
+
+        // The flag and the keys must agree.
+        Assert.Null(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","discarding":true}]}"""));
+        Assert.Null(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":[{"stream":"stdout","time":"t","fragment":true}]}"""));
+    }
+
+    [Fact]
     public void ProvisionalCursorPersistedByTheOldReader_ReadsTheFileFromItsStart()
     {
         using TemporaryDirectory root = new();

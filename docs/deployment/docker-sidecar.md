@@ -98,54 +98,81 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
 - **Rotation.** Files are identified by their first bytes, so Docker's
   `max-size`/`max-file` rotation is detected; the rotated file is drained before the
   new one. If a log rotates more than once between passes, the gap is logged.
-- **A line open when the log rotates.** Docker writes a line over 16 KiB as several
-  chunks and can rotate between two of them; it also writes what is left when a stream
-  ends (the container stops) as an entry with no newline. Docker never writes to `.1`
-  again, so once `.1` is read to its end, a line still open there is read as it stands,
-  as one line, and the sidecar moves to the new file and reads it from its start. Nothing
-  in the new file is skipped, because the sidecar cannot tell the rest of a split line
-  from a fresh line there (stdout and stderr are interleaved in the same file). The cost
-  is that a line split by rotation arrives as two fragments, its head from `.1` and its
-  rest as the first line of the new file: neither is a whole Bower envelope or a
-  recognised signal, so both are normally dropped by the mapper, and any complete line
-  after them is forwarded. The sidecar logs `Container <name> log rotated with a line
-  still open` when it does this. Earlier releases waited on `.1` until the new file was
-  itself rotated away, which lost that whole file. A line already being skipped as
-  oversized when `.1` ends (see **Bounds**) is still skipped into the new file, up to its
-  final chunk, and counted once. A torn entry at the end of `.1` (no newline, possible
-  only after a daemon crash or a full disk) is counted as malformed and the sidecar moves
-  on the same way.
-- **When a line's final chunk never arrives.** Within one file the sidecar cannot know
-  that an unterminated entry ends its line, so it joins the next entries to it until one
-  ends with a newline. The final chunk can be missing for good: a stream that ended
-  without a newline, a daemon crash, or `mode: non-blocking`, whose ring buffer drops
-  messages, including chunks, when it is full. The open line is then joined with the next
-  line written to the same file and both arrive as one line (as in earlier releases); if
-  that join goes over 64 KiB, the whole line is skipped as oversized. If the log rotates
-  first, the open line is read as it stands, as above.
+- **Lines and streams.** Docker writes a line over 16 KiB as several chunks, and copies
+  stdout and stderr into the same file at the same time, so another stream's entries can
+  sit between two chunks of one line. Every chunk of one line carries the same stream
+  and the same `time` (its first chunk's), and the last one ends with a newline. The
+  sidecar therefore joins an entry to an open line only when both match: a stderr line
+  between two stdout chunks is read as a line of its own, and an oversized line being
+  skipped skips only its own chunks. An entry of the same stream with another `time`
+  starts a new line, so the open one ended at stream end (Docker writes what is left
+  when a stream ends, for example when the container stops, as an entry with no
+  newline) and is read as a whole line. Entries of any other stream, or with a `time`
+  longer than Docker writes, are counted as malformed.
+- **A line open when the log rotates.** Docker can rotate between two chunks of one
+  line, and never writes to `.1` again. Once `.1` is read to its end, the sidecar moves
+  to the new file with each line still open there (at most one per stream) recorded in
+  its cursor; the next pass reads that line's chunks again from `.1` and joins them with
+  the rest in the new file, so the line arrives whole. The sidecar logs `Container <name>
+  log rotated with <n> line(s) still open` (event 3006) once the move is committed.
+  Earlier releases either waited on `.1` until the new file was itself rotated away,
+  which lost that whole file, or read the two parts as separate lines. A line already
+  being skipped as oversized when `.1` ends (see **Bounds**) is still skipped into the
+  new file, up to its final chunk, and counted once. A torn entry at the end of `.1` (no
+  newline, possible only after a daemon crash or a full disk) is counted as malformed
+  and the sidecar moves on the same way.
+- **Fragments.** If `.1` is gone before the next pass reads the rest of a line (it was
+  rotated again, or compressed), the head cannot be read: the gap is logged (event 3003)
+  and the rest is a fragment. A fragment is never mapped, whatever it contains, so it
+  can neither become a signal with a cut-off address nor pass as a Bower envelope; it is
+  dropped and counted in the pass summary (`fragment(s) dropped`, event 3001).
+- **When a line's final chunk never arrives.** Until an entry of the same stream with
+  another `time` arrives, the sidecar cannot know that an unterminated entry ended its
+  line, so it waits for the rest. The final chunk can be missing for good: a stream that
+  ended without a newline (read as a whole line once the stream writes again), a daemon
+  crash, or `mode: non-blocking`, whose ring buffer drops messages, including chunks,
+  when it is full. A line whose final chunk was dropped is read as a whole line when the
+  next line of its stream arrives, so use the default blocking mode for collected
+  containers. A line still open after a whole pass's byte budget of other entries is
+  skipped as oversized (see **Bounds**).
 - **Compressed rotation.** With `compress: "true"` Docker gzips `.1` to `.1.gz` shortly
   after each rotation and removes `.1`. The sidecar does not read compressed files, so
   unless a pass drains `.1` before then, whatever it had not read when the log rotated is
   lost, and the gap is logged. Leave `compress` off for collected containers.
 - **Bounds.** Lines over 64 KiB are counted and skipped; each pass reads at most
-  1,000 lines or 4 MiB per container. Docker's 16 KiB partial chunks are reassembled.
-  A line that is over 64 KiB, or whose chunks fill a whole pass's byte budget without
-  ending, is never buffered: its chunks are consumed and committed as they are read,
-  across passes and restarts, and the line is counted as oversized once when its final
-  chunk arrives. Later lines are then read normally.
+  1,000 lines (one more when an entry both ends one line and is a line itself) or 4 MiB
+  per container. Docker's 16 KiB partial chunks are reassembled. A line that is over
+  64 KiB, or that spans a whole pass's byte budget without ending, is never buffered:
+  its chunks are consumed and committed as they are read, across passes and restarts,
+  and the line is counted as oversized once when its final chunk arrives or its stream
+  starts another line. Other lines are read normally meanwhile. A line still open at the
+  end of a pass is read again from its first chunk on the next pass (at most one per
+  stream, each within 64 KiB, and within the byte budget).
 
 ## Cursor format
 
 Each container's cursor is JSON in the state database:
 `{"schemaVersion":1,"fingerprint":"<sha256 of first 64 bytes>","offset":<bytes>}`.
-While an oversized line is being skipped the cursor also carries
-`"discarding":true`, meaning `offset` is the next physical chunk of that line. The
-field is additive and omitted when false, so cursors written before it existed read
-unchanged and normal cursors serialise byte-for-byte as before. It holds no line
-content. Truncation or a missed rotation clears it; a rotation the sidecar drains
-carries it into the new file, so the rest of an oversized line split by rotation is
-still skipped. Downgrading is not recommended while a line is being skipped: an older
-sidecar ignores the field and reads the rest of that line as if it were a new line.
+Two additive fields, omitted when empty, so cursors written before them read unchanged
+and ordinary cursors serialise byte-for-byte as before:
+
+- `"discarding":true` while an oversized line is being skipped.
+- `"pending"`: the lines open at `offset`, at most one per stream, each named by its
+  `stream` and Docker `time`. One being skipped has `"discarding":true`; one being
+  assembled has `file` (the fingerprint of the file holding its first chunk, `.1` after a
+  rotation), `start` and `length` (characters so far), so the next pass reads it again;
+  the rest of one whose head was lost has `"fragment":true`. Offsets, a length and the
+  time only, never line content.
+
+Truncation or a missed rotation clears both; a rotation the sidecar drains carries them
+into the new file. A cursor written before `pending` existed with `"discarding":true`
+names no line: the chunk that ends at its offset is the one it skipped last, so its
+stream and time become the key. When there is no such chunk (the offset is the start of
+a file after a rotation, or that entry is malformed), the old rule holds for that one
+line: entries are skipped up to and including the first that ends with a newline,
+whatever its stream, as the earlier release did. Downgrading is not recommended while a
+line is open or being skipped: an older sidecar ignores `pending` and reads the rest of
+that line as if it were a new line.
 
 ## Security model
 

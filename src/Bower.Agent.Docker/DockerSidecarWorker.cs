@@ -11,7 +11,8 @@ public sealed record SidecarPassResult(
     int Dropped,
     int Malformed,
     int Oversized,
-    bool Backpressure);
+    bool Backpressure,
+    int Fragments = 0);
 
 /// <summary>
 /// Tails opted-in container logs and forwards candidate events to the collector.
@@ -43,10 +44,10 @@ public sealed partial class DockerSidecarWorker(
             {
                 SidecarPassResult result = await ProcessOnceAsync(stoppingToken);
                 WriteHeartbeat();
-                if (result.Forwarded + result.Rejected + result.Malformed + result.Oversized > 0)
+                if (result.Forwarded + result.Rejected + result.Malformed + result.Oversized + result.Fragments > 0)
                 {
                     LogPass(logger, result.Containers, result.Forwarded, result.Rejected,
-                        result.Dropped, result.Malformed, result.Oversized);
+                        result.Dropped, result.Malformed, result.Oversized, result.Fragments);
                 }
 
                 backoff = result.Backpressure
@@ -75,7 +76,7 @@ public sealed partial class DockerSidecarWorker(
             OptInLabel = settings.OptInLabel
         });
 
-        int forwarded = 0, rejected = 0, dropped = 0, malformed = 0, oversized = 0;
+        int forwarded = 0, rejected = 0, dropped = 0, malformed = 0, oversized = 0, fragments = 0;
         foreach (DockerContainer container in catalog.Containers)
         {
             string sourceId = $"docker:{container.Id}";
@@ -89,16 +90,17 @@ public sealed partial class DockerSidecarWorker(
                 LogRotationGap(logger, container.Name);
             }
 
-            if (batch.ClosedAtRotation > 0)
-            {
-                LogClosedAtRotation(logger, container.Name);
-            }
-
             DockerLogCursor next = batch.Cursor;
             SendOutcome? stoppedBy = null;
             foreach (DockerLogRecord record in batch.Records)
             {
                 DockerMappedEvent mapped = mapper.Map(container, record, clock.GetUtcNow());
+                if (mapped.Kind == DockerMappingKind.Fragment)
+                {
+                    fragments++;
+                    continue;
+                }
+
                 if (mapped.Json is null)
                 {
                     dropped++;
@@ -116,14 +118,22 @@ public sealed partial class DockerSidecarWorker(
                 }
                 else
                 {
-                    // Stop before this record; it is retried on the next pass.
-                    next = new DockerLogCursor(
+                    // Stop before this record; it is retried on the next pass. Its resume cursor
+                    // keeps any line still open around it (another stream, or a head in .1).
+                    next = record.Resume ?? new DockerLogCursor(
                         DockerLogCursor.CurrentSchemaVersion,
                         record.FileFingerprint,
                         record.StartOffset);
                     stoppedBy = outcome;
                     break;
                 }
+            }
+
+            // Only once the move to the new file is committed: a rewind into .1 reads it again,
+            // and the next pass reports it then.
+            if (batch.OpenAtRotation > 0 && string.Equals(next.Fingerprint, batch.Cursor.Fingerprint, StringComparison.Ordinal))
+            {
+                LogOpenAtRotation(logger, container.Name, batch.OpenAtRotation);
             }
 
             if (cursor is null || next != cursor)
@@ -147,11 +157,11 @@ public sealed partial class DockerSidecarWorker(
 
             if (stoppedBy is not null)
             {
-                return new SidecarPassResult(catalog.Containers.Count, forwarded, rejected, dropped, malformed, oversized, true);
+                return new SidecarPassResult(catalog.Containers.Count, forwarded, rejected, dropped, malformed, oversized, true, fragments);
             }
         }
 
-        return new SidecarPassResult(catalog.Containers.Count, forwarded, rejected, dropped, malformed, oversized, false);
+        return new SidecarPassResult(catalog.Containers.Count, forwarded, rejected, dropped, malformed, oversized, false, fragments);
     }
 
     private void WriteHeartbeat()
@@ -166,8 +176,8 @@ public sealed partial class DockerSidecarWorker(
     }
 
     [LoggerMessage(EventId = 3001, Level = LogLevel.Information,
-        Message = "Sidecar pass: {Containers} container(s), {Forwarded} forwarded, {Rejected} rejected by policy, {Dropped} dropped, {Malformed} malformed, {Oversized} oversized.")]
-    private static partial void LogPass(ILogger logger, int containers, int forwarded, int rejected, int dropped, int malformed, int oversized);
+        Message = "Sidecar pass: {Containers} container(s), {Forwarded} forwarded, {Rejected} rejected by policy, {Dropped} dropped, {Malformed} malformed, {Oversized} oversized, {Fragments} fragment(s) dropped.")]
+    private static partial void LogPass(ILogger logger, int containers, int forwarded, int rejected, int dropped, int malformed, int oversized, int fragments);
 
     [LoggerMessage(EventId = 3002, Level = LogLevel.Warning,
         Message = "Sidecar pass failed with {FailureType}; backing off.")]
@@ -178,8 +188,8 @@ public sealed partial class DockerSidecarWorker(
     private static partial void LogRotationGap(ILogger logger, string container);
 
     [LoggerMessage(EventId = 3006, Level = LogLevel.Information,
-        Message = "Container {Container} log rotated with a line still open; it was read as it stood in the rotated file, and any rest of it in the new file is read as a separate line.")]
-    private static partial void LogClosedAtRotation(ILogger logger, string container);
+        Message = "Container {Container} log rotated with {Lines} line(s) still open; each is read again from the rotated file and joined with its rest in the new file.")]
+    private static partial void LogOpenAtRotation(ILogger logger, string container, int lines);
 
     [LoggerMessage(EventId = 3004, Level = LogLevel.Warning,
         Message = "Cursor for {Container} changed concurrently; it will be re-read.")]

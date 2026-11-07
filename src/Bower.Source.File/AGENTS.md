@@ -42,7 +42,8 @@ cursor format, limits, defaults, failure codes and configuration messages.
   the cursor moves on (to a provisional cursor if the file is missing, still watching the
   abandoned `path.1`) and the unread rest is a gap.
 - Cursor schema 2. Never interpret another schema version: replay the current file from 0
-  and count a gap once the replay cursor is stored (never per refused retry). A damaged current-schema cursor fails closed (`file-cursor-invalid`).
+  and count a gap once the replay cursor is stored (never per refused retry). A damaged
+  current-schema cursor fails closed (`file-cursor-invalid`).
 - When two inputs come to name one file after load, refuse only the one whose canonical
   target changed since load (an input whose directory did not exist at load keeps its
   written path as its load-time target, so both can be refused: fails closed); report
@@ -66,11 +67,15 @@ cursor format, limits, defaults, failure codes and configuration messages.
   scans a drained `path.1` with `eofEndsLine` once the current file is identified; the file
   source never sets it, as its grace window and drain cap already end an unfinished last
   line. The file source uses the length taken at open (`FileTailLength.Opened`, one
-  snapshot with identity and write time, as in Rust); Docker measures again (`Measured`). The Docker source uses it with its own policy and decoder, so
-  a change here must keep `DockerSourceTests`, `DockerSidecarWorkerTests`,
+  snapshot with identity and write time, as in Rust); Docker measures again (`Measured`).
+  The Docker source uses it with its own policy and decoder, so a change here must keep
+  `DockerSourceTests`, `DockerLineIdentityTests`, `DockerSidecarWorkerTests`,
   `DockerCursorCompatibilityTests`, `DockerReaderDifferentialTests` and
   `DockerSharedTailerTests` passing unchanged. The Docker reader maps cursors by name
   (`Shared()` and `Docker()`), so keep `FileTailCursor`'s `Fingerprint`, `Offset` and
   `Discarding` with the meanings `DockerLogCursor` gives them. Docker's JSON and schema
   version are `DockerLogCursor`'s own, and it keeps none of the rotation fields, so nothing
-  under Docker's policy may depend on them.
+  under Docker's policy may depend on them. Its open lines (`DockerLogCursor.Pending`) are
+  not in `FileTailCursor`: the Docker decoder restores them where the tailer hands back the
+  read's own position and carries them in `MovedToCurrent`, so keep calling the decoder's
+  `Empty`, `Scan` and `MovedToCurrent` with the cursor the tailer was given or moved to.
