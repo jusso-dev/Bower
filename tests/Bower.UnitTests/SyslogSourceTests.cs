@@ -592,14 +592,39 @@ public sealed class SyslogSourceTests
         Assert.Equal("accepted", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("message").GetString());
 
         // A blocked sink fills the bounded datagram queue; further datagrams are dropped, never buffered without bound.
+        // The kernel may also drop datagrams before the listener reads them, so the flood goes on in paced bursts
+        // until the listener counts a drop rather than assuming every datagram arrives.
         sink.Block = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        for (int index = 0; index < SyslogSource.UdpQueueCapacity + 64; index++)
+        long received = status.FramesReceived, queued = status.Queued, dropped = status.Dropped;
+        int sent = 0;
+        using (CancellationTokenSource flood = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
         {
-            await client.SendAsync(Encoding.ASCII.GetBytes($"<38>Oct 11 22:14:15 gw01 sshd: flood {index}"), endpoint, cancellation);
+            flood.CancelAfter(TimeSpan.FromSeconds(30));
+            while ((status = source.Snapshot()[0]).Dropped == dropped)
+            {
+                for (int burst = 0; burst < 32; burst++, sent++)
+                {
+                    await client.SendAsync(Encoding.ASCII.GetBytes($"<38>Oct 11 22:14:15 gw01 sshd: flood {sent}"), endpoint, flood.Token);
+                }
+
+                // Let the listener read the burst so the kernel buffer rarely overflows; move on if part of it was lost.
+                for (int poll = 0; poll < 25 && source.Snapshot()[0].FramesReceived - received < sent; poll++)
+                {
+                    await Task.Delay(20, flood.Token);
+                }
+            }
         }
-        status = await WaitFor(source, value => value.Dropped > 1, cancellation);
+
+        // Frames read but neither queued nor dropped wait in the bounded queue, in the blocked worker, or between
+        // the two counters: never more than the capacity.
+        Assert.InRange(status.FramesReceived - received - (status.Queued - queued) - (status.Dropped - dropped), 0, SyslogSource.UdpQueueCapacity + 2);
         sink.Block.SetResult();
-        Assert.True(status.FramesReceived <= SyslogSource.UdpQueueCapacity + 64 + 3);
+
+        // Every frame read is accounted for once, and a drop needs a full queue first.
+        status = await WaitFor(source, value => value.Queued + value.Dropped + value.Oversized == value.FramesReceived, cancellation);
+        Assert.InRange(status.FramesReceived - received, SyslogSource.UdpQueueCapacity + 1, sent);
+        Assert.True(status.Queued - queued >= SyslogSource.UdpQueueCapacity);
+        Assert.Equal(0, status.Retries);
     }
 
     [Fact]
