@@ -475,7 +475,7 @@ public sealed class TapHostTests
 
     private static SecurityEventEnvelope Event() =>
         TestEvents.AuthenticationFailure(
-            DateTimeOffset.UtcNow, eventId: Guid.NewGuid().ToString(), originalId: Guid.NewGuid().ToString());
+            DateTimeOffset.UtcNow, eventId: TestEvents.UniqueEventId(), originalId: TestEvents.UniqueEventId());
 
     private static async Task<WebApplication> StartAsync(
         TemporaryDirectory directory,

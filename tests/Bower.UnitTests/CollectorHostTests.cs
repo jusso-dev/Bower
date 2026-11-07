@@ -754,5 +754,5 @@ public sealed class CollectorHostTests
     }
 
     private static SecurityEventEnvelope AuthenticationFailure() =>
-        TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId: Guid.NewGuid().ToString());
+        TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId: TestEvents.UniqueEventId());
 }
