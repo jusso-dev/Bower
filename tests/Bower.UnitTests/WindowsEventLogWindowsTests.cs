@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Security.Principal;
@@ -37,11 +38,7 @@ public sealed class WindowsEventLogWindowsTests
     [SupportedOSPlatform("windows")]
     private static async Task RunAsync(CancellationToken cancellation)
     {
-        if (!EventLog.SourceExists(SourceName))
-        {
-            EventLog.CreateEventSource(new EventSourceCreationData(SourceName, LogName));
-        }
-
+        CreateLog(LogName, SourceName);
         using EventLog log = new(LogName) { Source = SourceName };
         try
         {
@@ -150,11 +147,7 @@ public sealed class WindowsEventLogWindowsTests
     {
         const string scaleLog = "BowerCiScale";
         const string scaleSource = "BowerCiScaleSource";
-        if (!EventLog.SourceExists(scaleSource))
-        {
-            EventLog.CreateEventSource(new EventSourceCreationData(scaleSource, scaleLog));
-        }
-
+        CreateLog(scaleLog, scaleSource);
         using EventLog log = new(scaleLog) { Source = scaleSource };
         try
         {
@@ -197,6 +190,54 @@ public sealed class WindowsEventLogWindowsTests
 
             Array.Sort(samples);
             return samples[samples.Length / 2];
+        }
+    }
+
+    /// <summary>
+    /// Creates the test log and waits until the event log service serves it.
+    /// <c>CreateEventSource</c> only writes the registry; the service registers the new log
+    /// asynchronously, and until it has, opening, clearing or writing the log fails with
+    /// Access is denied. Served means the classic API opens the log for reading (as
+    /// <c>Clear</c> does) and an event written through the source reads back from the
+    /// channel. The probe event (999) is not allow-listed and each test clears the log.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void CreateLog(string logName, string sourceName)
+    {
+        if (!EventLog.SourceExists(sourceName))
+        {
+            EventLog.CreateEventSource(new EventSourceCreationData(sourceName, logName));
+        }
+
+        using EventLog log = new(logName) { Source = sourceName };
+        WindowsEventLogChannelFactory channels = new();
+        Stopwatch waited = Stopwatch.StartNew();
+        while (true)
+        {
+            Exception? unavailable = null;
+            try
+            {
+                _ = log.Entries.Count;
+                log.WriteEntry("registration probe", EventLogEntryType.Information, 999);
+                using IWindowsEventChannel channel = channels.Open(logName);
+                if (channel.GetRange().NewestRecordId > 0)
+                {
+                    return;
+                }
+            }
+            catch (Exception exception) when (exception is Win32Exception { NativeErrorCode: 5 }
+                or InvalidOperationException { InnerException: Win32Exception { NativeErrorCode: 5 } }
+                or WindowsEventChannelException { Code: WindowsEventChannelFailures.AccessDenied or WindowsEventChannelFailures.ChannelNotFound })
+            {
+                unavailable = exception;
+            }
+
+            if (waited.Elapsed > TimeSpan.FromSeconds(30))
+            {
+                throw new TimeoutException($"The event log service did not serve the new log {logName} within 30 seconds of its creation.", unavailable);
+            }
+
+            Thread.Sleep(100);
         }
     }
 
