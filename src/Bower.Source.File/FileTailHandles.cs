@@ -272,7 +272,8 @@ internal static partial class LinuxTailFile
     /// <summary>
     /// <c>open</c> flags per architecture: <c>O_NOFOLLOW</c> is 0x20000 on x86-64 but 0x8000 on
     /// arm64 (where 0x20000 is <c>O_LARGEFILE</c>). Other architectures get null: the file is
-    /// opened without it and only the post-open checks apply (fail closed).
+    /// opened without it, so a symbolic link is followed and only the allowed-root and post-open
+    /// checks apply.
     /// </summary>
     internal static int? OpenFlags(Architecture architecture) => architecture switch
     {

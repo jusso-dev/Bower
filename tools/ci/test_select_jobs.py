@@ -151,7 +151,7 @@ class MergeGateTests(unittest.TestCase):
         workflow = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
         script = workflow.read_text(encoding="utf-8").split("python3 - <<'PYTHON'\n", 1)[1]
         script = textwrap.dedent(script.split("          PYTHON", 1)[0])
-        jobs = ("changes", "version", "workflow-lint", "build-test", "rust", "infrastructure",
+        jobs = ("changes", "version", "workflow-lint", "build-test", "linux-arm64", "rust", "infrastructure",
                 "powershell", "ui", "e2e", "windows-event-log", "docker", "docker-arm64",
                 "publish", "package-linux", "package-windows", "install-linux", "install-windows")
         results = {job: {"result": "success"} for job in jobs}
@@ -181,6 +181,7 @@ class MergeGateTests(unittest.TestCase):
     def test_selected_checks_cannot_be_silently_skipped(self):
         self.assertNotEqual(0, self.gate({"install-windows": "skipped"}, {"packaging": "true"}))
         self.assertNotEqual(0, self.gate({"docker-arm64": "skipped"}, {"containers": "true"}))
+        self.assertNotEqual(0, self.gate({"linux-arm64": "skipped"}, {"dotnet": "true"}))
         self.assertNotEqual(0, self.gate(selected={"rust": ""}))
 
 

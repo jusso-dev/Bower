@@ -44,6 +44,11 @@ public sealed class CollectorSettingsFileTests
     {
         using TemporaryDirectory directory = new();
         string missing = Path.Combine(directory.Path, "bower.env");
+        if (!OperatingSystem.IsWindows())
+        {
+            // Under umask 002 the folder is group-writable and would be refused before the lookup.
+            File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
 
         Assert.Equal(SettingsFileState.NotConfigured,
             CollectorSettingsFile.Apply(_ => null, (_, _) => throw new InvalidOperationException()).State);
@@ -166,6 +171,8 @@ public sealed class CollectorSettingsFileTests
     public void LinuxLoad_RejectsSymlinkedParentsAndWritableAncestors()
     {
         if (!OperatingSystem.IsLinux()) return;
+        // This architecture has known O_DIRECTORY and O_NOFOLLOW values (CI runs this on x64 and arm64).
+        Assert.NotNull(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
         using TemporaryDirectory directory = new();
         string child = Path.Combine(directory.Path, "child");
         Directory.CreateDirectory(child);
@@ -183,6 +190,19 @@ public sealed class CollectorSettingsFileTests
         File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute | UnixFileMode.OtherWrite);
         try { Assert.Throws<InvalidOperationException>(() => CollectorSettingsFile.Load(file)); }
         finally { File.SetUnixFileMode(directory.Path, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute); }
+    }
+
+    [Fact]
+    public void LinuxOpenFlags_UseEachArchitecturesDirectoryAndNoFollowValues()
+    {
+        Assert.Equal((0x10000, 0x20000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.X64));
+        Assert.Equal((0x10000, 0x20000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.X86));
+        // On arm and arm64, 0x10000 is O_DIRECT and 0x20000 is O_LARGEFILE.
+        Assert.Equal((0x4000, 0x8000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm64));
+        Assert.Equal((0x4000, 0x8000), LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm));
+        // Not shipped or tested: refuse the settings file rather than open it unprotected.
+        Assert.Null(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.RiscV64));
+        Assert.Null(LinuxSettingsFile.OpenFlags(System.Runtime.InteropServices.Architecture.S390x));
     }
 
     private static bool IsRoot() => Environment.UserName == "root";
