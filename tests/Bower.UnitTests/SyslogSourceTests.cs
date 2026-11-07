@@ -457,6 +457,142 @@ public sealed class SyslogSourceTests
         Assert.Equal(1, status.PeerResets);
     }
 
+    // A peer that resets before connection setup (keepalive, stream, TLS or RELP) must still
+    // release its connection slot and be counted, or resets exhaust maximumConnections. The
+    // hook holds setup until the reset has reached the accepted socket, so the case is
+    // deterministic. On macOS the keepalive option then fails and .NET marks the socket not
+    // connected; on Linux setup succeeds and the first read sees the reset.
+    [Theory]
+    [InlineData("tcp")]
+    [InlineData("tls")]
+    [InlineData("relp")]
+    public async Task Tcp_ResetsBeforeSetupReleaseTheirSlotsAndAreCounted(string protocol)
+    {
+        const int MaximumConnections = 2;
+        const int Resets = MaximumConnections * 3;
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        string tls = Path.Combine(Fixtures, "tls");
+        string? serverTls = protocol == "tls"
+            ? $$"""{"certificateFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server.pem"))}}, "privateKeyFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server-key.pem"))}}}"""
+            : null;
+        bool holdForReset = true;
+        await using SyslogSource source = await Start(protocol, sink, cancellation, maximumConnections: MaximumConnections,
+            tls: serverTls, beforeConnectionSetup: async (socket, token) =>
+            {
+                if (Volatile.Read(ref holdForReset))
+                {
+                    await WaitForPeerReset(socket, token);
+                }
+            });
+
+        for (int index = 0; index < Resets; index++)
+        {
+            await ResetImmediately(source, cancellation);
+            await WaitFor(source, value => value.ConnectionsAccepted == index + 1 && value.ActiveConnections == 0, cancellation);
+        }
+
+        SyslogListenerStatus status = source.Snapshot()[0];
+        Assert.Equal(Resets, status.PeerResets);
+        Assert.Equal(0, status.ConnectionsRejected);
+
+        // A normal sender still gets a slot, completes its protocol's setup and delivers a frame.
+        Volatile.Write(ref holdForReset, false);
+        const string Message = "<38>Oct 11 22:14:15 gw01 sshd: after resets";
+        if (protocol == "tls")
+        {
+            await using SslStream secure = await ConnectTls(source, client: null, cancellation);
+            await secure.WriteAsync(Encoding.ASCII.GetBytes(Message + "\n"), cancellation);
+            await sink.WaitForAsync(1, cancellation);
+        }
+        else
+        {
+            using TcpClient client = await Connect(source, cancellation);
+            NetworkStream network = client.GetStream();
+            if (protocol == "relp")
+            {
+                const string Offers = "relp_version=0\nrelp_software=test\ncommands=syslog";
+                await network.WriteAsync(Encoding.ASCII.GetBytes(
+                    $"1 open {Offers.Length} {Offers}\n2 syslog {Message.Length} {Message}\n"), cancellation);
+                string answers = await ReadUntil(network, "2 rsp 6 200 OK\n", cancellation);
+                Assert.StartsWith("1 rsp ", answers, StringComparison.Ordinal);
+                Assert.Contains(" 200 OK\n", answers[..answers.IndexOf("2 rsp", StringComparison.Ordinal)], StringComparison.Ordinal);
+            }
+            else
+            {
+                await network.WriteAsync(Encoding.ASCII.GetBytes(Message + "\n"), cancellation);
+            }
+
+            await sink.WaitForAsync(1, cancellation);
+        }
+
+        Assert.Contains("after resets", Assert.Single(sink.Records), StringComparison.Ordinal);
+        status = source.Snapshot()[0];
+        Assert.Equal(Resets + 1, status.ConnectionsAccepted);
+        Assert.Equal(0, status.ConnectionsRejected);
+    }
+
+    [Theory]
+    [InlineData("tcp")]
+    [InlineData("tls")]
+    [InlineData("relp")]
+    public async Task Tcp_SetupFailureBeforeTheStreamDisposesTheSocketAndReleasesItsSlot(string protocol)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        string tls = Path.Combine(Fixtures, "tls");
+        string? serverTls = protocol == "tls"
+            ? $$"""{"certificateFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server.pem"))}}, "privateKeyFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server-key.pem"))}}}"""
+            : null;
+        Socket? accepted = null;
+        await using SyslogSource source = await Start(protocol, sink, cancellation, maximumConnections: 1, tls: serverTls,
+            beforeConnectionSetup: (socket, _) =>
+            {
+                Volatile.Write(ref accepted, socket);
+                throw new IOException("setup failed before the stream was opened");
+            });
+
+        using TcpClient client = await Connect(source, cancellation);
+        await WaitFor(source, value => value.ConnectionsAccepted == 1 && value.ActiveConnections == 0, cancellation);
+
+        // Only the bare-socket cleanup can close it: no stream was ever opened over it.
+        Socket socket = Assert.IsType<Socket>(Volatile.Read(ref accepted));
+        Assert.Throws<ObjectDisposedException>(() => socket.Available);
+    }
+
+    private static async Task<string> ReadUntil(Stream stream, string terminator, CancellationToken cancellation)
+    {
+        StringBuilder received = new();
+        byte[] buffer = new byte[256];
+        while (!received.ToString().EndsWith(terminator, StringComparison.Ordinal))
+        {
+            int read = await stream.ReadAsync(buffer, cancellation);
+            Assert.NotEqual(0, read);
+            received.Append(Encoding.ASCII.GetString(buffer, 0, read));
+        }
+
+        return received.ToString();
+    }
+
+    /// <summary>Connects and resets at once (linger 0: close sends RST, as a sender closing with unread data does).</summary>
+    private static async Task ResetImmediately(SyslogSource source, CancellationToken cancellation)
+    {
+        using Socket client = new(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        await client.ConnectAsync(source.Endpoints["edge"], cancellation);
+        client.LingerState = new LingerOption(true, 0);
+    }
+
+    /// <summary>Waits until the accepted socket is readable: the peer's reset has arrived.</summary>
+    private static async Task WaitForPeerReset(Socket socket, CancellationToken cancellation)
+    {
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
+        while (!socket.Poll(0, SelectMode.SelectRead))
+        {
+            await Task.Delay(5, timeout.Token);
+        }
+    }
+
     [Fact]
     public void KeepAlive_IsEnabledWithBowerTiming()
     {
@@ -587,19 +723,52 @@ public sealed class SyslogSourceTests
         await client.SendAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: dropped when the queue is full\n"), endpoint, cancellation);
         await client.SendAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: accepted"), endpoint, cancellation);
         await client.SendAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: " + new string('x', 600)), endpoint, cancellation);
-        SyslogListenerStatus status = await WaitFor(source, value => value.Queued == 1 && value.Dropped == 1 && value.Oversized == 1, cancellation);
+        // All three frames read, so the baseline below is one settled snapshot.
+        SyslogListenerStatus status = await WaitFor(source, value => value.FramesReceived == 3 && value.Queued == 1 && value.Dropped == 1 && value.Oversized == 1, cancellation);
         Assert.Equal(0, status.Retries);
         Assert.Equal("accepted", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("message").GetString());
 
         // A blocked sink fills the bounded datagram queue; further datagrams are dropped, never buffered without bound.
+        // The kernel may also drop datagrams before the listener reads them, so the flood goes on in paced bursts
+        // until the listener counts a drop rather than assuming every datagram arrives.
         sink.Block = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        for (int index = 0; index < SyslogSource.UdpQueueCapacity + 64; index++)
+        long received = status.FramesReceived, queued = status.Queued, dropped = status.Dropped;
+        int sent = 0;
+        using (CancellationTokenSource flood = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
         {
-            await client.SendAsync(Encoding.ASCII.GetBytes($"<38>Oct 11 22:14:15 gw01 sshd: flood {index}"), endpoint, cancellation);
+            flood.CancelAfter(TimeSpan.FromSeconds(30));
+            try
+            {
+                while ((status = source.Snapshot()[0]).Dropped == dropped)
+                {
+                    for (int burst = 0; burst < 32; burst++, sent++)
+                    {
+                        await client.SendAsync(Encoding.ASCII.GetBytes($"<38>Oct 11 22:14:15 gw01 sshd: flood {sent}"), endpoint, flood.Token);
+                    }
+
+                    // Let the listener read the burst so the kernel buffer rarely overflows; move on if part of it was lost.
+                    for (int poll = 0; poll < 25 && source.Snapshot()[0].FramesReceived - received < sent; poll++)
+                    {
+                        await Task.Delay(20, flood.Token);
+                    }
+                }
+            }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+            {
+                Assert.Fail("A full queue should drop datagrams within 30 s.");
+            }
         }
-        status = await WaitFor(source, value => value.Dropped > 1, cancellation);
+
+        // Frames read but neither queued nor dropped wait in the bounded queue, in the blocked worker, or between
+        // the two counters. The first drop needs a full queue, so that is the capacity give or take the two in flight.
+        Assert.InRange(status.FramesReceived - received - (status.Queued - queued) - (status.Dropped - dropped), SyslogSource.UdpQueueCapacity - 2, SyslogSource.UdpQueueCapacity + 2);
         sink.Block.SetResult();
-        Assert.True(status.FramesReceived <= SyslogSource.UdpQueueCapacity + 64 + 3);
+
+        // Every frame read is accounted for once, and a drop needs a full queue first.
+        status = await WaitFor(source, value => value.Queued + value.Dropped + value.Oversized == value.FramesReceived, cancellation);
+        Assert.InRange(status.FramesReceived - received, SyslogSource.UdpQueueCapacity + 1, sent);
+        Assert.True(status.Queued - queued >= SyslogSource.UdpQueueCapacity);
+        Assert.Equal(0, status.Retries);
     }
 
     [Fact]
@@ -815,7 +984,7 @@ public sealed class SyslogSourceTests
     private static async Task<SyslogSource> Start(string protocol, FakeSink sink, CancellationToken cancellation,
         int idleTimeoutSeconds = 30, int maximumConnections = 8, string allowedSenders = "\"127.0.0.1\", \"::1\"", string? tls = null,
         int frameTimeoutSeconds = 30, int drainMilliseconds = 500, int stopMilliseconds = 1_000,
-        int handshakeStartTimeoutSeconds = 60)
+        int handshakeStartTimeoutSeconds = 60, Func<Socket, CancellationToken, Task>? beforeConnectionSetup = null)
     {
         string json = Config(listener: $$"""
             "id": "edge", "protocol": "{{protocol}}", "address": "127.0.0.1", "port": 0,
@@ -830,7 +999,8 @@ public sealed class SyslogSourceTests
         {
             RetryDelay = TimeSpan.FromMilliseconds(20),
             DrainTimeout = TimeSpan.FromMilliseconds(drainMilliseconds),
-            StopTimeout = TimeSpan.FromMilliseconds(stopMilliseconds)
+            StopTimeout = TimeSpan.FromMilliseconds(stopMilliseconds),
+            BeforeConnectionSetup = beforeConnectionSetup
         };
         try
         {

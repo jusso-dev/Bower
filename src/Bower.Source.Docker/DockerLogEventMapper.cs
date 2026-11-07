@@ -73,16 +73,7 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
 
         foreach (AuthenticationPattern pattern in Patterns)
         {
-            Match match;
-            try
-            {
-                match = pattern.Regex.Match(text);
-            }
-            catch (RegexMatchTimeoutException)
-            {
-                continue;
-            }
-
+            Match match = pattern.Regex.Match(text);
             if (!match.Success)
             {
                 continue;
@@ -217,6 +208,9 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
         string Action,
         string Reason);
 
+    /// <summary>The authentication patterns in evaluation order, for engine tests.</summary>
+    internal static IEnumerable<Regex> AuthenticationRegexes => Patterns.Select(pattern => pattern.Regex);
+
     private static readonly AuthenticationPattern[] Patterns =
     [
         new("sshd.max-attempts", MaxAttemptsRegex(), SecurityEventTypes.AccountLockout,
@@ -233,33 +227,40 @@ public sealed partial class DockerLogEventMapper(DockerMapperOptions options)
             "authentication.attempt", "UnknownUser")
     ];
 
+    // The non-backtracking engine is linear in input length and a record is at most
+    // DockerLogReaderOptions.MaximumLineBytes characters, so no match timeout is used. A
+    // wall-clock timeout made the mapping depend on machine load: a cold or descheduled
+    // match timed out and a real authentication failure was dropped as unrecognised. The
+    // timeout is explicit so a host-wide default cannot reintroduce one. The source generator
+    // does not support NonBacktracking, so it emits a cached runtime-constructed Regex.
+
     [GeneratedRegex(
         @"maximum authentication attempts exceeded for (?:invalid user )?(?<user>\S+) from (?<ip>[0-9a-fA-F:.]+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, Timeout.Infinite)]
     private static partial Regex MaxAttemptsRegex();
 
     [GeneratedRegex(
         @"Failed (?:password|publickey|keyboard-interactive/pam) for (?:invalid user )?(?<user>\S+) from (?<ip>[0-9a-fA-F:.]+)",
-        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, Timeout.Infinite)]
     private static partial Regex FailedPasswordRegex();
 
     [GeneratedRegex(
         @"Invalid user (?<user>\S+) from (?<ip>[0-9a-fA-F:.]+)",
-        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, Timeout.Infinite)]
     private static partial Regex InvalidUserRegex();
 
     [GeneratedRegex(
         @"pam_unix\([^)]*:auth\): authentication failure;.*?(?:rhost=(?<ip>[0-9a-fA-F:.]*))?\s+user=(?<user>\S+)",
-        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, Timeout.Infinite)]
     private static partial Regex PamFailureRegex();
 
     [GeneratedRegex(
         @"user ""(?<user>[^""]{1,128})"": password mismatch, client: (?<ip>[0-9a-fA-F:.]+)",
-        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, Timeout.Infinite)]
     private static partial Regex NginxMismatchRegex();
 
     [GeneratedRegex(
         @"user ""(?<user>[^""]{1,128})"" was not found in "".*?"", client: (?<ip>[0-9a-fA-F:.]+)",
-        RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 50)]
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking, Timeout.Infinite)]
     private static partial Regex NginxUnknownUserRegex();
 }

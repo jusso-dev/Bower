@@ -132,7 +132,7 @@ emoji (a UTF-16 surrogate pair) is skipped.
 | Test samples | 16 `match` + 16 `noMatch`, 1024 characters each |
 | Secret field names | 64, 128 characters each |
 | Privacy profile size | 256 KiB |
-| .NET match timeout | 100 ms per match; a timeout quarantines the event (`redaction-failed`), never forwards it unredacted |
+| .NET match timeout | 10 s per match; a timeout quarantines the event (`redaction-failed`), never forwards it unredacted |
 
 ## 2. Test the rule locally
 

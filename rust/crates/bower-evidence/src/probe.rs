@@ -121,6 +121,10 @@ pub mod outcomes {
     pub const QUERY_TRANSPORT_CODE: &str = "query-transport-failed";
     /// Query error code when an HTTP 200 answer carries an error (partial results).
     pub const QUERY_INCOMPLETE_CODE: &str = "query-incomplete";
+    /// Query error code when a 2xx answer is not a well-formed Logs query result: empty, not
+    /// JSON, not an object, no usable first table, a bad column or row, a duplicate key, too
+    /// deep, or a string that cannot be decoded.
+    pub const QUERY_INVALID_RESPONSE_CODE: &str = "query-invalid-response";
 }
 
 /// Paths a parser probe never exercises; every parser bundle lists them.
