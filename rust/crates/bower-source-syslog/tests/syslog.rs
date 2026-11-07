@@ -552,7 +552,8 @@ impl SyslogSink for FakeSink {
     ) -> Result<SubmitOutcome, SinkFailure> {
         self.attempts.fetch_add(1, Ordering::SeqCst);
         if let Some(block) = self.block.lock().unwrap().as_ref() {
-            let _ = block.recv_timeout(Duration::from_secs(10));
+            // Longer than any flood bound: a blocked sink stays blocked until released.
+            let _ = block.recv_timeout(Duration::from_secs(120));
         }
         if self.fail {
             return Err(SinkFailure);
@@ -1033,7 +1034,12 @@ async fn udp_is_best_effort_and_counts_drops_under_backpressure() {
         .await
         .unwrap();
     let status = running
-        .wait_for(|status| status.queued == 1 && status.dropped == 1 && status.oversized == 1)
+        .wait_for(|status| {
+            status.frames_received == 3
+                && status.queued == 1
+                && status.dropped == 1
+                && status.oversized == 1
+        })
         .await;
     assert_eq!(status.retries, 0);
     assert_eq!(field(&sink.records()[0], "message"), "accepted");
@@ -1075,12 +1081,13 @@ async fn udp_is_best_effort_and_counts_drops_under_backpressure() {
     .expect("a full queue drops datagrams");
 
     // Frames read but neither queued nor dropped wait in the bounded queue, in the blocked
-    // worker, or between the two counters: never more than the capacity.
+    // worker, or between the two counters. The first drop needs a full queue, so that is the
+    // capacity give or take the two in flight.
     let capacity = i64::try_from(UDP_QUEUE_CAPACITY).unwrap();
     let waiting =
         status.frames_received - received - (status.queued - queued) - (status.dropped - dropped);
     assert!(
-        (0..=capacity + 2).contains(&waiting),
+        (capacity - 2..=capacity + 2).contains(&waiting),
         "{waiting} frames waiting"
     );
     drop(release);

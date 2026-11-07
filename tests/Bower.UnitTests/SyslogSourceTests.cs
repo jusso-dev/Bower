@@ -587,7 +587,8 @@ public sealed class SyslogSourceTests
         await client.SendAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: dropped when the queue is full\n"), endpoint, cancellation);
         await client.SendAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: accepted"), endpoint, cancellation);
         await client.SendAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: " + new string('x', 600)), endpoint, cancellation);
-        SyslogListenerStatus status = await WaitFor(source, value => value.Queued == 1 && value.Dropped == 1 && value.Oversized == 1, cancellation);
+        // All three frames read, so the baseline below is one settled snapshot.
+        SyslogListenerStatus status = await WaitFor(source, value => value.FramesReceived == 3 && value.Queued == 1 && value.Dropped == 1 && value.Oversized == 1, cancellation);
         Assert.Equal(0, status.Retries);
         Assert.Equal("accepted", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("message").GetString());
 
@@ -600,24 +601,31 @@ public sealed class SyslogSourceTests
         using (CancellationTokenSource flood = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
         {
             flood.CancelAfter(TimeSpan.FromSeconds(30));
-            while ((status = source.Snapshot()[0]).Dropped == dropped)
+            try
             {
-                for (int burst = 0; burst < 32; burst++, sent++)
+                while ((status = source.Snapshot()[0]).Dropped == dropped)
                 {
-                    await client.SendAsync(Encoding.ASCII.GetBytes($"<38>Oct 11 22:14:15 gw01 sshd: flood {sent}"), endpoint, flood.Token);
-                }
+                    for (int burst = 0; burst < 32; burst++, sent++)
+                    {
+                        await client.SendAsync(Encoding.ASCII.GetBytes($"<38>Oct 11 22:14:15 gw01 sshd: flood {sent}"), endpoint, flood.Token);
+                    }
 
-                // Let the listener read the burst so the kernel buffer rarely overflows; move on if part of it was lost.
-                for (int poll = 0; poll < 25 && source.Snapshot()[0].FramesReceived - received < sent; poll++)
-                {
-                    await Task.Delay(20, flood.Token);
+                    // Let the listener read the burst so the kernel buffer rarely overflows; move on if part of it was lost.
+                    for (int poll = 0; poll < 25 && source.Snapshot()[0].FramesReceived - received < sent; poll++)
+                    {
+                        await Task.Delay(20, flood.Token);
+                    }
                 }
+            }
+            catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+            {
+                Assert.Fail("A full queue should drop datagrams within 30 s.");
             }
         }
 
         // Frames read but neither queued nor dropped wait in the bounded queue, in the blocked worker, or between
-        // the two counters: never more than the capacity.
-        Assert.InRange(status.FramesReceived - received - (status.Queued - queued) - (status.Dropped - dropped), 0, SyslogSource.UdpQueueCapacity + 2);
+        // the two counters. The first drop needs a full queue, so that is the capacity give or take the two in flight.
+        Assert.InRange(status.FramesReceived - received - (status.Queued - queued) - (status.Dropped - dropped), SyslogSource.UdpQueueCapacity - 2, SyslogSource.UdpQueueCapacity + 2);
         sink.Block.SetResult();
 
         // Every frame read is accounted for once, and a drop needs a full queue first.
