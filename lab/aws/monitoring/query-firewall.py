@@ -119,6 +119,9 @@ def native_summary(plan, reports):
 def reject_partial(value):
     if isinstance(value, dict):
         for key, child in value.items():
+            # Any non-null `error` is a partial result, as in the product's query client.
+            if key.lower() == 'error' and child is not None:
+                raise ValueError('Partial, paginated or failed query response')
             if any(word in key.lower() for word in ('error', 'partial', 'continuation', 'nextlink', 'truncat')) and child:
                 raise ValueError('Partial, paginated or failed query response')
             reject_partial(child)
@@ -295,7 +298,8 @@ def query_live(directory, query, *, timespan_seconds=None):
     token = az('account', 'get-access-token', '--resource', 'https://api.loganalytics.io/')['accessToken']
     request = urllib.request.Request('https://api.loganalytics.io/v1/workspaces/' + state['workspaceId'] + '/query',
                                     data=json.dumps(payload).encode(), method='POST',
-                                    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json'})
+                                    headers={'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json',
+                                             'Cache-Control': 'no-cache'})
     del token
     with urllib.request.build_opener(NoRedirect).open(request, timeout=120) as response:
         if response.status != 200 or any(response.headers.get(key) for key in ('x-ms-continuation', 'x-ms-continuation-token', 'Link')):

@@ -998,10 +998,17 @@ public sealed class FileTailSourceTests
     {
         Assert.Equal(0x20000 | 0x80000 | 0x800, LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.X64));
         Assert.Equal(0x8000 | 0x80000 | 0x800, LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm64));
-        // Unknown flag values: open without them and rely on the post-open checks.
+        // Not shipped: open without O_NOFOLLOW, so a link is followed and only the allowed-root and
+        // post-open checks apply.
         Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.X86));
         Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.Arm));
         Assert.Null(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.Architecture.RiscV64));
+        if (OperatingSystem.IsLinux() && System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture
+                is System.Runtime.InteropServices.Architecture.X64 or System.Runtime.InteropServices.Architecture.Arm64)
+        {
+            // The shipped architectures (CI runs both) must use the native O_NOFOLLOW open.
+            Assert.NotNull(LinuxTailFile.OpenFlags(System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture));
+        }
     }
 
     [Fact]

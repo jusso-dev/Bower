@@ -64,6 +64,10 @@ cd ui/Bower.Management.Web && npm ci && npm run lint && npm test && npm run buil
 pwsh -NoProfile -File powershell/build.ps1   # PSScriptAnalyzer + Pester
 ```
 
+Regenerate NuGet lock files with `dotnet restore --force-evaluate -p:Version=1.0.0`:
+project references stay `[1.0.0, )`, which locked-mode restore accepts for any
+`VERSION`. Without the property every lock file churns to the current version.
+
 ## Invariants
 
 - Keep evaluation deterministic. Configuration cannot execute arbitrary code.

@@ -69,13 +69,16 @@ def rest(method, url, body=None, resource=None):
     with tempfile.NamedTemporaryFile(mode='w', suffix='.json') as handle:
         json.dump(body, handle)
         handle.flush()
-        return az(*args, '--headers', 'Content-Type=application/json', '--body', '@' + handle.name)
+        headers = ['Content-Type=application/json']
+        if resource and resource.rstrip('/') == 'https://api.loganalytics.io':
+            headers.append('Cache-Control=no-cache')
+        return az(*args, '--headers', *headers, '--body', '@' + handle.name)
 
 
 def query(state, kql):
     result = rest('post', 'https://api.loganalytics.azure.com/v1/workspaces/' + state['workspaceId'] + '/query',
                   {'query': kql, 'timespan': 'P2D'}, 'https://api.loganalytics.io')
-    if result.get('error'):
+    if result.get('error') is not None:
         raise RuntimeError('Log Analytics returned an error or partial result')
     table = result['tables'][0]
     return [dict(zip((c['name'] for c in table['columns']), row)) for row in table['rows']]

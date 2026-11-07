@@ -19,6 +19,12 @@ the supported Azure SDK protocol upload API; Rust owns its HTTP batches. Success
 responses yield `azure-logs-ingestion:accepted:owned-batches`. This records API
 acceptance only, never Sentinel queryability.
 
+The Log Analytics query API can cache responses. Bower's evidence client requests
+fresh results and rejects partial query responses (see
+[evidence bundles](../operations/evidence-bundles.md#destination-queries)); custom
+reconciliation tools should likewise send `Cache-Control: no-cache` and fail closed
+on partial errors.
+
 Local malformed/mismatched payloads and failed schema preflight are individual
 permanent failures. A credential the identity service rejects (any 4xx answer other than 408/429, even
 after a retried network error) or a missing or unusable credential configuration fails

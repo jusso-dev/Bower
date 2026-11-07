@@ -35,13 +35,13 @@ def token(config_dir, client_id):
 def query(workspace, access_token, text):
     request = urllib.request.Request(f"https://api.loganalytics.io/v1/workspaces/{workspace}/query",
         data=json.dumps({"query": text}).encode(), method="POST",
-        headers={"Authorization": "Bearer " + access_token, "Content-Type": "application/json"})
+        headers={"Authorization": "Bearer " + access_token, "Content-Type": "application/json", "Cache-Control": "no-cache"})
     with urllib.request.urlopen(request, timeout=300) as response:
         body = response.read(MAXIMUM_RESPONSE_BYTES + 1)
     if len(body) > MAXIMUM_RESPONSE_BYTES:
         raise SystemExit("Response too large")
     data = json.loads(body)
-    if data.get("error") or "tables" not in data:
+    if data.get("error") is not None or "tables" not in data:
         raise SystemExit("Partial or failed query results cannot establish delivery")
     table = data["tables"][0]
     names = [column["name"] for column in table["columns"]]
