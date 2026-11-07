@@ -428,9 +428,11 @@ public sealed partial class EvidenceRunner(
             if (clock.GetUtcNow() + options.PollInterval > deadline)
             {
                 // Any answered query means the destination was reachable and the row absent;
-                // timeout or failure only when no query was ever answered. A partial last
-                // answer may have dropped the probe row, so it never reports the row missing.
-                string outcome = error == ProbeOutcomes.QueryIncompleteCode ? ProbeOutcomes.DestinationQueryFailed
+                // timeout or failure only when no query was ever answered. A partial or
+                // invalid last answer may have hidden the probe row, so it fails closed and
+                // never reports the row missing, even after an earlier clean answer.
+                string outcome = error is ProbeOutcomes.QueryIncompleteCode or ProbeOutcomes.QueryInvalidResponseCode
+                    ? ProbeOutcomes.DestinationQueryFailed
                     : answered || error is null ? ProbeOutcomes.DestinationRowMissing
                     : ProbeOutcomes.IsTimeoutError(error) ? ProbeOutcomes.DestinationTimeout : ProbeOutcomes.DestinationQueryFailed;
                 return (missing with { Attempts = attempts, QueryError = outcome == ProbeOutcomes.DestinationRowMissing ? outcome : error },
@@ -500,7 +502,8 @@ public sealed partial class EvidenceRunner(
                 return new ArrivalRecord(
                     true, options.WorkspaceId, options.Table, kql, attempts, generated, ingested,
                     ingested is null ? null : Math.Round((ingested.Value - sentAt).TotalSeconds, 1),
-                    row.TryGetValue("PolicyHash", out JsonNode? hash) ? hash?.GetValue<string>() : null,
+                    // A non-string hash identifies no configuration: absent, never a crash.
+                    ProbeOutcomes.Text(row.GetValueOrDefault("PolicyHash")),
                     null);
             }
 

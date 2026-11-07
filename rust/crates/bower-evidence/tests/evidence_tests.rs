@@ -133,6 +133,24 @@ impl LogAnalyticsQuery for FakeQuery {
     }
 }
 
+struct NumericHashQuery;
+
+impl LogAnalyticsQuery for NumericHashQuery {
+    fn query<'a>(
+        &'a self,
+        _workspace_id: &'a str,
+        kql: &'a str,
+        _timespan: Duration,
+    ) -> BoxFuture<'a, Result<QueryRows, EvidenceError>> {
+        let rows = if kql.starts_with("DCRLogErrors") {
+            Vec::new()
+        } else {
+            vec![row(json!({"PolicyHash": 42}))]
+        };
+        Box::pin(async move { Ok(QueryRows { rows, error: None }) })
+    }
+}
+
 struct PartialQuery;
 
 impl LogAnalyticsQuery for PartialQuery {
@@ -330,6 +348,18 @@ async fn evidence_does_not_verify_rows_accompanied_by_query_error() {
     );
 }
 
+/// C# `Evidence_NonStringPolicyHashIsAbsentNotACrash`.
+#[tokio::test]
+async fn evidence_non_string_policy_hash_is_absent_not_a_crash() {
+    let runner = EvidenceRunner::new(FakeSender::new(202), Some(Arc::new(NumericHashQuery)), None);
+
+    let bundle = runner.run(&options(Some("workspace-1"))).await.unwrap();
+
+    assert_eq!(bundle.mode, modes::VERIFIED);
+    assert!(bundle.arrival.found);
+    assert_eq!(bundle.arrival.row_policy_hash, None);
+}
+
 #[tokio::test]
 async fn evidence_is_labelled_simulated_without_a_workspace() {
     let runner = EvidenceRunner::new(FakeSender::new(202), None, None)
@@ -401,9 +431,20 @@ fn query_parser_reads_log_analytics_response() {
     .unwrap();
     assert_eq!(rows.rows.len(), 1);
     assert_eq!(rows.rows[0]["EventId"], "e1");
+    // A zero-row PrimaryResult is a clean empty answer; no table at all is not.
+    assert_eq!(
+        LogAnalyticsQueryClient::parse(
+            r#"{"tables":[{"name":"PrimaryResult","columns":[{"name":"EventId","type":"string"}],"rows":[]}]}"#
+        )
+        .unwrap(),
+        QueryRows::default()
+    );
     assert_eq!(
         LogAnalyticsQueryClient::parse(r#"{"tables":[]}"#).unwrap(),
-        QueryRows::default()
+        QueryRows {
+            rows: Vec::new(),
+            error: Some("query-invalid-response".to_owned()),
+        }
     );
     let partial = LogAnalyticsQueryClient::parse(
         r#"{"error":{},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
@@ -426,6 +467,23 @@ fn query_parser_reads_log_analytics_response() {
         assert_eq!(falsy.error.as_deref(), Some("query-incomplete"), "{error}");
         assert!(falsy.rows.is_empty(), "{error}");
     }
+    // An empty, non-JSON or non-object body is a failed query, never an empty result,
+    // and the body is not echoed (same as the C# client).
+    for body in [
+        "",
+        "<html>sensitive body marker</html>",
+        r#"["sensitive body marker"]"#,
+        "42",
+    ] {
+        assert_eq!(
+            LogAnalyticsQueryClient::parse(body).unwrap(),
+            QueryRows {
+                rows: Vec::new(),
+                error: Some("query-invalid-response".to_owned()),
+            },
+            "{body}"
+        );
+    }
     // An explicit null error is not a partial result.
     let null_error = LogAnalyticsQueryClient::parse(
         r#"{"error":null,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
@@ -434,6 +492,76 @@ fn query_parser_reads_log_analytics_response() {
     assert_eq!(null_error.error, None);
     assert_eq!(null_error.rows.len(), 1);
     assert_eq!(null_error.rows[0]["EventId"], "e1");
+}
+
+/// C# `QueryParser_RejectsUnusableBodies`: an object without a usable first table, a
+/// duplicate key anywhere (System.Text.Json rejects it, `serde_json` would keep the last)
+/// or a bad column or row is a failed query, never an empty result or a crash.
+#[test]
+fn query_parser_rejects_unusable_bodies() {
+    for body in [
+        "{}",
+        r#"{"name":"PrimaryResult"}"#,
+        r#"{"tables":{}}"#,
+        r#"{"tables":"sensitive body marker"}"#,
+        r#"{"tables":[]}"#,
+        r#"{"tables":[null]}"#,
+        r#"{"tables":[1]}"#,
+        r#"{"tables":[{"rows":[]}]}"#,
+        r#"{"tables":[{"columns":[]}]}"#,
+        r#"{"tables":[{"columns":{},"rows":[]}]}"#,
+        r#"{"tables":[{"columns":[],"rows":{}}]}"#,
+        r#"{"tables":[{"columns":["EventId"],"rows":[]}]}"#,
+        r#"{"tables":[{"columns":[null],"rows":[]}]}"#,
+        r#"{"tables":[{"columns":[{"type":"string"}],"rows":[]}]}"#,
+        r#"{"tables":[{"columns":[{"name":1}],"rows":[]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":["e1"]}]}"#,
+        r#"{"sensitive key marker":1,"sensitive key marker":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId","name":"sensitive key marker"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[[{"sensitive key marker":1,"sensitive key marker":2}]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}],"tables":[]}"#,
+        r#"{"a":1,"\u0061":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+        r#"{"\ud800":1,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"\ud800"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[["\ud800"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"},{"name":"EventId"}],"rows":[["e1","e2"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"},{"name":"PolicyHash"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[[]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1","sensitive body marker"]]}]}"#,
+    ] {
+        assert_eq!(
+            LogAnalyticsQueryClient::parse(body).unwrap(),
+            QueryRows {
+                rows: Vec::new(),
+                error: Some("query-invalid-response".to_owned()),
+            },
+            "{body}"
+        );
+    }
+}
+
+/// C# `QueryParser_AcceptsTheReaderDefaultDepthAndRejectsOneMore`: the C# reader allows 64
+/// nested levels; `serde_json` alone would allow 127.
+#[test]
+fn query_parser_accepts_the_reader_default_depth_and_rejects_one_more() {
+    // Root, tables, table, rows and row are five levels; the cell nests the rest.
+    let body = |depth: usize| {
+        format!(
+            r#"{{"tables":[{{"columns":[{{"name":"EventId"}}],"rows":[[{}{}]]}}]}}"#,
+            "[".repeat(depth - 5),
+            "]".repeat(depth - 5)
+        )
+    };
+    let accepted = LogAnalyticsQueryClient::parse(&body(64)).unwrap();
+    assert_eq!(accepted.error, None);
+    assert_eq!(accepted.rows.len(), 1);
+    assert_eq!(
+        LogAnalyticsQueryClient::parse(&body(65))
+            .unwrap()
+            .error
+            .as_deref(),
+        Some("query-invalid-response")
+    );
 }
 
 /// The bundle that the C# vector generator signed (see `tests/fixtures`).
