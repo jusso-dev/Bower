@@ -98,15 +98,35 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
 - **Rotation.** Files are identified by their first bytes, so Docker's
   `max-size`/`max-file` rotation is detected; the rotated file is drained before the
   new one. If a log rotates more than once between passes, the gap is logged.
-- **A line split by rotation.** Docker writes a line over 16 KiB as several chunks and
-  can rotate between two of them. Docker never writes to `.1` again, so once `.1` is
-  read to its end and only that unfinished line is left, the sidecar moves to the new
-  file, skips the rest of the line there (up to its final chunk) and counts it once as
-  oversized; the lines after it are read normally. That one line is lost, counted, with
-  no gap. Earlier releases waited on `.1` until the new file was itself rotated away,
-  which lost that whole file. A torn entry at the end of `.1` (no newline, possible only
-  after a crash or a full disk) is counted as malformed and the sidecar moves on the
-  same way.
+- **A line open when the log rotates.** Docker writes a line over 16 KiB as several
+  chunks and can rotate between two of them; it also writes what is left when a stream
+  ends (the container stops) as an entry with no newline. Docker never writes to `.1`
+  again, so once `.1` is read to its end, a line still open there is read as it stands,
+  as one line, and the sidecar moves to the new file and reads it from its start. Nothing
+  in the new file is skipped, because the sidecar cannot tell the rest of a split line
+  from a fresh line there (stdout and stderr are interleaved in the same file). The cost
+  is that a line split by rotation arrives as two fragments, its head from `.1` and its
+  rest as the first line of the new file: neither is a whole Bower envelope or a
+  recognised signal, so both are normally dropped by the mapper, and any complete line
+  after them is forwarded. The sidecar logs `Container <name> log rotated with a line
+  still open` when it does this. Earlier releases waited on `.1` until the new file was
+  itself rotated away, which lost that whole file. A line already being skipped as
+  oversized when `.1` ends (see **Bounds**) is still skipped into the new file, up to its
+  final chunk, and counted once. A torn entry at the end of `.1` (no newline, possible
+  only after a daemon crash or a full disk) is counted as malformed and the sidecar moves
+  on the same way.
+- **When a line's final chunk never arrives.** Within one file the sidecar cannot know
+  that an unterminated entry ends its line, so it joins the next entries to it until one
+  ends with a newline. The final chunk can be missing for good: a stream that ended
+  without a newline, a daemon crash, or `mode: non-blocking`, whose ring buffer drops
+  messages, including chunks, when it is full. The open line is then joined with the next
+  line written to the same file and both arrive as one line (as in earlier releases); if
+  that join goes over 64 KiB, the whole line is skipped as oversized. If the log rotates
+  first, the open line is read as it stands, as above.
+- **Compressed rotation.** With `compress: "true"` Docker gzips `.1` to `.1.gz` shortly
+  after each rotation and removes `.1`. The sidecar does not read compressed files, so
+  unless a pass drains `.1` before then, whatever it had not read when the log rotated is
+  lost, and the gap is logged. Leave `compress` off for collected containers.
 - **Bounds.** Lines over 64 KiB are counted and skipped; each pass reads at most
   1,000 lines or 4 MiB per container. Docker's 16 KiB partial chunks are reassembled.
   A line that is over 64 KiB, or whose chunks fill a whole pass's byte budget without
@@ -123,9 +143,8 @@ While an oversized line is being skipped the cursor also carries
 field is additive and omitted when false, so cursors written before it existed read
 unchanged and normal cursors serialise byte-for-byte as before. It holds no line
 content. Truncation or a missed rotation clears it; a rotation the sidecar drains
-carries it into the new file, so the rest of a line split by rotation is still
-skipped. Leaving a `.1` that ends with an unfinished line sets it too, so a restart
-during that skip resumes it. Downgrading is not recommended while a line is being skipped: an older
+carries it into the new file, so the rest of an oversized line split by rotation is
+still skipped. Downgrading is not recommended while a line is being skipped: an older
 sidecar ignores the field and reads the rest of that line as if it were a new line.
 
 ## Security model

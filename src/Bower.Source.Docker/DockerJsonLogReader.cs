@@ -61,12 +61,17 @@ public sealed record DockerLogRecord(
     long StartOffset,
     long EndOffset);
 
+/// <param name="ClosedAtRotation">
+/// Lines left open at the end of a drained <c>.1</c> and emitted as they stood there (additive,
+/// zero by default). Any rest of such a line in the new file is read as a separate line.
+/// </param>
 public sealed record DockerLogBatch(
     IReadOnlyList<DockerLogRecord> Records,
     DockerLogCursor Cursor,
     int Malformed,
     int Oversized,
-    bool RotationGap);
+    bool RotationGap,
+    int ClosedAtRotation = 0);
 
 public sealed record DockerLogReaderOptions
 {
@@ -89,7 +94,7 @@ public sealed record DockerLogReaderOptions
 /// 64-byte identity, no rotation grace window, no copy drain on a same-identity truncation,
 /// waiting while the current file cannot be identified, an oversized-line discard carried
 /// across rotation, and a drained <c>.1</c> taken as final (Docker never writes it again), so
-/// a line split across the rotation is skipped in the new file rather than holding the cursor
+/// a line still open at its end is emitted as it stands there rather than holding the cursor
 /// on <c>.1</c> while the new file goes unread. This class is the Docker line decoder on top
 /// of it: json-file entries, the 16 KiB partial-chunk join, malformed entries and the
 /// oversized-line discard, within the record and byte bounds.
@@ -129,9 +134,10 @@ public static class DockerJsonLogReader
     /// <c>.1</c>), wait while the current file cannot be identified, no copy drain, no grace
     /// window, no abandoned tracking, the oversized discard carried across rotation and an
     /// unbounded start-at-end scan. One deliberate change from the old reader: a renamed
-    /// <c>.1</c> is final, so a line Docker split across the rotation no longer stalls the
-    /// cursor at its start in <c>.1</c> until the new file is rotated away and lost; that one
-    /// line is skipped instead, counted as oversized.
+    /// <c>.1</c> is final, so a line left open at its end no longer stalls the cursor at its
+    /// start in <c>.1</c> until the new file is rotated away and lost. Within the limits it is
+    /// emitted as it stands and the new file is read from its start; an oversized line keeps
+    /// its discard carried into the new file, as before.
     /// </summary>
     private static readonly FileTailPolicy StartAtEndPolicy = new()
     {
@@ -154,9 +160,13 @@ public static class DockerJsonLogReader
     /// </summary>
     private sealed class Decoder(DockerLogReaderOptions options) : IFileTailDecoder<DockerLogBatch>
     {
-        // eofEndsLine: a drained .1 that Docker never writes again (RenamedFileIsFinal).
+        // eofEndsLine only for a renamed .1 that Docker never writes again (RenamedFileIsFinal).
+        // Docker's policy has no copy drain, grace window or file id, so anything else would
+        // mean a policy change, not data.
         public DockerLogBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap) =>
-            ReadFile(file, Docker(cursor), options, gap, eofEndsLine);
+            eofEndsLine && (cursor.Drain != FileTailCursor.RenameDrain || cursor.FileId is not null)
+                ? throw new UnreachableException("The Docker policy ends a line at end of file only in a renamed .1.")
+                : ReadFile(file, Docker(cursor), options, gap, eofEndsLine);
 
         public DockerLogBatch Empty(FileTailCursor cursor, bool gap) => DockerJsonLogReader.Empty(Docker(cursor)) with { RotationGap = gap };
 
@@ -313,13 +323,30 @@ public static class DockerJsonLogReader
             committedDiscarding = true;
         }
 
-        // A file that is never written again (a drained .1) ends here: a logical line still open
-        // continues in the new file, where its remaining chunks are skipped up to its terminating
-        // chunk and counted as oversized, as for a line too long to assemble.
+        // A file that is never written again (a drained .1) ends here. Nothing tells a line's
+        // continuation in the new file from a fresh line there (Docker also ends a stream with
+        // an unterminated entry, and interleaves stdout and stderr), so a line still open within
+        // the limits is emitted as it stands and the new file is read from its start: a split
+        // line's rest becomes its own record, and nothing complete in the new file is lost. A
+        // line already being discarded (oversized, or filling the byte budget) keeps its discard
+        // carried into the new file, counted there when its terminating chunk arrives.
+        int closedAtRotation = 0;
         if (final && position >= stream.Length)
         {
+            if (pendingStart >= 0 && !pendingOversized && !committedDiscarding)
+            {
+                records.Add(new DockerLogRecord(
+                    pending.ToString().TrimEnd('\n', '\r'),
+                    pendingStream,
+                    pendingTime,
+                    cursor.Fingerprint,
+                    pendingStart,
+                    position));
+                closedAtRotation = 1;
+            }
+
             committed = position;
-            committedDiscarding = pendingStart >= 0;
+            committedDiscarding = pendingStart >= 0 && closedAtRotation == 0;
         }
 
         return new DockerLogBatch(
@@ -327,7 +354,8 @@ public static class DockerJsonLogReader
             cursor with { Offset = committed, Discarding = committedDiscarding },
             malformed,
             oversized,
-            rotationGap);
+            rotationGap,
+            closedAtRotation);
     }
 
     /// <summary>Reads bytes up to and including '\n'. Incomplete means no newline before EOF.</summary>

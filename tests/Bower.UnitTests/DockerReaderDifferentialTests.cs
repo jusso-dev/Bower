@@ -14,12 +14,13 @@ namespace Bower.UnitTests;
 /// serialised cursors must be identical after every read.
 /// <para>
 /// One deliberate difference: the current reader treats a renamed <c>.1</c> as final, so a
-/// line left unfinished at its end (split across the rotation, or a torn entry) no longer
-/// holds the cursor on <c>.1</c> while the new file goes unread and is later lost. The random
-/// histories therefore end any open line before they rotate (Docker rotates between writes,
-/// and only a line over 16 KiB is ever split), and
-/// <see cref="LineSplitAcrossRotation_IsSkippedWhereThePreRefactorReaderLostTheNextFile"/>
-/// pins the difference.
+/// line left open at its end within the limits (split across the rotation, or ended by a
+/// stream without a newline), or a torn entry, no longer holds the cursor on <c>.1</c> while
+/// the new file goes unread and is later lost. The random histories therefore end such a line
+/// before they rotate, as the readers see it from their cursor, but leave an oversized one
+/// open so the discard carried across rotation is still compared;
+/// <see cref="LineSplitAcrossRotation_IsClosedWhereThePreRefactorReaderLostTheNextFile"/> pins
+/// the difference.
 /// </para>
 /// </summary>
 public sealed class DockerReaderDifferentialTests
@@ -30,7 +31,7 @@ public sealed class DockerReaderDifferentialTests
     [Fact]
     public void CurrentReader_MatchesThePreRefactorReaderOnRandomFileHistories()
     {
-        int reads = 0, records = 0, gaps = 0, discarding = 0, rotations = 0, failures = 0, restarts = 0;
+        int reads = 0, records = 0, gaps = 0, discarding = 0, carried = 0, rotations = 0, failures = 0, restarts = 0;
         for (int seed = 0; seed < Seeds; seed++)
         {
             Random random = new(seed);
@@ -55,7 +56,8 @@ public sealed class DockerReaderDifferentialTests
                         Append(path, Entries(random, random.Next(1, 5)));
                         break;
                     case 2:
-                        // One logical line in partial chunks, sometimes not finished yet.
+                        // One logical line in partial chunks, sometimes not finished yet, sometimes
+                        // with a complete stderr line copied in between its chunks.
                         Append(path, Chunks(random, random.Next(2, 6), terminate: random.Next(3) != 0));
                         break;
                     case 3:
@@ -75,7 +77,7 @@ public sealed class DockerReaderDifferentialTests
                         Append(path, random.Next(2) == 0 ? "not json at all\n" : """{"log":5,"stream":"stdout"}""" + "\n");
                         break;
                     case 6 when System.IO.File.Exists(path):
-                        EndOpenLine(path);
+                        EndOpenLine(path, currentCursor, options.MaximumLineBytes);
                         System.IO.File.Move(path, rotated, overwrite: true);
                         pendingTail = null;
                         if (random.Next(2) == 0)
@@ -86,7 +88,7 @@ public sealed class DockerReaderDifferentialTests
                         rotations++;
                         break;
                     case 7 when System.IO.File.Exists(path):
-                        EndOpenLine(path);
+                        EndOpenLine(path, currentCursor, options.MaximumLineBytes);
                         System.IO.File.Copy(path, rotated, overwrite: true);
                         Truncate(path);
                         pendingTail = null;
@@ -132,25 +134,27 @@ public sealed class DockerReaderDifferentialTests
                         Assert.True(legacy.Records.SequenceEqual(current!.Records), $"{where}: records differ");
                         Assert.True(legacy.Cursor == current.Cursor, $"{where}: cursor {legacy.Cursor} vs {current.Cursor}");
                         Assert.Equal(legacy.Cursor.Serialize(), current.Cursor.Serialize());
-                        Assert.True((legacy.Malformed, legacy.Oversized, legacy.RotationGap) == (current.Malformed, current.Oversized, current.RotationGap),
+                        Assert.True((legacy.Malformed, legacy.Oversized, legacy.RotationGap, legacy.ClosedAtRotation) == (current.Malformed, current.Oversized, current.RotationGap, current.ClosedAtRotation),
                             $"{where}: counters differ");
                         legacyCursor = legacy.Cursor;
                         currentCursor = current.Cursor;
                         records += current.Records.Count;
                         gaps += current.RotationGap ? 1 : 0;
                         discarding += current.Cursor.Discarding ? 1 : 0;
+                        // Only a discard carried across rotation sits at the start of a file.
+                        carried += current.Cursor is { Discarding: true, Offset: 0 } ? 1 : 0;
                         break;
                 }
             }
         }
 
         // The histories must actually exercise the interesting paths.
-        Assert.True(reads > Seeds * 10 && records > 1_000 && gaps > 20 && discarding > 20 && rotations > 200 && restarts > 100,
-            $"reads {reads}, records {records}, gaps {gaps}, discarding {discarding}, rotations {rotations}, restarts {restarts}, failures {failures}");
+        Assert.True(reads > Seeds * 10 && records > 1_000 && gaps > 20 && discarding > 20 && carried > 5 && rotations > 200 && restarts > 100,
+            $"reads {reads}, records {records}, gaps {gaps}, discarding {discarding}, carried {carried}, rotations {rotations}, restarts {restarts}, failures {failures}");
     }
 
     [Fact]
-    public void LineSplitAcrossRotation_IsSkippedWhereThePreRefactorReaderLostTheNextFile()
+    public void LineSplitAcrossRotation_IsClosedWhereThePreRefactorReaderLostTheNextFile()
     {
         using TemporaryDirectory root = new();
         DockerContainer container = DockerFixture.Catalogued(root);
@@ -158,7 +162,7 @@ public sealed class DockerReaderDifferentialTests
         DockerLogReaderOptions options = new() { StartAtEnd = false };
         DockerLogCursor? legacyCursor = null, currentCursor = null;
         List<string> legacyLines = [], currentLines = [];
-        int currentOversized = 0;
+        int currentOversized = 0, currentClosed = 0;
         bool legacyGap = false, currentGap = false;
         DockerFixture.Append(container, "file A line one\n", "first chunk of a split line ");
         Read();
@@ -179,8 +183,11 @@ public sealed class DockerReaderDifferentialTests
 
         Assert.Equal(["file A line one", "file C line one"], legacyLines);
         Assert.True(legacyGap);
-        Assert.Equal(["file A line one", "file B line one", "file B line two", "file C line one"], currentLines);
-        Assert.Equal(1, currentOversized);
+        // The head is emitted as it stood in .1, the rest as its own fragment record.
+        Assert.Equal(
+            ["file A line one", "first chunk of a split line ", "rest of the split line", "file B line one", "file B line two", "file C line one"],
+            currentLines);
+        Assert.Equal((0, 1), (currentOversized, currentClosed));
         Assert.False(currentGap);
 
         void Read()
@@ -191,6 +198,7 @@ public sealed class DockerReaderDifferentialTests
             legacyLines.AddRange(legacy.Records.Select(record => record.Text));
             currentLines.AddRange(current.Records.Select(record => record.Text));
             currentOversized += current.Oversized;
+            currentClosed += current.ClosedAtRotation;
             legacyGap |= legacy.RotationGap;
             currentGap |= current.RotationGap;
         }
@@ -233,8 +241,8 @@ public sealed class DockerReaderDifferentialTests
         }
     }
 
-    private static string Entry(string log) =>
-        JsonSerializer.Serialize(new { log, stream = "stdout", time = "2026-10-07T10:00:00.123456789Z" }) + "\n";
+    private static string Entry(string log, string stream = "stdout") =>
+        JsonSerializer.Serialize(new { log, stream, time = "2026-10-07T10:00:00.123456789Z" }) + "\n";
 
     private static string Entries(Random random, int count)
     {
@@ -254,6 +262,11 @@ public sealed class DockerReaderDifferentialTests
         {
             bool last = index == count - 1;
             text.Append(Entry(new string((char)('a' + index), random.Next(5, 80)) + (last && terminate ? "\n" : string.Empty)));
+            if (!last && random.Next(4) == 0)
+            {
+                // Docker copies stdout and stderr into the same file concurrently.
+                text.Append(Entry("interleaved " + random.Next() + "\n", "stderr"));
+            }
         }
 
         return text.ToString();
@@ -262,39 +275,78 @@ public sealed class DockerReaderDifferentialTests
     private static void Append(string path, string text) => System.IO.File.AppendAllText(path, text);
 
     /// <summary>
-    /// Ends a torn entry and an unfinished chunked line before a rotation, where the readers
-    /// deliberately differ (see the class remarks).
+    /// Before a rotation, ends a torn entry and a logical line left open within the line limit,
+    /// where the readers deliberately differ (see the class remarks). The line is followed as the
+    /// readers see it, from their cursor when it is on this file. An oversized open line is left
+    /// open: both readers carry its discard into the new file.
     /// </summary>
-    private static void EndOpenLine(string path)
+    private static void EndOpenLine(string path, DockerLogCursor? cursor, int maximumLineBytes)
     {
-        string text = System.IO.File.ReadAllText(path);
-        if (text.Length > 0 && text[^1] != '\n')
+        byte[] bytes = System.IO.File.ReadAllBytes(path);
+        if (bytes.Length > 0 && bytes[^1] != '\n')
         {
             Append(path, "\n");
-            text += "\n";
+            bytes = [.. bytes, (byte)'\n'];
         }
 
-        foreach (string line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries).Reverse())
+        string? fingerprint;
+        using (FileTailHandle? file = FileTailHandle.OpenWithPrefixIdentity(path))
         {
+            fingerprint = file?.Fingerprint;
+        }
+
+        bool onThisFile = cursor is not null && cursor.Fingerprint == fingerprint && cursor.Offset <= bytes.Length;
+        int position = onThisFile ? (int)cursor!.Offset : 0;
+        bool open = onThisFile && cursor!.Discarding;
+        bool oversized = open;
+        int length = 0;
+        while (position < bytes.Length)
+        {
+            int newline = Array.IndexOf(bytes, (byte)'\n', position);
+            ReadOnlySpan<byte> entry = bytes.AsSpan(position, newline - position);
+            position = newline + 1;
+            if (entry.Length > maximumLineBytes * 2 + 4_096 || !TryLog(entry, out string log))
+            {
+                continue; // Malformed: does not end or extend a line.
+            }
+
+            open = true;
+            if (!oversized)
+            {
+                oversized = length + log.Length > maximumLineBytes;
+                length += log.Length;
+            }
+
+            if (log.EndsWith('\n'))
+            {
+                (open, oversized, length) = (false, false, 0);
+            }
+        }
+
+        if (open && !oversized)
+        {
+            Append(path, Entry("closed\n"));
+        }
+
+        static bool TryLog(ReadOnlySpan<byte> entry, out string log)
+        {
+            log = string.Empty;
             try
             {
-                using JsonDocument document = JsonDocument.Parse(line);
+                using JsonDocument document = JsonDocument.Parse(entry.ToArray(), new JsonDocumentOptions { MaxDepth = 4 });
                 if (document.RootElement.ValueKind == JsonValueKind.Object
-                    && document.RootElement.TryGetProperty("log", out JsonElement log)
-                    && log.ValueKind == JsonValueKind.String)
+                    && document.RootElement.TryGetProperty("log", out JsonElement value)
+                    && value.ValueKind == JsonValueKind.String)
                 {
-                    if (!log.GetString()!.EndsWith('\n'))
-                    {
-                        Append(path, Entry("closed\n"));
-                    }
-
-                    return;
+                    log = value.GetString()!;
+                    return true;
                 }
             }
             catch (JsonException)
             {
-                // Malformed entries do not end a line; look further back.
             }
+
+            return false;
         }
     }
 

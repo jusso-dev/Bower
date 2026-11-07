@@ -83,7 +83,7 @@ public interface IFileTailDecoder<TBatch>
 {
     /// <param name="eofEndsLine">
     /// The generation no longer grows: its unterminated last line ends at end of file (plain
-    /// lines take it as complete; Docker json-file entries give up a split line, see
+    /// lines and Docker json-file entries take it as complete, see
     /// <see cref="FileTailPolicy.RenamedFileIsFinal"/>).
     /// </param>
     TBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap);

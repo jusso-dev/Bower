@@ -89,6 +89,11 @@ public sealed partial class DockerSidecarWorker(
                 LogRotationGap(logger, container.Name);
             }
 
+            if (batch.ClosedAtRotation > 0)
+            {
+                LogClosedAtRotation(logger, container.Name);
+            }
+
             DockerLogCursor next = batch.Cursor;
             SendOutcome? stoppedBy = null;
             foreach (DockerLogRecord record in batch.Records)
@@ -171,6 +176,10 @@ public sealed partial class DockerSidecarWorker(
     [LoggerMessage(EventId = 3003, Level = LogLevel.Warning,
         Message = "Container {Container} log rotated more than once between reads; some lines were not collected.")]
     private static partial void LogRotationGap(ILogger logger, string container);
+
+    [LoggerMessage(EventId = 3006, Level = LogLevel.Information,
+        Message = "Container {Container} log rotated with a line still open; it was read as it stood in the rotated file, and any rest of it in the new file is read as a separate line.")]
+    private static partial void LogClosedAtRotation(ILogger logger, string container);
 
     [LoggerMessage(EventId = 3004, Level = LogLevel.Warning,
         Message = "Cursor for {Container} changed concurrently; it will be re-read.")]

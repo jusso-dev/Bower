@@ -65,9 +65,8 @@ cursor format, limits, defaults, failure codes and configuration messages.
   with (`DecisionLength`). `RenamedFileIsFinal` (Docker only, ignored with a grace window)
   scans a drained `path.1` with `eofEndsLine` once the current file is identified; the file
   source never sets it, as its grace window and drain cap already end an unfinished last
-  line. The file source uses the length taken at open
-  (`FileTailLength.Opened`, one snapshot with identity and write time, as in Rust); Docker
-  measures again (`Measured`). The Docker source uses it with its own policy and decoder, so
+  line. The file source uses the length taken at open (`FileTailLength.Opened`, one
+  snapshot with identity and write time, as in Rust); Docker measures again (`Measured`). The Docker source uses it with its own policy and decoder, so
   a change here must keep `DockerSourceTests`, `DockerSidecarWorkerTests`,
   `DockerCursorCompatibilityTests`, `DockerReaderDifferentialTests` and
   `DockerSharedTailerTests` passing unchanged. The Docker reader maps cursors by name
