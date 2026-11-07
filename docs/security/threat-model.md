@@ -359,14 +359,21 @@ line of its own lets that text claim to be an event (the collector still validat
 redacts and applies policy). Text inside a longer line cannot become a line of its own
 once the sidecar has seen that line open: it keys each line on its stream and Docker
 time, keeps every open line in its cursor, joins a line split by rotation before mapping
-it (checking the saved chunks' length and digest), and never maps a fragment (part of a
-line whose other part could not be read, that was open when the log was first seen or at
-a gap, or that has an unreadable entry between its chunks). Two limits remain. With
+it (checking the saved chunks' length and digest, wherever rotation moved them), and
+never maps a fragment (part of a line whose other part could not be read, that has an
+unreadable entry between its chunks, or that may have been open where the sidecar starts
+reading after a gap or at a first sight). After a gap or a first sight it fails closed: a
+stream counts as clean only when its look back (one byte budget, through the file and the
+rotated files) reaches that stream's last entry or the sidecar's own last position, or,
+at a first sight, the start of the oldest file Docker kept; otherwise the stream's next
+line is dropped as a fragment. That costs at most one line per stream per gap or first
+sight, including every rotation with `max-file: 1`. Two limits remain. With
 `mode: non-blocking` Docker can drop a line's last chunk, and the rest is then read as a
 whole line when its stream writes again; collect containers in the default blocking
-mode. With `max-file: 1` Docker deletes the log at each rotation, so a line whose head
-was written after the sidecar's position is lost with it unseen, and its rest cannot be
-told from a whole line (the gap is logged); set `max-file` to 2 or more.
+mode. At a first sight, Bower cannot tell whether Docker already deleted older files, so
+a stream with no entry in the files Docker kept is taken as clean: the rest of a line
+whose head was in a deleted file, and that stream wrote nothing else since, would be
+read as whole.
 
 The installers delete files with `shred -u` (Linux, where available) or a plain delete
 (Windows). Neither guarantees the token bytes are gone from journaling, copy-on-write or

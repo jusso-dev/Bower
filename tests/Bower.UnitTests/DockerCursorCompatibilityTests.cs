@@ -152,6 +152,19 @@ public sealed class DockerCursorCompatibilityTests
             """{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":null,"fragment":true}]}""",
             (cursor with { Discarding = false, Pending = [new DockerPendingLine("stdout", null, Fragment: true)] }).Serialize());
 
+        // A stream not proven clean, the lost rest of a line, a line through a rotated file.
+        string through = $$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":null,"fragment":true,"unproven":true},{"stream":"stderr","time":"t","file":"def","start":7,"length":5,"rest":[3],"digest":"{{digest}}","through":[{"file":"ghi","chunks":[0,9]}]}]}""";
+        DockerLogCursor carried = new(1, "abc", 42, Pending:
+        [
+            DockerPendingLine.UnprovenStream("stdout"),
+            new DockerPendingLine("stderr", "t", File: "def", Start: 7, Length: 5, Rest: [3], Digest: digest, Through: [new DockerChunkRun("ghi", [0, 9])])
+        ]);
+        Assert.Equal(through, carried.Serialize());
+        Assert.Equal(carried, DockerLogCursor.Deserialize(through));
+        Assert.Equal(
+            """{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","fragment":true,"lost":true}]}""",
+            (carried with { Pending = [new DockerPendingLine("stdout", "t", Fragment: true, Lost: true)] }).Serialize());
+
         // A damaged cursor is refused as a whole, as any other damaged Docker cursor.
         foreach (string pending in new[]
         {
@@ -162,6 +175,7 @@ public sealed class DockerCursorCompatibilityTests
             """[{"stream":"stdout","time":"t","start":1,"length":1}]""",
             """[{"stream":"stdout","time":"t","file":"f","start":-1,"length":1}]""",
             """[{"stream":"stdout","time":"t","discarding":true,"start":1}]""",
+            """[{"stream":"stdout","time":"t","discarding":true,"unproven":true}]""",
             $$"""[{"stream":"stdout","time":"{{new string('9', DockerLogCursor.MaximumTimeLength + 1)}}","discarding":true}]""",
             """[null]"""
         })
@@ -178,15 +192,18 @@ public sealed class DockerCursorCompatibilityTests
     public void PendingLinesWithImpossibleRanges_AreRefused()
     {
         // Every range here was accepted: a chunk past the cursor in its own file, overlapping or
-        // out of order, negative, shared by both lines, or a head still to come away from the offset.
+        // out of order, negative, shared by both lines, a head after the offset with chunks, or
+        // the round-3 head still to come without a digest (never released, so refused).
         string d = DockerPendingLine.DigestOf("hello");
         string valid = $$"""{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[20],"digest":"{{d}}"}""";
         Assert.NotNull(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{{valid}}]}"""));
-        Assert.NotNull(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0}]}"""));
+        // A head read once and committed before it, at or after the offset, with its digest.
+        Assert.NotNull(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","file":"abc","start":42,"length":5,"digest":"{{d}}"}]}"""));
+        Assert.NotNull(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","file":"abc","start":100,"length":5,"fragment":true,"digest":"{{d}}"}]}"""));
         foreach (string pending in new[]
         {
-            $$"""[{"stream":"stdout","time":"t","file":"abc","start":100,"length":5,"digest":"{{d}}"}]""",
-            $$"""[{"stream":"stdout","time":"t","file":"abc","start":42,"length":5,"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":42,"length":5,"chunks":[50],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":42,"length":5,"digest":"{{d}}"},{"stream":"stderr","time":"u","file":"abc","start":42,"length":5,"digest":"{{d}}"}]""",
             $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[50],"digest":"{{d}}"}]""",
             $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[20,20],"digest":"{{d}}"}]""",
             $$"""[{"stream":"stdout","time":"t","file":"abc","start":20,"length":5,"chunks":[7],"digest":"{{d}}"}]""",
@@ -200,7 +217,25 @@ public sealed class DockerCursorCompatibilityTests
             """[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"digest":"not a digest"}]""",
             """[{"stream":"stdout","time":"t","file":"abc","start":7,"length":0}]""",
             """[{"stream":"stdout","time":"t","file":"def","start":42,"length":0}]""",
-            """[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0,"fragment":true}]"""
+            """[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0}]""",
+            """[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0,"fragment":true}]""",
+            // Unproven: a key-only fragment with no time; lost: a key-only fragment.
+            """[{"stream":"stdout","time":"t","fragment":true,"unproven":true}]""",
+            """[{"stream":"stdout","time":null,"unproven":true}]""",
+            """[{"stream":"stdout","time":null,"fragment":true,"unproven":true,"lost":true}]""",
+            $$"""[{"stream":"stdout","time":null,"file":"abc","start":7,"length":5,"digest":"{{d}}","fragment":true,"unproven":true}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"digest":"{{d}}","lost":true}]""",
+            """[{"stream":"stdout","time":"t","lost":true}]""",
+            // Runs: only away from the cursor's file, never its head's file, the cursor's or each
+            // other's, in order and not empty, within the chunk limit.
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"digest":"{{d}}","through":[{"file":"ghi","chunks":[1]}]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[{"file":"def","chunks":[9]}]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[{"file":"abc","chunks":[9]}]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[{"file":"ghi","chunks":[1]},{"file":"ghi","chunks":[2]}]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[{"file":"ghi","chunks":[]}]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[{"file":"ghi","chunks":[5,2]}]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[null]}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"digest":"{{d}}","through":[{"file":"ghi","chunks":[{{string.Join(',', Enumerable.Range(1, DockerLogCursor.MaximumChunks))}}]}]}]"""
         })
         {
             Assert.Null(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":{{pending}}}"""));

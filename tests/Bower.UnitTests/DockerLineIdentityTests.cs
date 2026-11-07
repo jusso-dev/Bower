@@ -156,9 +156,12 @@ public sealed class DockerLineIdentityTests
         DockerLogBatch current = DockerJsonLogReader.Read(container, rotated.Cursor, Replay);
 
         // Until another entry of its stream arrives the reader cannot know the line is over. It
-        // stays at the line's start, naming the line by its key.
+        // stays at the line's start, naming the line by its key, head, length and digest.
+        const string Goodbye = "goodbye without a newline";
         Assert.Empty(stopped.Records);
-        Assert.Equal(start with { Pending = [new DockerPendingLine("stdout", T1, File: start.Fingerprint, Start: start.Offset, Length: 0)] }, stopped.Cursor);
+        Assert.Equal(
+            start with { Pending = [new DockerPendingLine("stdout", T1, File: start.Fingerprint, Start: start.Offset, Length: Goodbye.Length, Digest: DockerPendingLine.DigestOf(Goodbye))] },
+            stopped.Cursor);
         Assert.Empty(rotated.Records);
         Assert.Equal(
             ["goodbye without a newline", "fresh first line after the restart", "second line"],
@@ -718,7 +721,8 @@ public sealed class DockerLineIdentityTests
         DockerContainer container = DockerFixture.Catalogued(root);
         DockerFixture.Append(container, Before, "open ");
         using FileTailHandle file = FileTailHandle.OpenWithPrefixIdentity(container.LogPath)!;
-        DockerJsonLogReader.Decoder decoder = new(Replay, null, file, () => null);
+        using DockerJsonLogReader.Generations generations = new(container.LogPath);
+        DockerJsonLogReader.Decoder decoder = new(Replay, null, file, generations);
         FileTailCursor at = new(FileTailCursor.CurrentSchemaVersion, file.Fingerprint!, 0);
 
         Assert.Throws<UnreachableException>(() => decoder.Scan(file, at, eofEndsLine: true, gap: false));
@@ -943,6 +947,360 @@ public sealed class DockerLineIdentityTests
         Assert.Equal("kept", Assert.Single(batch.Records).Text);
     }
 
+    // ---- Reproductions from council round 4 ----
+
+    private const string SshFailure = "sshd[1]: Failed password for root from 10.0.0.12 port 22 ssh2";
+
+    private const string FreshSignal = "Invalid user a from 192.0.2.1 port 1";
+
+    [Fact]
+    public void GapAfterAnUnseenHeadAndMoreThanABudgetOfAnotherStream_TheRestIsAFragment()
+    {
+        // Sol's P1: the head was written after the cursor, then more stderr than the look-back
+        // window, then two rotations. The look back found no stdout entry and took stdout as
+        // clean, so the terminator, a whole SSH failure, mapped as a signal.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        Rotate(container);
+        DockerFixture.AppendAt(container, "stdout", T1, "comment from a user: ");
+        for (int line = 0; line < 300; line++)
+        {
+            DockerFixture.AppendAt(container, "stderr", $"2026-10-07T10:02:00.{line:D9}Z", new string('e', 16_383) + "\n");
+        }
+
+        Rotate(container);
+        DockerFixture.AppendAt(container, "stdout", T1, SshFailure + "\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+
+        // The look back takes the pass's whole budget, so the pass reads one entry.
+        List<DockerLogBatch> polls = Poll(container, start, new DockerLogReaderOptions(), 2);
+        List<DockerLogRecord> records = [.. polls.SelectMany(batch => batch.Records)];
+
+        Assert.True(polls[0].RotationGap);
+        Assert.Equal([(SshFailure, true), (FreshSignal, false)], records.Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(
+            [DockerMappingKind.Fragment, DockerMappingKind.RecognisedSignal],
+            records.Select(record => Map(container, record).Kind));
+    }
+
+    [Theory]
+    [InlineData(1_000, 3_000)]
+    [InlineData(4 * 1_048_576, 5_500_000)]
+    public void FirstSightWhoseLookBackRunsOutBeforeAnOpenLine_TheRestIsAFragment(int budget, int stderrBytes)
+    {
+        // Opus: a stdout head, then more stderr than the byte budget (a small one, or the default
+        // with 5.5 MB), then the sidecar sees the log for the first time. The look back never
+        // reached the head, so the terminator was read as a whole line.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { MaximumBytesPerBatch = budget };
+        DockerFixture.Append(container, Before);
+        DockerFixture.AppendAt(container, "stdout", T1, "comment from a user: ");
+        int length = Math.Min(16_383, stderrBytes / 10);
+        for (int line = 0; line * length < stderrBytes; line++)
+        {
+            DockerFixture.AppendAt(container, "stderr", $"2026-10-07T10:02:00.{line:D9}Z", new string('e', length) + "\n");
+        }
+
+        DockerLogBatch first = DockerJsonLogReader.Read(container, null, options);
+        DockerFixture.AppendAt(container, "stdout", T1, SshFailure + "\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+        DockerLogBatch next = DockerJsonLogReader.Read(container, Restart(first.Cursor), options);
+
+        Assert.Empty(first.Records);
+        Assert.Equal(DockerPendingLine.UnprovenStream("stdout"), Assert.Single(first.Cursor.Pending!));
+        Assert.True(first.BytesRead <= budget, $"{first.BytesRead} bytes within a {budget}-byte budget");
+        Assert.Equal([(SshFailure, true), (FreshSignal, false)], next.Records.Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(DockerMappingKind.Fragment, Map(container, next.Records[0]).Kind);
+        Assert.Null(next.Cursor.Pending);
+    }
+
+    [Theory]
+    [InlineData(2)]
+    [InlineData(3)]
+    public void HeadWrittenAfterTheCursorThenTwoRotations_TheRestIsAFragment(int maxFile)
+    {
+        // Opus: the head after the cursor in A, two rename rotations, the terminator in C. With
+        // max-file 2, A is gone and the look back reached the start of B, the oldest file, with no
+        // stdout entry: stdout was taken as clean. With max-file 3, A is .2 and holds the head,
+        // but only .1 was looked in.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        DockerFixture.AppendAt(container, "stdout", T1, "comment from a user: ");
+        Rotate(container, maxFile);
+        DockerFixture.AppendAt(container, "stderr", T2, "file B, long enough to give it an identity\n");
+        Rotate(container, maxFile);
+        DockerFixture.AppendAt(container, "stdout", T1, SshFailure + "\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+
+        DockerLogBatch lost = DockerJsonLogReader.Read(container, start, Replay);
+
+        Assert.True(lost.RotationGap);
+        Assert.Equal([(SshFailure, true), (FreshSignal, false)], lost.Records.Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(DockerMappingKind.Fragment, Map(container, lost.Records[0]).Kind);
+        Assert.Equal(DockerMappingKind.RecognisedSignal, Map(container, lost.Records[1]).Kind);
+    }
+
+    [Fact]
+    public void GapWithNoFileBeforeTheNewOne_EachStreamsNextLineIsAFragmentOnce()
+    {
+        // max-file: 1 deletes the log and creates it again: nothing is left to look back in, so
+        // the first line of each stream may be the rest of one, and only that line is dropped.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        File.Delete(container.LogPath);
+        DockerFixture.AppendAt(container, "stdout", T1, SshFailure + "\n");
+        DockerFixture.AppendAt(container, "stderr", T2, SshFailure + "\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+        DockerFixture.AppendAt(container, "stderr", T4, FreshSignal + "\n");
+
+        DockerLogBatch recreated = DockerJsonLogReader.Read(container, start, Replay);
+
+        Assert.True(recreated.RotationGap);
+        Assert.Equal(
+            [("stdout", true), ("stderr", true), ("stdout", false), ("stderr", false)],
+            recreated.Records.Select(record => (record.Stream, record.Fragment)));
+        Assert.Null(recreated.Cursor.Pending);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void HeadMovedToDotTwoWhileTheLineIsOpen_MaxFileThree_IsJoinedWhole(bool chunkInTheMiddleFile)
+    {
+        // Opus: the reader kept up, but a further rotation moved the head's file to .2 while the
+        // line was still open. Only .1 was searched, so the whole line was dropped as a fragment
+        // with a gap logged as "rotated more than once between reads".
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        DockerFixture.AppendAt(container, "stdout", T1, "sshd[1]: Failed password for root from 10.0.0.1");
+        Rotate(container, maxFile: 3);
+        DockerFixture.AppendAt(container, "stderr", T2, "file B, long enough to give it an identity\n");
+        if (chunkInTheMiddleFile)
+        {
+            DockerFixture.AppendAt(container, "stdout", T1, "2 port 22");
+        }
+
+        List<DockerLogBatch> polls = PollRestarting(container, start, 2);
+        Rotate(container, maxFile: 3);
+        DockerFixture.AppendAt(container, "stdout", T1, chunkInTheMiddleFile ? " ssh2\n" : "2 port 22 ssh2\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+        polls.AddRange(PollRestarting(container, polls[^1].Cursor, 3));
+
+        List<DockerLogRecord> records = [.. polls.SelectMany(batch => batch.Records)];
+        Assert.Equal(
+            [("file B, long enough to give it an identity", false), (SshFailure, false), (FreshSignal, false)],
+            records.Select(record => (record.Text, record.Fragment)));
+        Assert.Equal("10.0.0.12", Envelope(Map(container, records[1])).Source?.IpAddress);
+        Assert.Equal((start.Fingerprint, start.Offset), (records[1].FileFingerprint, records[1].StartOffset));
+        Assert.DoesNotContain(polls, batch => batch.RotationGap || batch.Lost > 0);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(5)]
+    [InlineData(6)]
+    [InlineData(7)]
+    public void ReaderThatKeepsUpWithTinyRotatingFiles_NeverFragmentsACompleteLine(int seed)
+    {
+        // Opus's fuzz: Docker rotating files of a few entries (max-file 3 to 5) while lines of up
+        // to four chunks interleave on both streams, with a read and a restart after every write.
+        // About 1.2 % of complete lines came out as fragments (a head in .2, or chunks in a third
+        // file), and lost lines whose rest never came vanished uncounted.
+        Random random = new(seed);
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        int maxFile = random.Next(3, 6);
+        int maxSize = random.Next(250, 600);
+        Dictionary<string, List<string>> written = new() { ["stdout"] = [], ["stderr"] = [] };
+        Dictionary<string, (string Time, int Left, StringBuilder Text)> open = [];
+        string? lastStream = null;
+        int line = 0;
+        DockerLogCursor? cursor = null;
+        List<DockerLogBatch> batches = [];
+
+        void Read()
+        {
+            DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, Replay);
+            batches.Add(batch);
+            cursor = Restart(batch.Cursor);
+        }
+
+        void Write(string stream)
+        {
+            if (File.Exists(container.LogPath) && new FileInfo(container.LogPath).Length >= maxSize)
+            {
+                Rotate(container, maxFile); // As moby's logfile.go: rotate once the file is full, then write.
+            }
+
+            if (!open.TryGetValue(stream, out (string Time, int Left, StringBuilder Text) current))
+            {
+                current = ($"2026-10-07T10:00:00.{line++:D9}Z", random.Next(1, 5), new StringBuilder());
+            }
+
+            string chunk = $"L{line:D6}-{stream}-{current.Left}-{random.Next():D10}-padding to fifty chars";
+            current.Text.Append(chunk);
+            bool last = current.Left == 1;
+            DockerFixture.AppendAt(container, stream, current.Time, last ? chunk + "\n" : chunk);
+            if (last)
+            {
+                written[stream].Add(current.Text.ToString());
+                open.Remove(stream);
+            }
+            else
+            {
+                open[stream] = (current.Time, current.Left - 1, current.Text);
+            }
+
+            lastStream = stream;
+            Read();
+        }
+
+        DockerFixture.Append(container, Before);
+        for (int step = 0; step < 400; step++)
+        {
+            // A stream with a line open waits at most one entry of the other between its chunks,
+            // so a line spans at most three files and its head is always kept.
+            string stream = random.Next(2) == 0 ? "stdout" : "stderr";
+            string other = stream == "stdout" ? "stderr" : "stdout";
+            if (open.ContainsKey(other) && lastStream == stream)
+            {
+                stream = other;
+            }
+
+            Write(stream);
+        }
+
+        while (open.Count > 0)
+        {
+            Write(open.Keys.First());
+        }
+
+        for (int poll = 0; poll < 3; poll++)
+        {
+            Read();
+        }
+
+        List<DockerLogRecord> records = [.. batches.SelectMany(batch => batch.Records)];
+        Assert.Equal(0, records.Count(record => record.Fragment));
+        Assert.Equal(0, batches.Sum(batch => batch.Lost));
+        Assert.DoesNotContain(batches, batch => batch.RotationGap);
+        Assert.True(batches.Sum(batch => batch.OpenAtRotation) > 5, $"{batches.Sum(batch => batch.OpenAtRotation)} lines open at rotation");
+        foreach (string stream in new[] { "stdout", "stderr" })
+        {
+            Assert.Equal(
+                [.. (stream == "stdout" ? [Before.TrimEnd('\n')] : Array.Empty<string>()), .. written[stream]],
+                records.Where(record => record.Stream == stream).Select(record => record.Text));
+        }
+    }
+
+    [Fact]
+    public void LostLineWhoseRestNeverArrives_IsCounted()
+    {
+        // Its head was lost and its stream went on with another line: nothing of it was emitted,
+        // so it vanished without a count.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        DockerFixture.AppendAt(container, "stdout", T1, "comment from a user: ");
+        Rotate(container);
+        DockerFixture.AppendAt(container, "stderr", T2, "file B, long enough to give it an identity\n");
+        List<DockerLogBatch> polls = PollRestarting(container, start, 2);
+        File.Delete(container.LogPath + ".1");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+
+        DockerLogBatch next = DockerJsonLogReader.Read(container, Restart(polls[^1].Cursor), Replay);
+
+        Assert.Equal((FreshSignal, false), (Assert.Single(next.Records).Text, next.Records[0].Fragment));
+        Assert.Equal((1, true), (next.Lost, next.RotationGap));
+        Assert.Equal(0, polls.Sum(batch => batch.Lost));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SameLengthEditToAPinnedHead_IsAFragment(bool edit)
+    {
+        // Sol's P2: a read commits before an open line's head, naming it with length 0 and no
+        // digest. A same-length edit of that head before the next read was joined into a signal
+        // with the wrong address (10.0.0.92).
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        DockerFixture.AppendAt(container, "stdout", T1, "sshd[1]: Failed password for root from 10.0.0.1");
+        DockerLogBatch open = DockerJsonLogReader.Read(container, start, Replay);
+        if (edit)
+        {
+            byte[] bytes = File.ReadAllBytes(container.LogPath);
+            int at = Encoding.UTF8.GetString(bytes).IndexOf("10.0.0.1", StringComparison.Ordinal);
+            bytes[at + 7] = (byte)'9';
+            File.WriteAllBytes(container.LogPath, bytes);
+        }
+
+        DockerFixture.AppendAt(container, "stdout", T1, "2 port 22 ssh2\n");
+        DockerFixture.AppendAt(container, "stdout", T2, FreshSignal + "\n");
+        DockerLogBatch next = DockerJsonLogReader.Read(container, Restart(open.Cursor), Replay);
+
+        DockerPendingLine pinned = Assert.Single(open.Cursor.Pending!);
+        Assert.Equal((start.Offset, start.Offset, false), (open.Cursor.Offset, pinned.Start, pinned.Digest is null));
+        string head = edit ? "sshd[1]: Failed password for root from 10.0.0.92 port 22 ssh2" : SshFailure;
+        Assert.Equal([(head, edit), (FreshSignal, false)], next.Records.Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(edit ? DockerMappingKind.Fragment : DockerMappingKind.RecognisedSignal, Map(container, next.Records[0]).Kind);
+        Assert.Equal(edit, next.RotationGap);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void LookBack_IsChargedToThePassByteBudget(bool firstSight)
+    {
+        // Sol's P2: the look back was added to the bytes read after the scan and never taken
+        // from the budget (8,432 bytes accounted against 4,096). A pass now stays within the
+        // budget plus one entry, and still takes at least one entry.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 4_096 };
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        Rotate(container, maxFile: 3);
+        for (int line = 0; line < 100; line++)
+        {
+            DockerFixture.AppendAt(container, "stderr", $"2026-10-07T10:02:00.{line:D9}Z", $"stderr line {line:D3}, long enough to fill the window\n");
+        }
+
+        Rotate(container, maxFile: 3);
+        for (int line = 0; line < 100; line++)
+        {
+            DockerFixture.AppendAt(container, "stdout", $"2026-10-07T10:03:00.{line:D9}Z", $"stdout line {line:D3}, long enough to fill the scan\n");
+        }
+
+        long longest = File.ReadAllLines(container.LogPath).Max(entry => entry.Length + 1L);
+        DockerLogBatch batch = DockerJsonLogReader.Read(container, firstSight ? null : start, options);
+        List<DockerLogBatch> rest = Poll(container, batch.Cursor, options, 40);
+
+        Assert.True(batch.BytesRead <= options.MaximumBytesPerBatch + longest, $"{batch.BytesRead} bytes within a {options.MaximumBytesPerBatch}-byte budget");
+        Assert.NotEmpty(batch.Records);
+        Assert.All(rest, poll => Assert.True(poll.BytesRead <= options.MaximumBytesPerBatch + longest, $"{poll.BytesRead} bytes"));
+        List<DockerLogRecord> records = [.. new[] { batch }.Concat(rest).SelectMany(poll => poll.Records)];
+        Assert.Equal(Enumerable.Range(0, 100).Select(line => $"stdout line {line:D3}, long enough to fill the scan"), records.Select(record => record.Text));
+        // Neither stdout's last entry nor a clean start was in the window: its first line fails closed.
+        Assert.Equal([true, .. Enumerable.Repeat(false, 99)], records.Select(record => record.Fragment));
+    }
+
     internal static string Envelope() => JsonSerializer.Serialize(TestEvents.AuthenticationFailure(TestEvents.Now), BowerJson.Options);
 
     private static SecurityEventEnvelope Envelope(DockerMappedEvent mapped) =>
@@ -952,6 +1310,30 @@ public sealed class DockerLineIdentityTests
         new DockerLogEventMapper(new DockerMapperOptions { SidecarId = "sidecar-test" }).Map(container, record, TestEvents.Now);
 
     private static void Rotate(DockerContainer container) => File.Move(container.LogPath, container.LogPath + ".1", overwrite: true);
+
+    /// <summary>As moby renames with <c>max-file</c>: <c>.N-2</c> to <c>.N-1</c> (the oldest is replaced), down to the log to <c>.1</c>.</summary>
+    private static void Rotate(DockerContainer container, int maxFile)
+    {
+        for (int age = maxFile - 1; age >= 1; age--)
+        {
+            string from = age == 1 ? container.LogPath : container.LogPath + "." + (age - 1);
+            if (File.Exists(from))
+            {
+                File.Move(from, container.LogPath + "." + age, overwrite: true);
+            }
+        }
+    }
+
+    private static List<DockerLogBatch> PollRestarting(DockerContainer container, DockerLogCursor cursor, int count)
+    {
+        List<DockerLogBatch> batches = [];
+        for (int poll = 0; poll < count; poll++)
+        {
+            batches.Add(DockerJsonLogReader.Read(container, Restart(batches.Count == 0 ? cursor : batches[^1].Cursor), Replay));
+        }
+
+        return batches;
+    }
 
     private static DockerLogCursor Restart(DockerLogCursor cursor)
     {

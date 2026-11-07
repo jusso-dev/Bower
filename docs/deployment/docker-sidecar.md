@@ -97,12 +97,14 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   restarted sidecar resumes where it stopped.
 - **Rotation.** Files are identified by their first bytes, so Docker's
   `max-size`/`max-file` rotation is detected. With `max-file` 2 or more Docker renames
-  the log to `.1`, and the sidecar drains `.1` before the new file. With `max-file: 1`
-  (Docker's default when only `max-size` is set) Docker deletes the log and creates it
-  again instead: there is no `.1`, so whatever the sidecar had not read when the log
-  rotated is lost and the gap is logged (event 3003) at every rotation. Set `max-file`
-  to 2 or more for collected containers, as the example Compose files do (`3`). If a log
-  rotates more than once between passes, the gap is logged too.
+  the log to `.1` (and older files to `.2` and on), and the sidecar drains `.1` before
+  the new file. With `max-file: 1` (Docker's default when only `max-size` is set) Docker
+  deletes the log and creates it again instead: there is no `.1`, so whatever the
+  sidecar had not read when the log rotated is lost, the gap is logged (event 3003) at
+  every rotation, and the first line of each stream after it is dropped as a possible
+  fragment (see **Fragments**). Set `max-file` to 2 or more for collected containers, as
+  the example Compose files do (`3`), so fewer lines are lost. If a log rotates more than
+  once between passes, the gap is logged too.
 - **Lines and streams.** Docker writes a line over 16 KiB as several chunks, and copies
   stdout and stderr into the same file at the same time, so another stream's entries can
   sit between two chunks of one line. Every chunk of one line carries the same stream
@@ -117,8 +119,10 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
 - **A line open when the log rotates.** Docker can rotate between two chunks of one
   line, and never writes to `.1` again. Once `.1` is read to its end, the sidecar moves
   to the new file with each line still open there (at most one per stream) recorded in
-  its cursor; the next pass reads that line's chunks again from `.1` and joins them with
-  the rest in the new file, so the line arrives whole. The sidecar logs `Container <name>
+  its cursor; the next pass reads that line's chunks again, from whichever rotated file
+  now holds each of them (found by identity in `.1`, `.2` and on, so a further rotation
+  that moves them to `.2` loses nothing), and joins them with the rest in the new file,
+  so the line arrives whole. The sidecar logs `Container <name>
   log rotated with <n> line(s) still open` (event 3006) once the move is committed.
   Earlier releases either waited on `.1` until the new file was itself rotated away,
   which lost that whole file, or read the two parts as separate lines. A line already
@@ -128,19 +132,32 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   and the sidecar moves on the same way.
 - **Fragments.** The cursor names every line still open, so once the sidecar has seen a
   line open it never reads that line's rest as a whole line. If the head cannot be read
-  again (`.1` was rotated again, compressed or deleted, or with `max-file: 1` the log was
-  deleted and created again), or the saved chunks no longer match their length and
-  digest, the gap is logged (event 3003) and the rest is a fragment. So is a line an
-  entry the sidecar cannot read sits between the chunks of (it may have been one of
-  them), and the rest of a line already open when the sidecar first sees a log or reads
-  past a gap (it looks back up to one pass's byte budget, in the file and then `.1`, for
-  each stream's last entry). A fragment is never mapped, whatever it contains, so it can
+  again (it was rotated past the last file Docker keeps, compressed or deleted, or with
+  `max-file: 1` the log was deleted and created again), or the saved chunks no longer
+  match their length and digest, the gap is logged (event 3003) and the rest is a
+  fragment. So is a line an entry the sidecar cannot read sits between the chunks of (it
+  may have been one of them). A fragment is never mapped, whatever it contains, so it can
   neither become a signal with a cut-off address nor pass as a Bower envelope; it is
-  dropped and counted in the pass summary (`fragment(s) dropped`, event 3001). The
-  limit: a line whose head was written after the sidecar's position and lost in the
-  same gap (with `max-file: 1`, a rotation while the sidecar is behind) was never seen,
-  so its rest cannot be told from a whole line. `max-file` 2 or more keeps that head in
-  `.1`, where the sidecar finds it.
+  dropped and counted in the pass summary (`fragment(s) dropped`, event 3001), as is a
+  line the sidecar had read part of and lost when nothing more of it arrives.
+- **After a gap or a first sight, fail closed.** Where the sidecar starts reading
+  anywhere but its own last position (it first sees a log, or a gap passed lines it had
+  not read), a line may already be open on each stream, its head somewhere the sidecar
+  never read. It looks back from where it starts, through the file and then `.1`, `.2`
+  and on, within one pass's byte budget (charged to that pass). A stream counts as clean
+  only when the look back reaches its last entry and that entry ends its line, or reaches
+  the sidecar's own last position in a rotated file (its cursor named every line open
+  there), or, at a first sight only, the start of the oldest file Docker kept. If that
+  last entry leaves a line open, the rest of that line is a fragment. Otherwise (the
+  budget ran out, a file between is missing or unreadable, or after a gap the file
+  before the oldest one is gone, as always with `max-file: 1`) the stream's next line,
+  whatever it is, is dropped as a fragment; the line after it is read normally. So no
+  line that may be the rest of another is mapped, at the cost of at most one dropped
+  line per stream after each gap or first sight; gaps are logged and fragments counted.
+  The limit, at a first sight only: Bower cannot tell whether Docker deleted older files
+  before it first saw the log, so a stream with no entry at all in the files Docker
+  kept is taken as clean, and if a deleted file held the head of a line of that stream
+  whose rest is still to come, that rest is read as a whole line.
 - **When a line's final chunk never arrives.** Until an entry of the same stream with
   another `time` arrives, the sidecar cannot know that an unterminated entry ended its
   line, so it waits for the rest. The final chunk can be missing for good: a stream that
@@ -177,20 +194,27 @@ and ordinary cursors serialise byte-for-byte as before:
 - `"pending"`: every line open at `offset`, at most one per stream, each named by its
   `stream` and Docker `time`. One being skipped has `"discarding":true`. One being
   assembled has `file` (the fingerprint of the file holding its first chunk, `.1` after a
-  rotation), `start` (its first chunk), `chunks` (its later chunks in `file`), `rest` (its
-  chunks in the cursor's own file when `file` is `.1`), `length` (characters so far) and
-  `digest` (SHA-256 of those characters, 16 bytes, base64), so the next pass reads exactly
-  those chunks again and checks them. One whose head is the next entry of its key has
-  `file` and `start` equal to the cursor's own and `length` 0. The rest of one whose head
-  was lost has `"fragment":true`. Offsets, a length, a digest and the time only, never
-  line content.
+  rotation), `start` (its first chunk), `chunks` (its later chunks in `file`), `through`
+  (its chunks in each file rotated between `file` and the cursor's, as `file` and
+  `chunks`), `rest` (its chunks in the cursor's own file when `file` is a rotated one),
+  `length` (characters so far) and `digest` (SHA-256 of those characters, 16 bytes,
+  base64), so the next pass reads exactly those chunks again and checks them. One read
+  once and committed before its head has `file` equal to the cursor's own, `start` at or
+  after `offset`, and the `length` and `digest` read so far, checked when the head is
+  read again. The rest of one whose head was lost has `"fragment":true` (and
+  `"lost":true` when the sidecar had read part of it). A stream not proven clean after a
+  gap or a first sight has `"unproven":true`, `"fragment":true` and no `time`: its next
+  line is a fragment. Offsets, a length, a digest and the time only, never line content.
 
 A rotation the sidecar drains carries them into the new file. Truncation, a missed
-rotation or a lost `.1` turns each open line into the rest of one (`"fragment":true`),
-so its rest is a fragment. A cursor that does not pass validation (another schema, a
-range past its offset or out of order, chunks shared by two lines) is refused as a
-whole: the sidecar logs `Stored cursor for <name> is damaged` (event 3007) and reads
-from the start position again, as for a new container.
+rotation or a lost rotated file turns each open line into the rest of one
+(`"fragment":true`), so its rest is a fragment. A cursor that does not pass validation
+(another schema, a range past its offset or out of order, chunks shared by two lines) is
+refused as a whole: the sidecar logs `Stored cursor for <name> is damaged` (event 3007)
+and reads from the start position again, as for a new container. `pending` is new in
+this release: only cursors released on main are read as described here, and a
+`pending` form written by a pre-release build that this release does not write (such as
+an open head with `length` 0 and no `digest`) is refused the same way.
 
 A cursor written before `pending` existed with `"discarding":true` names no line. The
 old release skipped every entry up to the first that ends with a newline, whatever its

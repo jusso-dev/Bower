@@ -90,6 +90,7 @@ public sealed partial class DockerSidecarWorker(
             DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, readerOptions);
             malformed += batch.Malformed;
             oversized += batch.Oversized;
+            fragments += batch.Lost;
             if (batch.RotationGap)
             {
                 LogRotationGap(logger, container.Name);
@@ -189,7 +190,7 @@ public sealed partial class DockerSidecarWorker(
     private static partial void LogPassFailure(ILogger logger, string failureType);
 
     [LoggerMessage(EventId = 3003, Level = LogLevel.Warning,
-        Message = "Container {Container} log rotated more than once between reads; some lines were not collected.")]
+        Message = "Container {Container} log has a gap (rotated more than once between reads, a rotated file removed or compressed, the log deleted or truncated, or an open line's saved chunks gone or changed); lines in it were not collected, and lines it cut are dropped as fragments.")]
     private static partial void LogRotationGap(ILogger logger, string container);
 
     [LoggerMessage(EventId = 3006, Level = LogLevel.Information,

@@ -71,8 +71,12 @@ public sealed class DockerSharedTailerTests
 
         Assert.Equal(4, batches[0].Records.Count);
         Assert.True(batches[1].RotationGap);
-        Assert.Equal("first record with enough bytes for the identity", Assert.Single(batches[1].Records).Text);
+        // After a gap with nothing before the file's start to look back in, the first line may
+        // be the rest of one cut by the truncation: it fails closed as a fragment, once.
+        DockerLogRecord first = Assert.Single(batches[1].Records);
+        Assert.Equal(("first record with enough bytes for the identity", true), (first.Text, first.Fragment));
         Assert.Equal(Enumerable.Range(1, 5).Select(index => $"replacement {index}"), batches[2].Records.Select(record => record.Text));
+        Assert.DoesNotContain(batches[0].Records.Concat(batches[2].Records), record => record.Fragment);
     }
 
     [Fact]
@@ -227,8 +231,9 @@ public sealed class DockerSharedTailerTests
         Assert.Equal(expected.Count, actual.Count);
         for (int index = 0; index < expected.Count; index++)
         {
-            // Compared without what the old reader did not have (see DockerReaderDifferentialTests).
-            Assert.Equal(expected[index].Records, actual[index].Records.Select(DockerReaderDifferentialTests.Unresumed));
+            // Compared without what the old reader did not have, nor the fragment flag it never set
+            // (see DockerReaderDifferentialTests); each test pins the flag it expects.
+            Assert.Equal(expected[index].Records, actual[index].Records.Select(DockerReaderDifferentialTests.Comparable));
             Assert.Equal(expected[index].Cursor, DockerReaderDifferentialTests.Legacy(actual[index].Cursor));
             Assert.Equal(expected[index].Cursor.Serialize(), DockerReaderDifferentialTests.Legacy(actual[index].Cursor).Serialize());
             Assert.Equal(

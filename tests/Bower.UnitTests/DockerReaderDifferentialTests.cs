@@ -36,6 +36,11 @@ namespace Bower.UnitTests;
 /// compared without the flag; the flag is pinned by <c>DockerLineIdentityTests</c>. Its entry limit
 /// is a whole Docker chunk however it is escaped, where the old one followed the line limit, so the
 /// histories' over-long entries are longer than both.</item>
+/// <item>After a gap or a first sight the current reader looks back for each stream's last entry
+/// and charges those bytes to the pass's budget, so that pass reads fewer entries than the old
+/// reader, which never looked back. The random histories set the tests-only
+/// <c>LookBackOutsideBudget</c> to compare each read; the budget is pinned by
+/// <c>DockerLineIdentityTests.LookBack_IsChargedToThePassByteBudget</c>.</item>
 /// <item>The current cursor also names the lines open at it (<see cref="DockerLogCursor.Pending"/>),
 /// and each record carries the cursor it is re-read from (<see cref="DockerLogRecord.Resume"/>).
 /// Both are compared apart: cursors without <c>Pending</c>, and each resume cursor with the
@@ -66,7 +71,10 @@ public sealed class DockerReaderDifferentialTests
                 MaximumLineBytes = random.Next(16, 200),
                 MaximumRecordsPerBatch = random.Next(1, 7),
                 MaximumBytesPerBatch = random.Next(300, 3_000),
-                StartAtEnd = random.Next(2) == 0
+                StartAtEnd = random.Next(2) == 0,
+                // The old reader never looked back after a gap; charged to the budget, a look back
+                // makes that read shorter (pinned by DockerLineIdentityTests), so it is left out here.
+                LookBackOutsideBudget = true
             };
             DockerLogCursor? legacyCursor = null, currentCursor = null;
             string? pendingTail = null;
@@ -330,15 +338,23 @@ public sealed class DockerReaderDifferentialTests
     internal static DockerLogRecord Unresumed(DockerLogRecord record) => record with { Resume = null };
 
     /// <summary>Also without <see cref="DockerLogRecord.Fragment"/>, which the old reader never set (see the class remarks).</summary>
-    private static DockerLogRecord Comparable(DockerLogRecord record) => record with { Resume = null, Fragment = false };
+    internal static DockerLogRecord Comparable(DockerLogRecord record) => record with { Resume = null, Fragment = false };
 
-    /// <summary>The old sidecar's rewind position, naming at most the record's own line, its head still to come.</summary>
+    /// <summary>
+    /// The old sidecar's rewind position, naming at most the record's own line with its head
+    /// still to come (no chunk before the position), and the other stream only as not proven
+    /// clean after a gap or a first sight (a key, no chunks).
+    /// </summary>
     private static void AssertResumesWhereTheOldSidecarRewound(DockerLogRecord record)
     {
-        Assert.Equal(LegacyRewind(record), Legacy(record.Resume!));
-        Assert.All(record.Resume!.Pending ?? [], line => Assert.Equal(
-            (record.Stream, (string?)null),
-            (line.Stream, line.Digest)));
+        DockerLogCursor resume = record.Resume!;
+        Assert.Equal(LegacyRewind(record), Legacy(resume));
+        Assert.All(resume.Pending ?? [], line => Assert.True(
+            line.Unproven
+            || (line.Stream == record.Stream
+                && line is { Chunks: null, Rest: null, Through: null }
+                && (line.Start is null || (line.File == resume.Fingerprint && line.Start >= resume.Offset))),
+            $"{line} at {resume.Offset}"));
     }
 
     /// <summary>Without <see cref="DockerLogCursor.Pending"/>, which the old reader did not write.</summary>
