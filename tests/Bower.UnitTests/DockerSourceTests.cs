@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Bower.Contracts;
 using Bower.Source.Docker;
 
@@ -453,6 +454,7 @@ public sealed class DockerSourceTests
     [InlineData("error: maximum authentication attempts exceeded for root from 203.0.113.5 port 22 ssh2 [preauth]", "account_lockout", "root", "203.0.113.5")]
     [InlineData("pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.7  user=deploy", "authentication_failure", "deploy", "203.0.113.7")]
     [InlineData("2026/10/07 10:00:00 [error] 29#29: *1 user \"alice\": password mismatch, client: 192.0.2.10, server: _", "authentication_failure", "alice", "192.0.2.10")]
+    [InlineData("2026/10/07 10:00:00 [error] 29#29: *2 user \"mallory\" was not found in \"/etc/nginx/.htpasswd\", client: 192.0.2.11, server: _", "authentication_failure", "mallory", "192.0.2.11")]
     public void Mapper_RecognisesAuthenticationSignals(string line, string eventType, string user, string ip)
     {
         DockerContainer container = DockerFixture.InMemory();
@@ -467,6 +469,94 @@ public sealed class DockerSourceTests
         Assert.Equal(ip, envelope.Source?.IpAddress);
         Assert.Equal("web", envelope.Application.Name);
         Assert.DoesNotContain(line, mapped.Json!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Mapper_RecognisesPamFailureWithoutRemoteHost()
+    {
+        DockerLogRecord record = new(
+            "pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= user=deploy",
+            "stderr", null, "fp", 0, 1);
+
+        DockerMappedEvent mapped = Mapper().Map(DockerFixture.InMemory(), record, TestEvents.Now);
+
+        Assert.Equal("pam.auth-failure", mapped.Detector);
+        SecurityEventEnvelope envelope = JsonSerializer.Deserialize<SecurityEventEnvelope>(mapped.Json!, BowerJson.Options)!;
+        Assert.Equal("deploy", envelope.Actor?.Username);
+        Assert.Null(envelope.Source);
+    }
+
+    // A match timeout made mapping depend on machine load: under CPU pressure a real pam
+    // failure timed out, was skipped and dropped as unrecognised. The linear engine with no
+    // timeout keeps the outcome a function of the line alone.
+    [Fact]
+    public void Mapper_PatternsUseTheLinearEngineWithoutATimeout()
+    {
+        Regex[] regexes = DockerLogEventMapper.AuthenticationRegexes.ToArray();
+
+        Assert.Equal(6, regexes.Length);
+        Assert.All(regexes, regex =>
+        {
+            Assert.True(regex.Options.HasFlag(RegexOptions.NonBacktracking), regex.ToString());
+            Assert.Equal(Regex.InfiniteMatchTimeout, regex.MatchTimeout);
+        });
+    }
+
+    // The engine change must not change what a pattern selects or captures.
+    [Theory]
+    [InlineData("Failed password for root from 203.0.113.5 port 22 ssh2")]
+    [InlineData("Failed publickey for invalid user admin from 2001:db8::1 port 4242 ssh2")]
+    [InlineData("Failed keyboard-interactive/pam for invalid user invalid user x from 198.51.100.9")]
+    [InlineData("Failed password for  from 203.0.113.5")]
+    [InlineData("Invalid user oracle from 192.0.2.44 port 50022")]
+    [InlineData("Invalid user from from from 192.0.2.44")]
+    [InlineData("error: MAXIMUM Authentication attempts exceeded for invalid user root from 203.0.113.5 port 22 ssh2 [preauth]")]
+    [InlineData("pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=203.0.113.7  user=deploy")]
+    [InlineData("pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= rhost=  user=deploy")]
+    [InlineData("pam_unix(sshd:auth): authentication failure; logname= uid=0 euid=0 tty=ssh ruser= user=deploy")]
+    [InlineData("pam_unix(sshd:auth): authentication failure; rhost=203.0.113.7 user=a rhost=198.51.100.1 user=b")]
+    [InlineData("pam_unix(sshd:auth): authentication failure; ruser=x rhost=bad-host user=deploy")]
+    [InlineData("pam_unix(sshd:auth): authentication failure;user=deploy")]
+    [InlineData("pam_unix(login:auth): authentication failure;\tuser=root\n")]
+    [InlineData("2026/10/07 10:00:00 [error] 29#29: *1 user \"alice\": password mismatch, client: 192.0.2.10, server: _")]
+    [InlineData("user \"\": password mismatch, client: 192.0.2.10")]
+    [InlineData("user \"bob\" was not found in \"/a\", client: x\", client: 192.0.2.12")]
+    [InlineData("user \"bob\" was not found in \"/a\", client: 192.0.2.12 user \"eve\" was not found in \"/b\", client: 192.0.2.13")]
+    [InlineData("GET /index.html 200")]
+    public void Mapper_LinearEngineMatchesTheBacktrackingEngine(string line)
+    {
+        foreach (Regex linear in DockerLogEventMapper.AuthenticationRegexes)
+        {
+            Regex backtracking = new(linear.ToString(), linear.Options & ~RegexOptions.NonBacktracking);
+
+            Match expected = backtracking.Match(line);
+            Match actual = linear.Match(line);
+
+            Assert.Equal(expected.Success, actual.Success);
+            Assert.Equal(expected.Index, actual.Index);
+            Assert.Equal(expected.Length, actual.Length);
+            foreach (string name in new[] { "user", "ip" })
+            {
+                Assert.Equal(expected.Groups[name].Success, actual.Groups[name].Success);
+                Assert.Equal(expected.Groups[name].Value, actual.Groups[name].Value);
+            }
+        }
+    }
+
+    [Fact]
+    public void Mapper_MapsAMaximumLengthAdversarialLine()
+    {
+        // Quadratic for a backtracking engine (each lazy step rescans the whitespace run).
+        string head = "pam_unix(sshd:auth): authentication failure;" + string.Concat(Enumerable.Repeat(" rhost=1", 100));
+        const string Tail = " user=deploy";
+        string line = head + new string(' ', 65_536 - head.Length - Tail.Length) + Tail;
+
+        DockerMappedEvent mapped = Mapper().Map(
+            DockerFixture.InMemory(),
+            new DockerLogRecord(line, "stderr", null, "fp", 0, 1),
+            TestEvents.Now);
+
+        Assert.Equal("pam.auth-failure", mapped.Detector);
     }
 
     [Fact]
