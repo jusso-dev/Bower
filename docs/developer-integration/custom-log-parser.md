@@ -58,7 +58,10 @@ says, a preview value stays redacted when:
 - a built-in privacy detector (Australian identifiers, financial, identity
   including IP, hostname and username, secrets and cryptographic material) finds
   sensitive data in the value. Public identifiers the default privacy policy
-  allows (ABN, ACN, SWIFT BIC) are not counted.
+  allows (ABN, ACN, SWIFT BIC) are not counted. Unlike collector redaction, the
+  preview does not exempt UUIDs: a UUID whose digits pass a checksum stays
+  masked (see
+  [UUIDs and dashless GUIDs](../privacy/privacy-secret-engine.md#uuids-and-dashless-guids)).
 
 Regex parsers get stricter rules, because the operator's pattern decides what
 each capture holds:

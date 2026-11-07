@@ -209,6 +209,65 @@ so such an alert is not queued).
 does not require a fixed country-code list, so checksum-valid non-IBAN strings can
 also match; this avoids silently missing newly registered formats.
 
+### UUIDs and dashless GUIDs
+
+Structured number detectors (`au.*`, `fin.credit-card`, `fin.bsb-account`, `fin.iban`
+and `fin.swift-bic`) never claim a match that lies wholly inside a **canonical
+identifier token**: a UUID in 8-4-4-4-12 form or exactly 32 hexadecimal digits (either
+case, any version), with the start or end of the value, or a character other than an
+ASCII letter, digit, hyphen or underscore, on both sides. So `{…}`, `urn:uuid:…`,
+quotes, spaces and other punctuation leave the UUID recognised, while `TFN-<uuid>`,
+`<uuid>x`, `id_<uuid>`, a 13-character last group or a non-hex character make the whole
+run an ordinary token that is scanned as before.
+
+Without this rule about 1 in 450 random UUIDv4 values (8-digit first group passing the
+TFN checksum, or rarely a Luhn-valid card number across the first three groups) and
+about 1 in 1,800 dashless GUIDs (IBAN mod-97) were redacted. In a producer's `eventId`
+that quarantines the event as `event-id-redacted`, and the retry can never succeed.
+UUIDv7 values minted from August 2024 to the end of 2025 often have an all-digit
+first group and were redacted about 1 time in 80.
+
+What still applies inside a canonical identifier token:
+
+- secret, crypto, classification, identity and custom detectors, field rules and
+  length limits;
+- every detector on matches that only partly overlap the token (for example a BSB
+  and account number that runs into it).
+
+Real identifiers are unaffected: a TFN, card number or IBAN written on its own, with
+spaces or hyphens, or next to a UUID, is not part of a canonical identifier token.
+The limit is deliberate: a producer that writes an eight-digit TFN as the first group
+of a UUID (`10040680-0000-0000-0000-000000000000`) is not caught. Redaction stops
+accidental disclosure; a producer that wants to leak data can encode it in many ways,
+and no person writes a TFN, card number or IBAN as a UUID. If you need to treat
+UUID-shaped values as sensitive, add a custom detector; custom detectors still see them.
+
+The exemption follows the token, not the words around it. A labelled value whose
+digits form a canonical token, such as `TFN: 10040680-0000-0000-0000-000000000000` or
+`passport A1234567-0000-0000-0000-000000000000`, is exempt too, within the same
+accepted limit: the label does not turn the UUID back into a TFN or passport number.
+Add a custom detector if your data writes identifiers that way.
+
+Only a bare token is exempt. An id with a prefix or suffix joined by a hyphen,
+underscore, letter or digit is one longer token and is scanned as before:
+`evt-<uuid>`, `order-<uuid>`, `<uuid>-1` and AWS X-Ray-style trace ids
+(`1-67123456-<24 hex digits>`) can still pass a checksum by chance and be quarantined
+as `event-id-redacted`, about 1 time in 450 for a random UUIDv4 inside them.
+Producers should send a bare UUID (or a UUIDv7) as `eventId` and carry any prefix in
+another field.
+
+The custom-log parser preview (`CustomLogParser`) does not apply this exemption: its
+privacy floor masks any sample value a built-in detector matches, so a UUID that passes
+a checksum stays masked in the preview. That is deliberate. The preview only hides
+sample values from the console and never quarantines an event, so masking more is the
+safe side, and the floor stays a plain "any detector match" rule that a configuration
+cannot argue its way around.
+
+The rule is engine behaviour, not profile content, so privacy profile versions and
+hashes do not change. The C# and Rust engines apply the same rule
+(`CanonicalIdentifierTokens`, `identifier_tokens.rs`) and are pinned by the shared parity
+vectors.
+
 ### Bower-generated identifiers and counters
 
 Record ids that Bower's own syslog and Windows Event Log sources compute (`syslog-` or

@@ -1084,9 +1084,9 @@ fn status_request() -> Request<Body> {
         .unwrap()
 }
 
-/// A process-unique event id no privacy detector matches. Not a random UUID: about 1 in 450
-/// has an all-digit first group that passes the TFN checksum, so the redactor masks it and
-/// the collector quarantines the event as `event-id-redacted` (503).
+/// A process-unique event id no privacy detector matches. Not a random UUID: those are
+/// exempt from the structured number detectors now (canonical identifier tokens), but a
+/// fixed sequence keeps these tests independent of that rule and reproducible.
 fn unique_event_id() -> String {
     static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     format!(
