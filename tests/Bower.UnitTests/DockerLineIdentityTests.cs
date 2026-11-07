@@ -1413,24 +1413,137 @@ public sealed class DockerLineIdentityTests
         Assert.Equal(new FileInfo(container.LogPath).Length, polls[^1].Cursor.Offset);
     }
 
-    [Fact]
-    public void ShortLineOpenBesideALongOneAfterAWholeBudget_IsNotSkipped()
+    [Theory]
+    [InlineData("stdout", "stderr")]
+    [InlineData("stderr", "stdout")]
+    public void ShortLineOpenBesideALongOneAfterAWholeBudget_IsNotSkipped(string shortStream, string longStream)
     {
         // Opus: the skip after a whole byte budget took the line that began where the read did
         // even with another stream's line open, so a short stdout line was dropped as oversized
         // because a long stderr line filled a 600-byte budget. Only a line open alone is skipped.
+        // Swapped, the long stdout line was read again first, and its failed partial read took
+        // the whole budget left, so the short stderr line was skipped as oversized too.
         using TemporaryDirectory root = new();
         DockerContainer container = DockerFixture.Catalogued(root);
         DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 600 };
         DockerFixture.Append(container, Before);
         DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
-        DockerFixture.AppendAt(container, "stdout", T1, "short head ");
-        DockerFixture.AppendAt(container, "stderr", T2, [.. Enumerable.Repeat(new string('e', 100), 8), "end\n"]);
-        DockerFixture.AppendAt(container, "stdout", T1, "tail\n");
+        DockerFixture.AppendAt(container, shortStream, T1, "short head ");
+        DockerFixture.AppendAt(container, longStream, T2, [.. Enumerable.Repeat(new string('e', 100), 8), "end\n"]);
+        DockerFixture.AppendAt(container, shortStream, T1, "tail\n");
         DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
 
         List<DockerLogBatch> polls = Poll(container, start, options, 12);
 
+        Assert.Equal(
+            [("short head tail", false), (FreshSignal, false)],
+            polls.SelectMany(poll => poll.Records).Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(1, polls.Sum(poll => poll.Oversized));
+        Assert.Equal(new FileInfo(container.LogPath).Length, polls[^1].Cursor.Offset);
+    }
+
+    [Theory]
+    [InlineData("stdout", "stderr")]
+    [InlineData("stderr", "stdout")]
+    public void TwoOpenLinesThatFitTheBudgetOnlyApart_AreBothJoined(string firstStream, string secondStream)
+    {
+        // Sol's P2: with a 32 KiB budget, a stdout line and a stderr line each open on a genuine
+        // 16 KiB chunk were read again in stream order, and the second did not fit what the first
+        // left, so it was skipped as oversized though it fits a whole budget. It is deferred:
+        // read again in a later pass, alone.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 32_768 };
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.AppendAt(container, firstStream, T1, new string('f', 16_384));
+        DockerFixture.AppendAt(container, secondStream, T2, new string('s', 16_384));
+        DockerLogBatch open = DockerJsonLogReader.Read(container, start, options);
+        DockerFixture.AppendAt(container, firstStream, T1, "first end\n");
+        DockerFixture.AppendAt(container, secondStream, T2, "second end\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+        long longest = File.ReadAllLines(container.LogPath).Max(entry => entry.Length + 1L);
+
+        List<DockerLogBatch> polls = [open, .. Poll(container, open.Cursor, options, 8)];
+
+        Assert.Empty(open.Records);
+        Assert.Equal(2, open.Cursor.Pending!.Count(line => line.Digest is not null));
+        Assert.Equal(
+            [(new string('f', 16_384) + "first end", firstStream, false), (new string('s', 16_384) + "second end", secondStream, false), (FreshSignal, "stdout", false)],
+            polls.SelectMany(poll => poll.Records).Select(record => (record.Text, record.Stream, record.Fragment)));
+        Assert.Equal(0, polls.Sum(poll => poll.Oversized));
+        Assert.All(polls, poll => Assert.True(poll.BytesRead <= options.MaximumBytesPerBatch + longest, $"{poll.BytesRead} bytes within {options.MaximumBytesPerBatch + longest}"));
+        Assert.Equal(new FileInfo(container.LogPath).Length, polls[^1].Cursor.Offset);
+    }
+
+    [Theory]
+    [InlineData("stdout", "stderr")]
+    [InlineData("stderr", "stdout")]
+    public void TwoOpenLinesThatNeverFitTogether_AreBothJoinedOverManyPolls(string smallStream, string largeStream)
+    {
+        // A deferred line is never deferred for good. The small line is always the smaller, so
+        // smallest first alone would read it every pass and defer the large one, whose entry is
+        // next, for ever: the line whose stream the next entry is goes first, so each pass takes
+        // at least that entry. Each line fits the 1,500-byte budget; the two together never do.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 1_500 };
+        DockerFixture.Append(container, Before);
+        DockerLogCursor cursor = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.AppendAt(container, smallStream, T1, new string('a', 50));
+        DockerFixture.AppendAt(container, largeStream, T2, new string('b', 250));
+        List<DockerLogBatch> polls = [];
+        for (int poll = 0; poll < 40; poll++)
+        {
+            if (poll < 4)
+            {
+                DockerFixture.AppendAt(container, largeStream, T2, new string('b', 150));
+                DockerFixture.AppendAt(container, smallStream, T1, new string('a', 50));
+            }
+            else if (poll == 4)
+            {
+                DockerFixture.AppendAt(container, largeStream, T2, "end\n");
+                DockerFixture.AppendAt(container, smallStream, T1, "end\n");
+                DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+            }
+
+            polls.Add(DockerJsonLogReader.Read(container, cursor, options));
+            cursor = Restart(polls[^1].Cursor);
+        }
+
+        Assert.Contains(polls.Take(5), poll => poll.Cursor.Pending is { Count: 2 } pending && pending.All(line => line.Digest is not null));
+        Assert.Equal(
+            [(new string('b', 850) + "end", largeStream, false), (new string('a', 250) + "end", smallStream, false), (FreshSignal, "stdout", false)],
+            polls.SelectMany(poll => poll.Records).Select(record => (record.Text, record.Stream, record.Fragment)));
+        Assert.Equal(0, polls.Sum(poll => poll.Oversized));
+        Assert.Equal(new FileInfo(container.LogPath).Length, polls[^1].Cursor.Offset);
+    }
+
+    [Theory]
+    [InlineData("stdout", "stderr")]
+    [InlineData("stderr", "stdout")]
+    public void OpenLineLargerThanAWholeBudget_IsSkippedWithoutStarvingTheOther(string shortStream, string longStream)
+    {
+        // A line that can never be read again within one byte budget is still skipped, its key
+        // kept so its rest is never emitted as a line, and without reading it: it no longer takes
+        // the budget the short line beside it needs.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 4_096 };
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.AppendAt(container, shortStream, T1, "short head ");
+        DockerFixture.AppendAt(container, longStream, T2, new string('g', 3_000), new string('g', 3_000));
+        DockerLogBatch open = DockerJsonLogReader.Read(container, start, options);
+        DockerFixture.AppendAt(container, shortStream, T1, "tail\n");
+        DockerLogBatch skipped = DockerJsonLogReader.Read(container, open.Cursor, options);
+        DockerFixture.AppendAt(container, longStream, T2, "rest of the long line\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+
+        List<DockerLogBatch> polls = [open, skipped, .. Poll(container, skipped.Cursor, options, 6)];
+
+        Assert.Equal(2, open.Cursor.Pending!.Count(line => line.Digest is not null));
+        Assert.Equal([new DockerPendingLine(longStream, T2, Discarding: true)], skipped.Cursor.Pending);
         Assert.Equal(
             [("short head tail", false), (FreshSignal, false)],
             polls.SelectMany(poll => poll.Records).Select(record => (record.Text, record.Fragment)));

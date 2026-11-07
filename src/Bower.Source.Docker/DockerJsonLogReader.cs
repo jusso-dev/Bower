@@ -917,7 +917,13 @@ public static class DockerJsonLogReader
 
         public DockerLogCursor? Resume { get; set; }
 
-        public bool Assembling => !Discarding && Start >= 0;
+        /// <summary>
+        /// Its saved form, kept as it is: it did not fit what was left of the byte budget, so it
+        /// is not read this pass, and the scan stops before its stream's next entry.
+        /// </summary>
+        public DockerPendingLine? Deferred { get; private set; }
+
+        public bool Assembling => Deferred is not null || (!Discarding && Start >= 0);
 
         public int ChunkCount => Start < 0 ? 0 : 1 + Chunks.Count + Rest.Count + Through.Sum(run => run.Chunks.Count);
 
@@ -994,6 +1000,13 @@ public static class DockerJsonLogReader
         {
             (expected, Fragment, Lost) = (null, true, Lost || Start < 0);
             return false;
+        }
+
+        /// <summary>Not read this pass (what a partial read gave is dropped): its saved form goes on.</summary>
+        public void Defer(DockerPendingLine saved)
+        {
+            Clear();
+            (Deferred, Fragment, File, Start, ParsedTime, End) = (saved, saved.Fragment, saved.File, -1, null, 0);
         }
 
         public void Skip()
@@ -1081,6 +1094,13 @@ public static class DockerJsonLogReader
                     continue;
                 }
 
+                if (lines[Slot(parsed.Stream)] is { Deferred: not null })
+                {
+                    // Joining or ending a line not read this pass needs it read: next pass.
+                    position = entryStart;
+                    break;
+                }
+
                 Add(parsed, entryStart, position);
             }
 
@@ -1090,7 +1110,7 @@ public static class DockerJsonLogReader
             // began after a whole byte budget would read the same bytes every poll. A line that
             // began there, open alone, can never be read within bounds: skip it. With another
             // stream's line open too, record both lines' chunks instead: the next read takes them
-            // again within its budget, and skips one that does not fit (RestorePending).
+            // again within its budget, one at a time when they do not fit together (RestorePending).
             bool ended = final && position >= stream.Length;
             bool pinned = !ended && quiet && safe is not null && lines.Any(line => line is { Assembling: true })
                 && lines.All(line => line is not { Assembling: true } || string.Equals(line.File, cursor.Fingerprint, StringComparison.Ordinal));
@@ -1266,6 +1286,7 @@ public static class DockerJsonLogReader
                 pending ??= [];
                 DockerPendingLine saved = (line switch
                 {
+                    { Deferred: { } deferred } => deferred with { Fragment = line.Fragment },
                     { Discarding: true } => new DockerPendingLine(line.Stream, line.Time, Discarding: true),
                     { Unproven: true } => DockerPendingLine.UnprovenStream(line.Stream),
                     { Start: < 0, Expected: { } at } when offset <= at.Start => new DockerPendingLine(
@@ -1339,6 +1360,7 @@ public static class DockerJsonLogReader
             }
 
             bool gap = false;
+            List<(int Slot, DockerPendingLine Saved)> reread = [];
             foreach (DockerPendingLine saved in pending)
             {
                 OpenLine line = new(saved.Stream, saved.Time)
@@ -1365,22 +1387,41 @@ public static class DockerJsonLogReader
                 }
                 else if (saved.Digest is not null)
                 {
-                    switch (RestoreChunks(line, saved))
-                    {
-                        case Reread.Changed:
-                            // Its files rotated away or no longer hold it: the rest is only a fragment.
-                            gap = true;
-                            line.Lose();
-                            break;
-                        case Reread.OverBudget:
-                            // Not within what is left of the byte budget, so never joined within
-                            // one: skipped as oversized, its key kept, so its rest is never a line.
-                            line.Skip();
-                            break;
-                    }
+                    reread.Add((Slot(saved.Stream), saved));
                 }
 
                 // Otherwise known by its key only: the rest of a lost head.
+            }
+
+            // Smallest first, so one long line cannot starve the others, but first the line whose
+            // stream the next entry is: the scan stops before a deferred line's entry, so it
+            // always takes that entry and each pass moves on.
+            int? next = reread.Count > 1 ? NextSlot() : null;
+            long before = consumed;
+            foreach ((int slot, DockerPendingLine saved) in reread.OrderBy(line => line.Slot != next).ThenBy(line => Cost(line.Saved)))
+            {
+                OpenLine line = lines[slot]!;
+                bool first = consumed == before;
+                long cost = Cost(saved);
+                switch (cost > options.MaximumBytesPerBatch - consumed ? Reread.OverBudget : RestoreChunks(line, saved))
+                {
+                    case Reread.Changed:
+                        // Its files rotated away or no longer hold it: the rest is only a fragment.
+                        gap = true;
+                        line.Lose();
+                        break;
+                    case Reread.OverBudget when first || cost > options.MaximumBytesPerBatch:
+                        // More than a whole byte budget, or more than the most any pass gives it
+                        // (it went first), so never joined within one: skipped as oversized, its
+                        // key kept, so its rest is never a line. A skipped line costs nothing to
+                        // restore, so the next read moves on.
+                        line.Skip();
+                        break;
+                    case Reread.OverBudget:
+                        // Not within what is left after another line: kept as it is for a later pass.
+                        line.Defer(saved);
+                        break;
+                }
             }
 
             return gap;
@@ -1397,7 +1438,8 @@ public static class DockerJsonLogReader
         /// Reads an open line's saved chunks again, each from the file its identity names (this
         /// one or any rotated one): at most <see cref="DockerLogCursor.MaximumChunks"/> entries, so
         /// the cost is the line's own size, never the span to the cursor, and never more than is
-        /// left of the byte budget (with the identities of rotated files after <c>.1</c>). They
+        /// left of the byte budget (with the identities of rotated files after <c>.1</c>): a read
+        /// stopped there is charged what it read, and gives <see cref="Reread.OverBudget"/>. They
         /// must give the saved length and digest.
         /// </summary>
         private Reread RestoreChunks(OpenLine line, DockerPendingLine saved)
@@ -1439,6 +1481,31 @@ public static class DockerJsonLogReader
             }
 
             return line.Text.Length == saved.Length && string.Equals(line.Digest(), saved.Digest, StringComparison.Ordinal) ? Reread.Matched : Reread.Changed;
+        }
+
+        /// <summary>
+        /// The fewest bytes reading a saved line again takes: each of its characters came from at
+        /// least one byte, and each chunk is an entry with at least its key around the log.
+        /// </summary>
+        private static long Cost(DockerPendingLine saved)
+        {
+            int chunks = 1 + (saved.Chunks?.Count ?? 0) + (saved.Rest?.Count ?? 0) + (saved.Through?.Sum(run => run.Chunks.Count) ?? 0);
+            int entry = "{\"log\":\"\"}\n".Length
+                + (saved.Time is null ? 0 : ",\"time\":\"\"".Length + saved.Time.Length)
+                + (saved.Stream == "stderr" ? ",\"stream\":\"stderr\"".Length : 0);
+            return (saved.Length ?? 0) + ((long)chunks * entry);
+        }
+
+        /// <summary>
+        /// The slot of the stream the entry at the cursor is, when it can be read: the entry the
+        /// scan takes first, so charged there, not here.
+        /// </summary>
+        private int? NextSlot()
+        {
+            FileStream stream = file.Stream;
+            stream.Seek(cursor.Offset, SeekOrigin.Begin);
+            byte[]? entry = ReadEntry(stream, consumeLong: false, out bool complete, out bool tooLong);
+            return complete && !tooLong && entry is not null && TryParseEntry(entry, out Entry parsed) ? Slot(parsed.Stream) : null;
         }
 
         /// <summary>

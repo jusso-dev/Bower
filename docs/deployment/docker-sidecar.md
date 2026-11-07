@@ -188,9 +188,12 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   one line per stream, each within 64 KiB), never what lies between them; those bytes,
   the look back and identifying rotated files after `.1` count against the pass's byte
   budget, and each pass still reads at least one new entry, so a pass reads at most its
-  budget plus one entry. A line that cannot be read again within what is left of the
-  budget (never with the default 4 MiB, which holds two whole lines at their limit) is
-  skipped and counted as oversized in the same way.
+  budget plus one entry. Open lines are read again smallest first, after the
+  line whose next entry comes first. A line that does not fit what is left of the budget is
+  deferred: kept as it is and read in a later pass, with the pass stopping before that
+  line's next entry. Only a line that can never be read again within one budget (never with
+  the default 4 MiB, which holds two whole lines at their limit) is skipped and counted as
+  oversized in the same way.
   An entry over 100 KiB (more than a 16 KiB chunk escaped six bytes a byte) is malformed.
 
 ## Cursor format

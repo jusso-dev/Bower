@@ -52,10 +52,15 @@ Read-only Docker source for the sidecar.
   the decoder, and re-reading all count against the byte budget and stop where it runs out,
   so a pass stays within the budget plus one entry (each read still takes one new entry),
   apart from the fixed 64-byte identities of the current file and `.1`;
-  `LookBackOutsideBudget` exists only for the differential test. Re-reading an open line
-  that does not fit what is left of the budget skips it as oversized (its key kept): no pass
-  could join it within the budget, and a skipped line costs nothing to restore, so the next
-  read always moves on. A line that began where the read did and is still open, alone (no
+  `LookBackOutsideBudget` exists only for the differential test. Open lines are re-read
+  smallest first (by the fewest bytes their saved chunks can take), after the line whose
+  stream the next entry is. One that does not fit what is left of the budget is deferred:
+  kept as saved, not read, and the scan stops before its stream's next entry (an unreadable
+  entry only marks it). Only a line that can never fit is skipped as oversized (its key
+  kept): more than a whole budget, or more than is left when it goes first. A skipped line
+  costs nothing to restore, and the line whose entry is next is never deferred, so each read
+  takes at least that entry and moves on; never relax this to smallest first alone (the
+  larger line, its entry next, would be deferred for ever). A line that began where the read did and is still open, alone (no
   other stream's line being assembled), after a whole byte budget is discarded; with another
   stream's line open too, both lines' chunks are recorded instead. Neither applies at the end
   of a final `.1`, where every open line is carried into the new file and joined there. `Deserialize` refuses a cursor whose ranges
