@@ -70,7 +70,7 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
 resource app 'Microsoft.Web/sites@2023-12-01' = {
   name: appName
   location: location
-  tags: union(tags, { 'bower-queue': acknowledgeEphemeralQueue ? 'ephemeral-acknowledged' : 'unacknowledged' })
+  tags: union(tags, { 'bower-queue-ephemeral-acknowledged': string(acknowledgeEphemeralQueue) })
   kind: 'app,linux,container'
   identity: { type: 'UserAssigned', userAssignedIdentities: { '${identity.id}': {} } }
   dependsOn: [tokenGrant, dcrGrant, registryGrant]

@@ -120,7 +120,9 @@ site uses it for Key Vault references (`keyVaultReferenceIdentity`), image pull 
 Logs Ingestion (`BOWER_AZURE_CLIENT_ID`). Each grant stays scoped to one secret,
 one DCR and one registry. Anyone who can assign this identity to another resource
 (`Managed Identity Operator` on it, or Owner) gains those grants, so keep the
-identity's resource group as restricted as the site's.
+identity's resource group as restricted as the site's. Deleting the site does not
+delete the identity or its grants: when you remove the pilot, delete the identity
+(`az identity delete`) and its three role assignments as well.
 
 Azure RBAC can still take minutes to propagate, so confirm the reference resolved
 before producers send. This reads reference status only, never the secret value:
@@ -133,9 +135,17 @@ az rest --method get --query properties.status --output tsv \
 It prints `Resolved` when the reference works. Any other status (for example
 `AccessToKeyVaultDenied`) means the collector refused to start: the collector
 fails startup if App Service passes an unresolved `@Microsoft.KeyVault(...)` string
-as the token. Fix the role assignment or Key Vault networking, then run
-`az webapp restart --resource-group <collector-rg> --name <unique-name>` and check
-the status again. The portal shows the same status under **Environment variables**
+as the token. Fix the role assignment or Key Vault networking. App Service caches
+reference values (it re-fetches every 24 hours or on a configuration change), so a
+restart alone may reuse the cached failure: ask it to re-fetch the references, then
+restart and check the status again:
+
+```bash
+site=$(az webapp show --resource-group <collector-rg> --name <unique-name> --query id --output tsv)
+az rest --method post --url "https://management.azure.com$site/config/configreferences/appsettings/refresh?api-version=2022-03-01"
+az webapp restart --resource-group <collector-rg> --name <unique-name>
+```
+ The portal shows the same status under **Environment variables**
 (Key Vault reference column). Do not work around a failure by supplying a
 predictable token. Check `/health/live` over the
 private endpoint, submit a controlled event, and query `BowerSecurity_CL` for its
@@ -258,7 +268,12 @@ Roll out in this order:
 7. Switch producers to `https://bower-collector.<namespace>.svc:4319`, send a
    controlled event, and query `BowerSecurity_CL` for its ID.
 
-To roll back, re-apply the previous manifest; the queue on `bower-data` is kept.
+To roll back, re-apply the previous manifest; the queue on `bower-data` is kept. If the
+upgrade also moved to a newer collector image, check the downgrade rules in
+[upgrade, backup and recovery](../production-readiness/04-upgrade-backup-recovery.md)
+first: an older image may refuse a queue a newer one has migrated. `kubectl apply` does
+not delete the new `bower-producer-scopes` ConfigMap or `bower-intake-tls` secret;
+leaving them is harmless, or delete them once the rollback is verified.
 
 On AKS use an Azure Disk CSI-backed, single-writer block volume formatted with a
 supported local filesystem; do not put the SQLite queue on Azure Files. Configure
@@ -319,7 +334,8 @@ reach Key Vault with its identity. Configure the SDK at application startup:
 ```csharp
 string token = builder.Configuration["BOWER_COLLECTOR_TOKEN"]
     ?? throw new InvalidOperationException("Collector token is not configured.");
-if (token.Contains("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase))
+if (token.Contains("@Microsoft.KeyVault(", StringComparison.OrdinalIgnoreCase)
+    || token.Contains("@Microsoft.AppConfiguration(", StringComparison.OrdinalIgnoreCase))
     throw new InvalidOperationException("Collector token reference did not resolve.");
 string endpoint = builder.Configuration["BOWER_COLLECTOR_ENDPOINT"]
     ?? throw new InvalidOperationException("Collector endpoint is not configured.");
