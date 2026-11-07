@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Diagnostics.Eventing.Reader;
 using System.Runtime.Versioning;
 using System.Security.Principal;
 using Bower.Persistence;
@@ -147,12 +148,11 @@ public sealed class WindowsEventLogWindowsTests
     {
         const string scaleLog = "BowerCiScale";
         const string scaleSource = "BowerCiScaleSource";
-        CreateLog(scaleLog, scaleSource);
+        CreateLog(scaleLog, scaleSource, maximumSizeInBytes: 256L * 1024 * 1024);
         using EventLog log = new(scaleLog) { Source = scaleSource };
         try
         {
             log.Clear();
-            log.MaximumKilobytes = 256 * 1024;
             Write(log, 200);
             double small = MedianPollMilliseconds(scaleLog, scaleSource);
             Write(log, 20_000);
@@ -197,18 +197,39 @@ public sealed class WindowsEventLogWindowsTests
     /// Creates the test log and waits until the event log service serves it.
     /// <c>CreateEventSource</c> only writes the registry; the service registers the new log
     /// asynchronously, and until it has, opening, clearing or writing the log fails with
-    /// Access is denied. Served means the classic API opens the log for reading (as
-    /// <c>Clear</c> does) and an event written through the source reads back from the
-    /// channel. The probe event (999) is not allow-listed and each test clears the log.
+    /// Access is denied. A maximum size is set through the service
+    /// (<c>EvtSaveChannelConfig</c>), not <c>EventLog.MaximumKilobytes</c>: that also only
+    /// writes the registry, and writes are denied while the service reconfigures the log.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static void CreateLog(string logName, string sourceName)
+    private static void CreateLog(string logName, string sourceName, long maximumSizeInBytes = 0)
     {
         if (!EventLog.SourceExists(sourceName))
         {
             EventLog.CreateEventSource(new EventSourceCreationData(sourceName, logName));
         }
 
+        WaitUntilServed(logName, sourceName);
+        if (maximumSizeInBytes > 0)
+        {
+            using (EventLogConfiguration configuration = new(logName))
+            {
+                configuration.MaximumSizeInBytes = maximumSizeInBytes;
+                configuration.SaveChanges();
+            }
+
+            WaitUntilServed(logName, sourceName);
+        }
+    }
+
+    /// <summary>
+    /// Served means the classic API opens the log for reading (as <c>Clear</c> does) and an
+    /// event written through the source reads back from the channel. The probe event (999)
+    /// is not allow-listed and each test clears the log.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void WaitUntilServed(string logName, string sourceName)
+    {
         using EventLog log = new(logName) { Source = sourceName };
         WindowsEventLogChannelFactory channels = new();
         Stopwatch waited = Stopwatch.StartNew();
@@ -234,7 +255,7 @@ public sealed class WindowsEventLogWindowsTests
 
             if (waited.Elapsed > TimeSpan.FromSeconds(30))
             {
-                throw new TimeoutException($"The event log service did not serve the new log {logName} within 30 seconds of its creation.", unavailable);
+                throw new TimeoutException($"The event log service did not serve the log {logName} within 30 seconds.", unavailable);
             }
 
             Thread.Sleep(100);
