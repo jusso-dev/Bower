@@ -123,6 +123,31 @@ public sealed class CanonicalIdentifierTokenTests
         Assert.Equal(outside, matches);
     }
 
+    /// <summary>
+    /// Matches before <c>from</c> (an earlier detector's) are never touched; a match is removed only
+    /// when it lies within a token, including one ending exactly at the token's end.
+    /// </summary>
+    [Fact]
+    public void RemoveContained_KeepsEarlierMatchesAndUsesExactTokenEdges()
+    {
+        const string text = "x 10040680-c19c-4eec-8ca0-056e33f7f420 y";
+        List<(int Start, int End)> tokens = CanonicalIdentifierTokens.Find(text);
+        Assert.Equal([(2, 38)], tokens);
+        static DetectionMatch Match(int start, int end) => new("au.tfn", "test", start, end - start, true);
+        DetectionMatch earlier = Match(2, 10);
+        DetectionMatch wholeToken = Match(2, 38);
+        DetectionMatch pastTheEnd = Match(2, 39);
+        DetectionMatch beforeTheStart = Match(1, 10);
+        DetectionMatch endsAtTheEnd = Match(30, 38);
+        List<DetectionMatch> matches = [earlier, wholeToken, pastTheEnd, beforeTheStart, endsAtTheEnd];
+
+        CanonicalIdentifierTokens.RemoveContained(tokens, matches, from: 1);
+
+        Assert.Equal([earlier, pastTheEnd, beforeTheStart], matches);
+        Assert.Equal(0, CanonicalIdentifierTokens.RemoveContained(tokens, matches, from: matches.Count));
+        Assert.Equal(3, matches.Count);
+    }
+
     /// <summary>Every TFN in the value above is still found and masked; the tokens next to them are kept.</summary>
     [Fact]
     public void ValueFullOfIdentifierTokensAndTfns_IsRedacted()

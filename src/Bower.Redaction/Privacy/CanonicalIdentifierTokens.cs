@@ -1,5 +1,6 @@
 using System.Buffers;
 using System.Collections.Frozen;
+using System.Diagnostics;
 
 namespace Bower.Redaction.Privacy;
 
@@ -97,9 +98,13 @@ public static class CanonicalIdentifierTokens
     /// in order), so each match costs one binary search, not a scan of every token.
     /// </summary>
     /// <returns>Token ranges examined; tests use it to bound the work.</returns>
-    public static int RemoveContained(List<(int Start, int End)> tokens, List<DetectionMatch> matches, int from)
+    /// <remarks>Internal: an engine detail, visible to the unit tests only.</remarks>
+    internal static int RemoveContained(List<(int Start, int End)> tokens, List<DetectionMatch> matches, int from)
     {
-        if (tokens.Count == 0)
+        Debug.Assert(from >= 0 && from <= matches.Count, "from is an index into matches.");
+        Debug.Assert(IsOrderedAndDisjoint(tokens), "tokens must come from Find.");
+        // Nothing at or after from (or a from past the end): nothing to remove, as in Rust.
+        if (tokens.Count == 0 || from >= matches.Count)
         {
             return 0;
         }
@@ -117,6 +122,19 @@ public static class CanonicalIdentifierTokens
 
         matches.RemoveRange(kept, matches.Count - kept);
         return examined;
+    }
+
+    private static bool IsOrderedAndDisjoint(List<(int Start, int End)> tokens)
+    {
+        for (int index = 1; index < tokens.Count; index++)
+        {
+            if (tokens[index - 1].End >= tokens[index].Start)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     // Only the last token starting at or before the match can contain it.

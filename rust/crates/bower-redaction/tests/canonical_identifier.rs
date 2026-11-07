@@ -455,6 +455,35 @@ fn containment_check_is_one_binary_search_per_match() {
     assert_eq!(matches, outside);
 }
 
+/// C# `RemoveContained_KeepsEarlierMatchesAndUsesExactTokenEdges`: matches before `from` (an
+/// earlier detector's) are never touched; a match is removed only when it lies within a token,
+/// including one ending exactly at the token's end.
+#[test]
+fn remove_contained_keeps_earlier_matches_and_uses_exact_token_edges() {
+    const TEXT: &str = "x 10040680-c19c-4eec-8ca0-056e33f7f420 y";
+    let tokens = identifier_tokens::find(TEXT);
+    assert_eq!(tokens, vec![(2, 38)]);
+    let found = |start, end| DetectionMatch::new("au.tfn", "test", TEXT, start, end, true, None);
+    let (earlier, past_the_end, before_the_start) = (found(2, 10), found(2, 39), found(1, 10));
+    let mut matches = vec![
+        earlier.clone(),
+        found(2, 38),
+        past_the_end.clone(),
+        before_the_start.clone(),
+        found(30, 38),
+    ];
+
+    identifier_tokens::remove_contained(&tokens, &mut matches, 1);
+
+    assert_eq!(matches, vec![earlier, past_the_end, before_the_start]);
+    let count = matches.len();
+    assert_eq!(
+        identifier_tokens::remove_contained(&tokens, &mut matches, count),
+        0
+    );
+    assert_eq!(matches.len(), 3);
+}
+
 /// Every TFN in the value above is still found and masked; the tokens next to them are kept.
 #[test]
 fn a_value_full_of_identifier_tokens_and_tfns_is_redacted() {

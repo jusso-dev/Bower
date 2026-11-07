@@ -78,13 +78,21 @@ pub fn find(text: &str) -> Vec<(usize, usize)> {
 /// Removes matches at or after `from` that lie wholly inside a token, keeping order.
 /// `tokens` must come from [`find`] (disjoint and in order), so each match costs one binary
 /// search, not a scan of every token. Returns the token ranges examined; tests use it to
-/// bound the work.
+/// bound the work. Hidden from the docs: an engine detail that only the integration tests
+/// call.
+#[doc(hidden)]
 pub fn remove_contained(
     tokens: &[(usize, usize)],
     matches: &mut Vec<DetectionMatch>,
     from: usize,
 ) -> usize {
-    if tokens.is_empty() {
+    debug_assert!(from <= matches.len(), "from is an index into matches");
+    debug_assert!(
+        tokens.windows(2).all(|pair| pair[0].1 < pair[1].0),
+        "tokens must come from find"
+    );
+    // Nothing at or after `from` (or a `from` past the end): nothing to remove, as in C#.
+    if tokens.is_empty() || from >= matches.len() {
         return 0;
     }
     let mut examined = 0;
