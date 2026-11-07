@@ -496,17 +496,82 @@ public sealed class SyslogSourceTests
         Assert.Equal(Resets, status.PeerResets);
         Assert.Equal(0, status.ConnectionsRejected);
 
-        // A normal sender still gets a slot.
+        // A normal sender still gets a slot, completes its protocol's setup and delivers a frame.
         Volatile.Write(ref holdForReset, false);
-        using TcpClient client = await Connect(source, cancellation);
-        status = await WaitFor(source, value => value.ActiveConnections == 1, cancellation);
-        Assert.Equal(Resets + 1, status.ConnectionsAccepted);
-        Assert.Equal(0, status.ConnectionsRejected);
-        if (protocol == "tcp")
+        const string Message = "<38>Oct 11 22:14:15 gw01 sshd: after resets";
+        if (protocol == "tls")
         {
-            await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: after resets\n"), cancellation);
+            await using SslStream secure = await ConnectTls(source, client: null, cancellation);
+            await secure.WriteAsync(Encoding.ASCII.GetBytes(Message + "\n"), cancellation);
             await sink.WaitForAsync(1, cancellation);
         }
+        else
+        {
+            using TcpClient client = await Connect(source, cancellation);
+            NetworkStream network = client.GetStream();
+            if (protocol == "relp")
+            {
+                const string Offers = "relp_version=0\nrelp_software=test\ncommands=syslog";
+                await network.WriteAsync(Encoding.ASCII.GetBytes(
+                    $"1 open {Offers.Length} {Offers}\n2 syslog {Message.Length} {Message}\n"), cancellation);
+                string answers = await ReadUntil(network, "2 rsp 6 200 OK\n", cancellation);
+                Assert.StartsWith("1 rsp ", answers, StringComparison.Ordinal);
+                Assert.Contains(" 200 OK\n", answers[..answers.IndexOf("2 rsp", StringComparison.Ordinal)], StringComparison.Ordinal);
+            }
+            else
+            {
+                await network.WriteAsync(Encoding.ASCII.GetBytes(Message + "\n"), cancellation);
+            }
+
+            await sink.WaitForAsync(1, cancellation);
+        }
+
+        Assert.Contains("after resets", Assert.Single(sink.Records), StringComparison.Ordinal);
+        status = source.Snapshot()[0];
+        Assert.Equal(Resets + 1, status.ConnectionsAccepted);
+        Assert.Equal(0, status.ConnectionsRejected);
+    }
+
+    [Theory]
+    [InlineData("tcp")]
+    [InlineData("tls")]
+    [InlineData("relp")]
+    public async Task Tcp_SetupFailureBeforeTheStreamDisposesTheSocketAndReleasesItsSlot(string protocol)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeSink sink = new();
+        string tls = Path.Combine(Fixtures, "tls");
+        string? serverTls = protocol == "tls"
+            ? $$"""{"certificateFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server.pem"))}}, "privateKeyFile": {{JsonSerializer.Serialize(Path.Combine(tls, "server-key.pem"))}}}"""
+            : null;
+        Socket? accepted = null;
+        await using SyslogSource source = await Start(protocol, sink, cancellation, maximumConnections: 1, tls: serverTls,
+            beforeConnectionSetup: (socket, _) =>
+            {
+                Volatile.Write(ref accepted, socket);
+                throw new IOException("setup failed before the stream was opened");
+            });
+
+        using TcpClient client = await Connect(source, cancellation);
+        await WaitFor(source, value => value.ConnectionsAccepted == 1 && value.ActiveConnections == 0, cancellation);
+
+        // Only the bare-socket cleanup can close it: no stream was ever opened over it.
+        Socket socket = Assert.IsType<Socket>(Volatile.Read(ref accepted));
+        Assert.Throws<ObjectDisposedException>(() => socket.Available);
+    }
+
+    private static async Task<string> ReadUntil(Stream stream, string terminator, CancellationToken cancellation)
+    {
+        StringBuilder received = new();
+        byte[] buffer = new byte[256];
+        while (!received.ToString().EndsWith(terminator, StringComparison.Ordinal))
+        {
+            int read = await stream.ReadAsync(buffer, cancellation);
+            Assert.NotEqual(0, read);
+            received.Append(Encoding.ASCII.GetString(buffer, 0, read));
+        }
+
+        return received.ToString();
     }
 
     /// <summary>Connects and resets at once (linger 0: close sends RST, as a sender closing with unread data does).</summary>
