@@ -179,6 +179,13 @@ public static class ProbeOutcomes
     /// <summary>Query error code when an HTTP 200 answer carries an error (partial results).</summary>
     public const string QueryIncompleteCode = "query-incomplete";
 
+    /// <summary>
+    /// Query error code when a 2xx answer is not a well-formed Logs query result: empty, not
+    /// JSON, not an object, no usable first table, a bad column or row, a duplicate key, too
+    /// deep, or a string that cannot be decoded.
+    /// </summary>
+    public const string QueryInvalidResponseCode = "query-invalid-response";
+
     /// <summary>Paths a parser probe never exercises; every parser bundle lists them.</summary>
     public static IReadOnlyList<string> UntestedPaths { get; } =
     [

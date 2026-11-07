@@ -645,11 +645,14 @@ public sealed class CollectorHostTests
               {"application":"TestApplication","environment":"test","maximumSilenceMinutes":5},
               {"application":"Payroll","environment":"production","maximumSilenceMinutes":5}]}
             """);
+        // A fixed clock keeps the three events in one epoch-aligned suppression window; on the
+        // wall clock they can straddle a minute boundary and the third is not suppressed.
         await using WebApplication app = await StartAsync(
             directory,
             Token,
             cancellationToken,
-            settings => settings with { PolicyDirectory = policies, SourceExpectationsPath = expectations });
+            settings => settings with { PolicyDirectory = policies, SourceExpectationsPath = expectations },
+            new FakeClock(DateTimeOffset.UtcNow));
         HttpClient client = app.GetTestClient();
 
         List<string> bodies = [];
@@ -778,5 +781,5 @@ public sealed class CollectorHostTests
     }
 
     private static SecurityEventEnvelope AuthenticationFailure() =>
-        TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId: Guid.NewGuid().ToString());
+        TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId: TestEvents.UniqueEventId());
 }
