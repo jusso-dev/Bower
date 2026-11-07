@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Diagnostics.Eventing.Reader;
+using System.Runtime.ExceptionServices;
 using System.Runtime.Versioning;
 using System.Security.Principal;
 using Bower.Persistence;
@@ -20,6 +21,8 @@ public sealed class WindowsEventLogWindowsTests
 {
     private const string LogName = "BowerCiTest";
     private const string SourceName = "BowerCiSource";
+    private const string ScaleLogName = "BowerCiScale";
+    private const string ScaleSourceName = "BowerCiScaleSource";
 
     [Fact]
     public async Task RealEventLog_CollectsOnlyAllowListedEventsAndResumesFromTheBookmark()
@@ -39,10 +42,11 @@ public sealed class WindowsEventLogWindowsTests
     [SupportedOSPlatform("windows")]
     private static async Task RunAsync(CancellationToken cancellation)
     {
-        CreateLog(LogName, SourceName);
-        using EventLog log = new(LogName) { Source = SourceName };
+        Exception? setupOrTest = null;
         try
         {
+            CreateLog(LogName, SourceName, maximumSizeInBytes: 0);
+            using EventLog log = new(LogName) { Source = SourceName };
             log.Clear();
             log.WriteEntry("before the first start", EventLogEntryType.Information, 1000);
 
@@ -115,10 +119,14 @@ public sealed class WindowsEventLogWindowsTests
                 () => absent.PollOnceAsync("missing", cancellation));
             Assert.Equal(WindowsEventChannelFailures.ChannelNotFound, failure.Code);
         }
+        catch (Exception exception)
+        {
+            setupOrTest = exception;
+            throw;
+        }
         finally
         {
-            EventLog.DeleteEventSource(SourceName);
-            EventLog.Delete(LogName);
+            DeleteLog(LogName, SourceName, setupOrTest);
         }
     }
 
@@ -146,23 +154,31 @@ public sealed class WindowsEventLogWindowsTests
     [SupportedOSPlatform("windows")]
     private static void PollCostAtTwoSizes()
     {
-        const string scaleLog = "BowerCiScale";
-        const string scaleSource = "BowerCiScaleSource";
-        CreateLog(scaleLog, scaleSource, maximumSizeInBytes: 256L * 1024 * 1024);
-        using EventLog log = new(scaleLog) { Source = scaleSource };
+        Exception? setupOrTest = null;
         try
         {
+            CreateLog(ScaleLogName, ScaleSourceName, maximumSizeInBytes: 256L * 1024 * 1024);
+            using EventLog log = new(ScaleLogName) { Source = ScaleSourceName };
             log.Clear();
             Write(log, 200);
-            double small = MedianPollMilliseconds(scaleLog, scaleSource);
+            long oldest = Range(ScaleLogName).OldestRecordId;
+            double small = MedianPollMilliseconds(ScaleLogName, ScaleSourceName);
             Write(log, 20_000);
-            double large = MedianPollMilliseconds(scaleLog, scaleSource);
+            // Outside the timed polls: the log holds the whole population, so a size the
+            // service ignored cannot shrink the proof by overwriting the oldest records.
+            Assert.Equal(20_200, log.Entries.Count);
+            Assert.Equal(oldest, Range(ScaleLogName).OldestRecordId);
+            double large = MedianPollMilliseconds(ScaleLogName, ScaleSourceName);
             Assert.True(large <= small * 5 + 5, $"median poll {small:F3} ms at 200 records, {large:F3} ms at 20,200");
+        }
+        catch (Exception exception)
+        {
+            setupOrTest = exception;
+            throw;
         }
         finally
         {
-            EventLog.DeleteEventSource(scaleSource);
-            EventLog.Delete(scaleLog);
+            DeleteLog(ScaleLogName, ScaleSourceName, setupOrTest);
         }
 
         static void Write(EventLog log, int count)
@@ -172,6 +188,12 @@ public sealed class WindowsEventLogWindowsTests
                 // Mostly not allow-listed, as on a WEC: the service filters them out.
                 log.WriteEntry("scale", EventLogEntryType.Information, index % 10 == 0 ? 1000 : 1001);
             }
+        }
+
+        static WindowsChannelRange Range(string channel)
+        {
+            using IWindowsEventChannel reader = new WindowsEventLogChannelFactory().Open(channel);
+            return reader.GetRange();
         }
 
         static double MedianPollMilliseconds(string channel, string provider)
@@ -194,6 +216,51 @@ public sealed class WindowsEventLogWindowsTests
     }
 
     /// <summary>
+    /// Removes the test source and log, also after a failed setup. A cleanup failure never
+    /// hides the setup or test failure: both are reported together.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void DeleteLog(string logName, string sourceName, Exception? setupOrTest)
+    {
+        List<Exception> failures = [];
+        try
+        {
+            if (EventLog.SourceExists(sourceName))
+            {
+                EventLog.DeleteEventSource(sourceName);
+            }
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        try
+        {
+            if (EventLog.Exists(logName))
+            {
+                EventLog.Delete(logName);
+            }
+        }
+        catch (Exception exception)
+        {
+            failures.Add(exception);
+        }
+
+        if (failures.Count == 0)
+        {
+            return;
+        }
+
+        if (setupOrTest is null && failures.Count == 1)
+        {
+            ExceptionDispatchInfo.Throw(failures[0]);
+        }
+
+        throw new AggregateException(setupOrTest is null ? failures : [setupOrTest, .. failures]);
+    }
+
+    /// <summary>
     /// Creates the test log and waits until the event log service serves it.
     /// <c>CreateEventSource</c> only writes the registry; the service registers the new log
     /// asynchronously, and until it has, opening, clearing or writing the log fails with
@@ -202,14 +269,14 @@ public sealed class WindowsEventLogWindowsTests
     /// writes the registry, and writes are denied while the service reconfigures the log.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static void CreateLog(string logName, string sourceName, long maximumSizeInBytes = 0)
+    private static void CreateLog(string logName, string sourceName, long maximumSizeInBytes)
     {
         if (!EventLog.SourceExists(sourceName))
         {
             EventLog.CreateEventSource(new EventSourceCreationData(sourceName, logName));
         }
 
-        WaitUntilServed(logName, sourceName);
+        WaitUntilServed(logName, sourceName, "created");
         if (maximumSizeInBytes > 0)
         {
             using (EventLogConfiguration configuration = new(logName))
@@ -218,31 +285,36 @@ public sealed class WindowsEventLogWindowsTests
                 configuration.SaveChanges();
             }
 
-            WaitUntilServed(logName, sourceName);
+            WaitUntilServed(logName, sourceName, "resized");
         }
     }
 
     /// <summary>
-    /// Served means the classic API opens the log for reading (as <c>Clear</c> does) and an
-    /// event written through the source reads back from the channel. The probe event (999)
-    /// is not allow-listed and each test clears the log.
+    /// Served means the classic API opens the log for reading (as <c>Clear</c> does) and a
+    /// probe event written through the source reads back from the channel after the newest
+    /// record seen before this attempt's write. Each attempt uses new handles, so a handle
+    /// that failed is never reused. The probe (999) is not allow-listed and each test clears
+    /// the log. The retry count and wait time go to the test output.
     /// </summary>
     [SupportedOSPlatform("windows")]
-    private static void WaitUntilServed(string logName, string sourceName)
+    private static void WaitUntilServed(string logName, string sourceName, string stage)
     {
-        using EventLog log = new(logName) { Source = sourceName };
         WindowsEventLogChannelFactory channels = new();
         Stopwatch waited = Stopwatch.StartNew();
-        while (true)
+        for (int retries = 0; ; retries++)
         {
             Exception? unavailable = null;
             try
             {
+                using EventLog log = new(logName) { Source = sourceName };
                 _ = log.Entries.Count;
-                log.WriteEntry("registration probe", EventLogEntryType.Information, 999);
                 using IWindowsEventChannel channel = channels.Open(logName);
-                if (channel.GetRange().NewestRecordId > 0)
+                long before = channel.GetRange().NewestRecordId;
+                log.WriteEntry("registration probe", EventLogEntryType.Information, 999);
+                if (channel.Read(new WindowsEventQuery(logName, [999], [sourceName], before), 1, includeMessage: false, CancellationToken.None).Count > 0)
                 {
+                    TestContext.Current.TestOutputHelper?.WriteLine(
+                        $"{logName} {stage}: served after {retries} retries, {waited.Elapsed.TotalMilliseconds:F0} ms");
                     return;
                 }
             }
@@ -253,7 +325,7 @@ public sealed class WindowsEventLogWindowsTests
 
             if (waited.Elapsed > TimeSpan.FromSeconds(30))
             {
-                throw new TimeoutException($"The event log service did not serve the log {logName} within 30 seconds.", unavailable);
+                throw new TimeoutException($"The event log service did not serve the log {logName} ({stage}) within 30 seconds, {retries} retries.", unavailable);
             }
 
             Thread.Sleep(100);
@@ -264,7 +336,9 @@ public sealed class WindowsEventLogWindowsTests
     {
         Win32Exception { NativeErrorCode: 5 } => true,
         // OpenForRead keeps only the Win32 message: "Cannot open log ... Access is denied."
-        InvalidOperationException => exception.Message.EndsWith(new Win32Exception(5).Message, StringComparison.Ordinal),
+        // OpenForWrite (RegisterEventSource) keeps it as the inner exception instead.
+        InvalidOperationException => exception.Message.EndsWith(new Win32Exception(5).Message, StringComparison.Ordinal)
+            || exception.InnerException is Win32Exception { NativeErrorCode: 5 },
         WindowsEventChannelException { Code: WindowsEventChannelFailures.AccessDenied or WindowsEventChannelFailures.ChannelNotFound } => true,
         _ => false
     };
