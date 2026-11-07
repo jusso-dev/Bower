@@ -296,8 +296,7 @@ async fn start(directory: &Path, adjust: impl FnOnce(&mut CollectorSettings)) ->
 }
 
 fn new_id() -> String {
-    // Random UUIDs can contain a checksum-valid TFN in their first group,
-    // causing the real privacy policy to reject the redacted event identity.
+    // Deterministic, unique ids.
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     let sequence = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     assert!(sequence <= 0xffff_ffff_ffff);
@@ -710,8 +709,8 @@ async fn redacted_event_identity_still_fails_closed() {
     let _serial = SERIAL.lock().await;
     let directory = tempfile::tempdir().unwrap();
     let collector = start(directory.path(), |_| {}).await;
-    // This UUID begins with a checksum-valid eight-digit TFN.
-    let candidate = event("12345681-abcd-4abc-8abc-abcdefabcdef");
+    // A producer id carrying a TFN: redaction changes it.
+    let candidate = event("tfn-123456782");
     let request = Request::post("/v1/events")
         .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
         .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
@@ -727,6 +726,40 @@ async fn redacted_event_identity_still_fails_closed() {
     let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(result["reasons"], serde_json::json!(["event-id-redacted"]));
     assert_eq!(result["queued"], false);
+}
+
+#[tokio::test]
+async fn producer_uuid_passing_an_identifier_checksum_is_queued_unchanged() {
+    let _serial = SERIAL.lock().await;
+    for event_id in [
+        // First group is a checksum-valid eight-digit TFN.
+        "12345681-abcd-4abc-8abc-abcdefabcdef",
+        "{10040680-C19C-4EEC-8CA0-056E33F7F420}",
+        // Passes the IBAN mod-97 check.
+        "dd97c1d25d12d2e202c1e010d70d55f4",
+    ] {
+        let directory = tempfile::tempdir().unwrap();
+        let collector = start(directory.path(), |_| {}).await;
+        let request = Request::post("/v1/events")
+            .header(header::CONTENT_TYPE, "application/json; charset=utf-8")
+            .header(header::AUTHORIZATION, format!("Bearer {TOKEN}"))
+            .body(Body::from(
+                bower_contracts::json::to_vec(&event(event_id)).unwrap(),
+            ))
+            .unwrap();
+        let response = collector.router.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED, "{event_id}");
+        let body = axum::body::to_bytes(response.into_body(), 4096)
+            .await
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(result["queued"], true, "{event_id}");
+        let rows = collector.store.lease(10, Duration::from_secs(60)).unwrap();
+        assert_eq!(rows.len(), 1, "{event_id}");
+        assert_eq!(rows[0].event_id, event_id);
+        let payload: serde_json::Value = serde_json::from_str(&rows[0].payload).unwrap();
+        assert_eq!(payload["eventId"], event_id);
+    }
 }
 
 #[tokio::test]

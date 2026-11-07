@@ -171,7 +171,15 @@ let jsonCases =
       "{\"PayID: abc\U0001F600x\":1,\"PayID: abc\U0001F300x\":2,\"v\":\"PayID: \U0001F600\U0001F600x\",\"w\":\"PayID: ab\U0001F600\"}"
       // Every PEM label is classified by its BEGIN header; body text never changes the kind.
       """{"msg":"-----BEGIN RSA PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY----- -----BEGIN EC PRIVATE KEY-----\nx\n-----END EC PRIVATE KEY----- -----BEGIN DSA PRIVATE KEY-----\nx\n-----END DSA PRIVATE KEY----- -----BEGIN ENCRYPTED PRIVATE KEY-----\nx\n-----END ENCRYPTED PRIVATE KEY----- -----BEGIN OPENSSH PRIVATE KEY-----\nx\n-----END OPENSSH PRIVATE KEY----- -----BEGIN PRIVATE KEY-----\nx\n-----END RSA PRIVATE KEY-----"}"""
-      """{"msg":"-----BEGIN CERTIFICATE-----\nRSA PRIVATE KEY ECDSA PGP BEGIN SSH2\n-----END CERTIFICATE----- -----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK----- -----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n-----END PGP PUBLIC KEY BLOCK----- -----BEGIN PGP KEY BLOCK-----\nx\n-----END PGP KEY BLOCK-----"}""" ]
+      """{"msg":"-----BEGIN CERTIFICATE-----\nRSA PRIVATE KEY ECDSA PGP BEGIN SSH2\n-----END CERTIFICATE----- -----BEGIN PGP PRIVATE KEY BLOCK-----\nx\n-----END PGP PRIVATE KEY BLOCK----- -----BEGIN PGP PUBLIC KEY BLOCK-----\nx\n-----END PGP PUBLIC KEY BLOCK----- -----BEGIN PGP KEY BLOCK-----\nx\n-----END PGP KEY BLOCK-----"}"""
+      // Canonical identifier tokens (appended): structured number detectors skip UUIDs and dashless GUIDs,
+      // never near shapes, real identifiers beside them, or secret and other detectors inside them.
+      """{"eventId":"10040680-c19c-4eec-8ca0-056e33f7f420","b":"{10040680-C19C-4EEC-8CA0-056E33F7F420}","c":"dd97c1d25d12d2e202c1e010d70d55f4","d":"DD97C1D25D12D2E202C1E010D70D55F4"}"""
+      """{"m":"req 10040680-c19c-4eec-8ca0-056e33f7f420 failed; urn:uuid:41111111-1111-4111-8111-111111111111 (dd97c1d25d12d2e202c1e010d70d55f4)"}"""
+      """{"a":"TFN-10040680-c19c-4eec-8ca0-056e33f7f420","b":"10040680-c19c-4eec-8ca0-056e33f7f420x","c":"10040680-c19c-4eec-8ca0_056e33f7f420","d":"x10040680-c19c-4eec-8ca0-056e33f7f420","e":"10040680-c19c4eec-8ca0-056e33f7f420","f":"123456782-c19c-4eec-8ca0-056e33f7f420"}"""
+      """{"a":"TFN 123 456 782 10040680-c19c-4eec-8ca0-056e33f7f420","b":"(123-456-782)/10040680-c19c-4eec-8ca0-056e33f7f420","c":"4111-1111-1111-1111-c19c-4eec-8ca0","d":"\"GB82WEST12345698765432\" dd97c1d25d12d2e202c1e010d70d55f4"}"""
+      """{"a":"datadog api_key dd97c1d25d12d2e202c1e010d70d55f4","b":"é10040680-c19c-4eec-8ca0-056e33f7f420","c":"\u00e910040680-c19c-4eec-8ca0-056e33f7f420 \uD83D\uDE0010040680-c19c-4eec-8ca0-056e33f7f420","d":"10040680-0000-0000-0000-000000000000"}"""
+      """{"a":"driver licence 12345678-c19c-4eec-8ca0-056e33f7f420","b":"passport a1234567-c19c-4eec-8ca0-056e33f7f420","c":"ABCDEFAB-C19C-4EEC-8CA0-056E33F7F420","d":"062-000 12345678-c19c-4eec-8ca0-056e33f7f420"}""" ]
 
 // Large payloads run under the default policy only, to keep the vector file small.
 let largeCases =
@@ -226,7 +234,16 @@ let textCases =
       // Second fuzz pass with longer strings (appended so earlier vectors stay stable).
       for _ in 1..500 do
           let count = rng.Next(4, 14)
-          yield String.Join("", [| for _ in 1..count -> tokens.[rng.Next(tokens.Length)] |]) ]
+          yield String.Join("", [| for _ in 1..count -> tokens.[rng.Next(tokens.Length)] |])
+      // Third pass with canonical identifier tokens and near shapes (appended).
+      let idRng = Random(20261107)
+      let idTokens =
+          Array.append tokens
+              [| "10040680-c19c-4eec-8ca0-056e33f7f420"; "41111111-1111-4111-8111-111111111111"; "dd97c1d25d12d2e202c1e010d70d55f4"
+                 "DD97C1D25D12D2E202C1E010D70D55F4"; "10040680"; "-c19c-4eec-8ca0-056e33f7f420"; "c19c"; "{"; "}"; "-"; "_"; "urn:uuid:" |]
+      for _ in 1..400 do
+          let count = idRng.Next(2, 10)
+          yield String.Join("", [| for _ in 1..count -> idTokens.[idRng.Next(idTokens.Length)] |]) ]
 
 let textVectors =
     [ for (policyName, engine) in engines |> List.filter (fun (name, _) -> name = "optin" || name = "maskall") do

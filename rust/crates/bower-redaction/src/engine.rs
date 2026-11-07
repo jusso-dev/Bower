@@ -18,6 +18,7 @@ use crate::detectors::{
     value_detectors_for,
 };
 use crate::error::PrivacyError;
+use crate::identifier_tokens;
 use crate::ids::{detector_categories as categories, detector_ids as ids};
 use crate::json::{self, Node, Object};
 use crate::policy::{PrivacyAction, PrivacyFieldRule, PrivacyPolicy};
@@ -679,13 +680,21 @@ impl PrivacyEngine {
         let mut matches: Vec<DetectionMatch> = Vec::new();
         let mut observed: Vec<DetectionMatch> = Vec::new();
         let mut length_checked = false;
+        let mut identifiers: Option<Vec<(usize, usize)>> = None;
         for detector in &self.detectors {
             if !self.policy.is_detector_enabled(detector.id()) {
                 continue;
             }
 
             let Some(custom) = detector.as_custom() else {
+                let before = matches.len();
                 detector.detect(&scan, path, &mut matches);
+                if matches.len() > before && identifier_tokens::applies_to(detector.id()) {
+                    // A UUID or dashless GUID is an identifier, not a TFN, card or IBAN
+                    // that happens to pass a checksum (see `identifier_tokens`).
+                    let tokens = identifiers.get_or_insert_with(|| identifier_tokens::find(text));
+                    identifier_tokens::remove_contained(tokens, &mut matches, before);
+                }
                 continue;
             };
             if !length_checked {

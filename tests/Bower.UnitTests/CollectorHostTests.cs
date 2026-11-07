@@ -74,8 +74,9 @@ public sealed class CollectorHostTests
         using TemporaryDirectory directory = new();
         await using WebApplication app = await StartAsync(directory, Token, cancellation);
         using HttpClient client = app.GetTestClient();
-        SecurityEventEnvelope first = AuthenticationFailure() with { EventId = "10040680-c19c-4eec-8ca0-056e33f7f420" };
-        SecurityEventEnvelope second = first with { EventId = "10170680-c19c-4eec-8ca0-056e33f7f420" };
+        // Producer ids carrying a card number and a TFN: redaction changes them.
+        SecurityEventEnvelope first = AuthenticationFailure() with { EventId = "order-4111111111111111" };
+        SecurityEventEnvelope second = first with { EventId = "tfn-123456782" };
         foreach (SecurityEventEnvelope candidate in new[] { first, second, first })
         {
             using HttpRequestMessage request = Post(candidate, Token);
@@ -91,6 +92,29 @@ public sealed class CollectorHostTests
         }
         Bower.Abstractions.IDurableEventStore store = app.Services.GetRequiredService<Bower.Abstractions.IDurableEventStore>();
         Assert.Empty(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+    }
+
+    [Theory]
+    [InlineData("10040680-c19c-4eec-8ca0-056e33f7f420")] // first group passes the TFN checksum
+    [InlineData("{10040680-C19C-4EEC-8CA0-056E33F7F420}")]
+    [InlineData("dd97c1d25d12d2e202c1e010d70d55f4")] // passes the IBAN mod-97 check
+    public async Task Ingest_ProducerUuidPassingAnIdentifierChecksumIsQueuedUnchanged(string eventId)
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await StartAsync(directory, Token, cancellation);
+        using HttpClient client = app.GetTestClient();
+        using HttpRequestMessage request = Post(AuthenticationFailure() with { EventId = eventId }, Token);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellation);
+        string body = await response.Content.ReadAsStringAsync(cancellation);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        Assert.DoesNotContain("event-id-redacted", body, StringComparison.Ordinal);
+        using JsonDocument json = JsonDocument.Parse(body);
+        Assert.True(json.RootElement.GetProperty("queued").GetBoolean());
+        QueuedEvent queued = Assert.Single(await app.Services.GetRequiredService<IDurableEventStore>().LeaseAsync(10, TimeSpan.FromMinutes(1), cancellation));
+        Assert.Equal(eventId, queued.EventId);
+        using JsonDocument payload = JsonDocument.Parse(queued.Payload);
+        Assert.Equal(eventId, payload.RootElement.GetProperty("eventId").GetString());
     }
 
     [Fact]

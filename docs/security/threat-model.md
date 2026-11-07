@@ -288,6 +288,13 @@ evidence.
 ## Residual risks
 
 Name-based redaction cannot prove arbitrary free-text values contain no secret.
+Structured number detectors (TFN, Medicare, card, IBAN and similar) skip matches wholly
+inside a canonical UUID or 32-hex-digit token, so random event ids are not redacted and
+quarantined as `event-id-redacted`. A producer that deliberately writes an eight-digit
+TFN as a UUID's first group is therefore not caught. Redaction protects against
+accidental disclosure, not a producer intent on leaking data; secret and custom
+detectors still scan these tokens (see
+[UUIDs and dashless GUIDs](../privacy/privacy-secret-engine.md#uuids-and-dashless-guids)).
 The custom-log sample reader re-checks for symbolic links after opening, but a
 swap and swap-back between checks remains possible; keep sample roots writable
 only by trusted operators. Custom-log previews enforce a server-owned masking
