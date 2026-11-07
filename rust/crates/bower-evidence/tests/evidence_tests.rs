@@ -521,6 +521,9 @@ fn query_parser_rejects_unusable_bodies() {
         r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[[{"sensitive key marker":1,"sensitive key marker":2}]]}]}"#,
         r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}],"tables":[]}"#,
         r#"{"a":1,"\u0061":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+        r#"{"\ud800":1,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"\ud800"}],"rows":[["e1"]]}]}"#,
+        r#"{"tables":[{"columns":[{"name":"EventId"}],"rows":[["\ud800"]]}]}"#,
     ] {
         assert_eq!(
             LogAnalyticsQueryClient::parse(body).unwrap(),

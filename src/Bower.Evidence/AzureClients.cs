@@ -150,11 +150,22 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
     {
         try
         {
+            // An escaped lone surrogate parses but throws when the string is read, so every
+            // string and property name is decoded here first, as Rust's parser does.
+            Utf8JsonReader reader = new(Encoding.UTF8.GetBytes(body), new JsonReaderOptions { MaxDepth = QueryDocumentOptions.MaxDepth });
+            while (reader.Read())
+            {
+                if (reader.TokenType is JsonTokenType.String or JsonTokenType.PropertyName)
+                {
+                    _ = reader.GetString();
+                }
+            }
+
             // Rejecting duplicate keys here means no later read can throw an exception whose
             // message names a key.
             return JsonNode.Parse(body, documentOptions: QueryDocumentOptions) as JsonObject;
         }
-        catch (JsonException)
+        catch (Exception exception) when (exception is JsonException or InvalidOperationException)
         {
             return null;
         }

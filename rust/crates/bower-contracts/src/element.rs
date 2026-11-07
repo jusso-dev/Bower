@@ -33,7 +33,8 @@ impl JsonElement {
     }
 
     /// [`Self::parse`] with `JsonReaderOptions.MaxDepth` set to `max_depth` nested
-    /// arrays and objects instead of [`MAX_DEPTH`].
+    /// arrays and objects instead of [`MAX_DEPTH`]. The parser recurses once per level, so
+    /// `max_depth` also bounds stack use; keep it small (the callers use 32 and 64).
     pub fn parse_with_max_depth(text: &str, max_depth: usize) -> Result<Self, String> {
         let mut parser = Parser {
             bytes: text.as_bytes(),
