@@ -478,18 +478,13 @@ public sealed class SyslogSource : IAsyncDisposable
                 await hook(socket, cancellationToken);
             }
 
-            ConfigureKeepAlive(socket);
-            if (!socket.Connected)
-            {
-                // The peer reset before setup. On macOS and BSD the keepalive option then fails
-                // and .NET marks the socket not connected, so no stream can be opened. Counted
-                // as the reset the Rust listener sees on its first read.
-                Interlocked.Increment(ref listener.Counters.PeerResets);
-                return;
-            }
-
+            // The stream is opened before keepalive: the NetworkStream constructor is the only
+            // place that checks Socket.Connected, and a refused keepalive option (macOS and BSD
+            // after an early reset, or a platform without per-socket timing) clears that flag.
+            // Keepalive stays best effort, as in Rust; a reset surfaces on the first read.
             NetworkStream network = new(socket, ownsSocket: true);
             stream = network;
+            ConfigureKeepAlive(socket);
             if (listener.Tls is { } tls)
             {
                 // Bound unauthenticated connections even when established-session idle is disabled.
