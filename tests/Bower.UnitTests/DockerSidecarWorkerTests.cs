@@ -262,6 +262,30 @@ public sealed class DockerSidecarWorkerTests
         Assert.Equal(1, stale);
     }
 
+    [Fact]
+    public async Task Pass_WarnsOnceWhenTheStoredCursorIsDamaged()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, "Failed password for root from 203.0.113.5 port 22 ssh2\n");
+        RecordingLogger logger = new();
+        (DockerSidecarWorker worker, EfSourceCursorStore store) = await CreateAsync(root, new RecordingHandler(_ => HttpStatusCode.Accepted), cancellationToken, logger);
+        // A pending range past the cursor: refused as a whole, so the read starts again.
+        Assert.True(await store.TryAdvanceAsync(
+            $"docker:{container.Id}",
+            0,
+            """{"schemaVersion":1,"fingerprint":"abc","offset":4,"pending":[{"stream":"stdout","time":"t","file":"abc","start":9,"length":0}]}""",
+            DateTimeOffset.UnixEpoch,
+            cancellationToken));
+
+        SidecarPassResult first = await worker.ProcessOnceAsync(cancellationToken);
+        SidecarPassResult second = await worker.ProcessOnceAsync(cancellationToken);
+
+        Assert.Equal((1, 0), (first.Forwarded, second.Forwarded));
+        Assert.Equal(1, logger.Count(3007));
+    }
+
     private static async Task<(DockerSidecarWorker Worker, EfSourceCursorStore Store)> CreateAsync(
         TemporaryDirectory root,
         RecordingHandler handler,

@@ -82,6 +82,11 @@ public sealed partial class DockerSidecarWorker(
             string sourceId = $"docker:{container.Id}";
             SourceCursorSnapshot? snapshot = await cursors.ReadAsync(sourceId, cancellationToken);
             DockerLogCursor? cursor = DockerLogCursor.Deserialize(snapshot?.Value);
+            if (cursor is null && !string.IsNullOrWhiteSpace(snapshot?.Value))
+            {
+                LogCursorInvalid(logger, container.Name);
+            }
+
             DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, readerOptions);
             malformed += batch.Malformed;
             oversized += batch.Oversized;
@@ -190,6 +195,10 @@ public sealed partial class DockerSidecarWorker(
     [LoggerMessage(EventId = 3006, Level = LogLevel.Information,
         Message = "Container {Container} log rotated with {Lines} line(s) still open; each is read again from the rotated file and joined with its rest in the new file.")]
     private static partial void LogOpenAtRotation(ILogger logger, string container, int lines);
+
+    [LoggerMessage(EventId = 3007, Level = LogLevel.Warning,
+        Message = "Stored cursor for {Container} is damaged; reading again from the start position, so lines may be skipped or sent again.")]
+    private static partial void LogCursorInvalid(ILogger logger, string container);
 
     [LoggerMessage(EventId = 3004, Level = LogLevel.Warning,
         Message = "Cursor for {Container} changed concurrently; it will be re-read.")]

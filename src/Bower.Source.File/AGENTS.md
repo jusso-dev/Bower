@@ -77,5 +77,7 @@ cursor format, limits, defaults, failure codes and configuration messages.
   version are `DockerLogCursor`'s own, and it keeps none of the rotation fields, so nothing
   under Docker's policy may depend on them. Its open lines (`DockerLogCursor.Pending`) are
   not in `FileTailCursor`: the Docker decoder restores them where the tailer hands back the
-  read's own position and carries them in `MovedToCurrent`, so keep calling the decoder's
-  `Empty`, `Scan` and `MovedToCurrent` with the cursor the tailer was given or moved to.
+  read's own position, carries them in `MovedToCurrent` and takes any other position as a
+  first sight or a gap (each open line goes on as a fragment), so keep calling the
+  decoder's `Empty`, `Scan` and `MovedToCurrent` with the cursor the tailer was given or
+  moved to, and never `WithCursor` or `Append` under Docker's policy.

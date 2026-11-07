@@ -356,12 +356,17 @@ the collector is stopped is not detected as a reset.
 Docker container output is trusted as the application's own: the sidecar forwards a
 whole line that is a Bower envelope, so an application that writes untrusted text as a
 line of its own lets that text claim to be an event (the collector still validates,
-redacts and applies policy). Text inside a longer line cannot become a line of its own:
-the sidecar keys each line on its stream and Docker time, joins a line split by rotation
-before mapping it, and never maps a fragment (the part of a line whose other part could
-not be read). With `mode: non-blocking` Docker can drop a line's last chunk, and the rest
-is then read as a whole line when its stream writes again; collect containers in the
-default blocking mode.
+redacts and applies policy). Text inside a longer line cannot become a line of its own
+once the sidecar has seen that line open: it keys each line on its stream and Docker
+time, keeps every open line in its cursor, joins a line split by rotation before mapping
+it (checking the saved chunks' length and digest), and never maps a fragment (part of a
+line whose other part could not be read, that was open when the log was first seen or at
+a gap, or that has an unreadable entry between its chunks). Two limits remain. With
+`mode: non-blocking` Docker can drop a line's last chunk, and the rest is then read as a
+whole line when its stream writes again; collect containers in the default blocking
+mode. With `max-file: 1` Docker deletes the log at each rotation, so a line whose head
+was written after the sidecar's position is lost with it unseen, and its rest cannot be
+told from a whole line (the gap is logged); set `max-file` to 2 or more.
 
 The installers delete files with `shred -u` (Linux, where available) or a plain delete
 (Windows). Neither guarantees the token bytes are gone from journaling, copy-on-write or

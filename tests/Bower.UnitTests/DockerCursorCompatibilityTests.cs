@@ -137,11 +137,12 @@ public sealed class DockerCursorCompatibilityTests
     [Fact]
     public void PendingLines_AreAdditiveAndValidated()
     {
-        const string written = """{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":[{"stream":"stdout","time":"2026-10-07T10:00:00.123456789Z","discarding":true},{"stream":"stderr","time":"2026-10-07T10:00:01.123456789Z","file":"def","start":7,"length":5}]}""";
+        string digest = DockerPendingLine.DigestOf("hello");
+        string written = $$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":[{"stream":"stdout","time":"2026-10-07T10:00:00.123456789Z","discarding":true},{"stream":"stderr","time":"2026-10-07T10:00:01.123456789Z","file":"def","start":7,"length":5,"chunks":[90],"rest":[3,20],"digest":"{{digest}}"}]}""";
         DockerLogCursor cursor = new(1, "abc", 42, Discarding: true, Pending:
         [
             new DockerPendingLine("stdout", "2026-10-07T10:00:00.123456789Z", Discarding: true),
-            new DockerPendingLine("stderr", "2026-10-07T10:00:01.123456789Z", File: "def", Start: 7, Length: 5)
+            new DockerPendingLine("stderr", "2026-10-07T10:00:01.123456789Z", File: "def", Start: 7, Length: 5, Chunks: [90], Rest: [3, 20], Digest: digest)
         ]);
 
         Assert.Equal(cursor, DockerLogCursor.Deserialize(written));
@@ -171,6 +172,62 @@ public sealed class DockerCursorCompatibilityTests
         // The flag and the keys must agree.
         Assert.Null(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","discarding":true}]}"""));
         Assert.Null(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":[{"stream":"stdout","time":"t","fragment":true}]}"""));
+    }
+
+    [Fact]
+    public void PendingLinesWithImpossibleRanges_AreRefused()
+    {
+        // Every range here was accepted: a chunk past the cursor in its own file, overlapping or
+        // out of order, negative, shared by both lines, or a head still to come away from the offset.
+        string d = DockerPendingLine.DigestOf("hello");
+        string valid = $$"""{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[20],"digest":"{{d}}"}""";
+        Assert.NotNull(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{{valid}}]}"""));
+        Assert.NotNull(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0}]}"""));
+        foreach (string pending in new[]
+        {
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":100,"length":5,"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":42,"length":5,"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[50],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[20,20],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":20,"length":5,"chunks":[7],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"chunks":[-3],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":-5,"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"rest":[3],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"rest":[42],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"def","start":7,"length":5,"rest":[9,3],"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"digest":"{{d}}"},{"stream":"stderr","time":"u","file":"abc","start":7,"length":5,"digest":"{{d}}"}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":0,"length":5,"chunks":[{{string.Join(',', Enumerable.Range(1, DockerLogCursor.MaximumChunks))}}],"digest":"{{d}}"}]""",
+            """[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"digest":"not a digest"}]""",
+            """[{"stream":"stdout","time":"t","file":"abc","start":7,"length":0}]""",
+            """[{"stream":"stdout","time":"t","file":"def","start":42,"length":0}]""",
+            """[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0,"fragment":true}]"""
+        })
+        {
+            Assert.Null(DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":{{pending}}}"""));
+        }
+    }
+
+    [Fact]
+    public void DiscardingCursorPersistedByTheOldReaderAfterAnotherStreamsChunk_KeepsTheOldRuleForThatLine()
+    {
+        // The old reader joined a stderr chunk into the stdout line it was skipping, so the chunk
+        // ending at its offset is stderr's. Taken as the key, it skipped stderr's line and read
+        // the rest of the skipped stdout line as a line of its own.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, First, new string('x', 40));
+        DockerFixture.AppendAt(container, "stderr", DockerFixture.Time(5), "stderr head ");
+        long offset = new FileInfo(container.LogPath).Length;
+        DockerFixture.Append(container, "rest of the skipped stdout line\n");
+        DockerFixture.AppendAt(container, "stderr", DockerFixture.Time(5), "stderr tail\n");
+        DockerFixture.AppendAt(container, "stdout", DockerFixture.Time(6), "after\n");
+        string persisted = $$"""{"schemaVersion":1,"fingerprint":"{{DockerFingerprint(container)}}","offset":{{offset}},"discarding":true}""";
+
+        DockerLogBatch batch = DockerJsonLogReader.Read(container, DockerLogCursor.Deserialize(persisted), new DockerLogReaderOptions { MaximumLineBytes = 32 });
+
+        // As the old reader would: skipped up to the first terminated entry, whatever its stream.
+        Assert.Equal(["stderr tail", "after"], batch.Records.Select(record => record.Text));
+        Assert.Equal(1, batch.Oversized);
     }
 
     [Fact]
