@@ -29,10 +29,17 @@ pub enum JsonElement {
 impl JsonElement {
     /// Parses one JSON value from `text` (surrounding whitespace allowed).
     pub fn parse(text: &str) -> Result<Self, String> {
+        Self::parse_with_max_depth(text, MAX_DEPTH)
+    }
+
+    /// [`Self::parse`] with `JsonReaderOptions.MaxDepth` set to `max_depth` nested
+    /// arrays and objects instead of [`MAX_DEPTH`].
+    pub fn parse_with_max_depth(text: &str, max_depth: usize) -> Result<Self, String> {
         let mut parser = Parser {
             bytes: text.as_bytes(),
             text,
             position: 0,
+            max_depth,
         };
         parser.skip_whitespace();
         let value = parser.value(0)?;
@@ -131,6 +138,7 @@ struct Parser<'a> {
     bytes: &'a [u8],
     text: &'a str,
     position: usize,
+    max_depth: usize,
 }
 
 impl Parser<'_> {
@@ -171,7 +179,7 @@ impl Parser<'_> {
     }
 
     fn check_depth(&self, depth: usize) -> Result<(), String> {
-        if depth > MAX_DEPTH {
+        if depth > self.max_depth {
             Err(self.error("JSON nesting too deep"))
         } else {
             Ok(())
@@ -324,6 +332,9 @@ mod tests {
         }
         assert!(JsonElement::parse(&("[".repeat(33) + &"]".repeat(33))).is_err());
         assert!(JsonElement::parse(&("[".repeat(32) + &"]".repeat(32))).is_ok());
+        let deep = |levels: usize| "[".repeat(levels) + &"]".repeat(levels);
+        assert!(JsonElement::parse_with_max_depth(&deep(64), 64).is_ok());
+        assert!(JsonElement::parse_with_max_depth(&deep(65), 64).is_err());
     }
 
     #[test]

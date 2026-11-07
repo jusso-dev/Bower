@@ -221,6 +221,59 @@ public sealed class PackAndEvidenceTests
     }
 
     [Fact]
+    public void QueryParser_ZeroRowPrimaryResultIsACleanEmptyAnswer()
+    {
+        QueryRows rows = LogAnalyticsQueryClient.Parse(
+            """{"tables":[{"name":"PrimaryResult","columns":[{"name":"EventId","type":"string"}],"rows":[]}]}""");
+
+        Assert.Null(rows.Error);
+        Assert.Empty(rows.Rows);
+    }
+
+    // Same table as the Rust `query_parser_rejects_unusable_bodies`.
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("""{"name":"PrimaryResult"}""")]
+    [InlineData("""{"tables":{}}""")]
+    [InlineData("""{"tables":"sensitive body marker"}""")]
+    [InlineData("""{"tables":[]}""")]
+    [InlineData("""{"tables":[null]}""")]
+    [InlineData("""{"tables":[1]}""")]
+    [InlineData("""{"tables":[{"rows":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":{},"rows":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":[],"rows":{}}]}""")]
+    [InlineData("""{"tables":[{"columns":["EventId"],"rows":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":[null],"rows":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"type":"string"}],"rows":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":1}],"rows":[]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"}],"rows":["e1"]}]}""")]
+    [InlineData("""{"sensitive key marker":1,"sensitive key marker":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId","name":"sensitive key marker"}],"rows":[["e1"]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"}],"rows":[[{"sensitive key marker":1,"sensitive key marker":2}]]}]}""")]
+    [InlineData("""{"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}],"tables":[]}""")]
+    [InlineData("""{"a":1,"\u0061":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""")]
+    public void QueryParser_RejectsUnusableBodies(string body)
+    {
+        QueryRows rows = LogAnalyticsQueryClient.Parse(body);
+
+        Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, rows.Error);
+        Assert.Empty(rows.Rows);
+    }
+
+    [Fact]
+    public void QueryParser_AcceptsTheReaderDefaultDepthAndRejectsOneMore()
+    {
+        // Root, tables, table, rows and row are five levels; the cell nests the rest.
+        static string Body(int depth) =>
+            """{"tables":[{"columns":[{"name":"EventId"}],"rows":[[""" + new string('[', depth - 5) + new string(']', depth - 5) + "]]}]}";
+
+        Assert.Null(LogAnalyticsQueryClient.Parse(Body(64)).Error);
+        Assert.Single(LogAnalyticsQueryClient.Parse(Body(64)).Rows);
+        Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, LogAnalyticsQueryClient.Parse(Body(65)).Error);
+    }
+
+    [Fact]
     public async Task Evidence_DoesNotVerifyRowsAccompaniedByQueryError()
     {
         EvidenceRunner runner = new(new FakeSender(202), new PartialQuery(), null, new FakeClock(TestEvents.Now));
@@ -231,6 +284,18 @@ public sealed class PackAndEvidenceTests
         Assert.Equal(EvidenceModes.Failed, bundle.Mode);
         Assert.False(bundle.Arrival.Found);
         Assert.Equal("query-incomplete", bundle.Arrival.QueryError);
+    }
+
+    [Fact]
+    public async Task Evidence_NonStringPolicyHashIsAbsentNotACrash()
+    {
+        EvidenceRunner runner = new(new FakeSender(202), new NumericHashQuery(), null, new FakeClock(TestEvents.Now));
+
+        EvidenceBundle bundle = await runner.RunAsync(Options("workspace-1"), TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Verified, bundle.Mode);
+        Assert.True(bundle.Arrival.Found);
+        Assert.Null(bundle.Arrival.RowPolicyHash);
     }
 
     private static EvidenceOptions Options(string? workspace) =>
@@ -286,6 +351,14 @@ public sealed class PackAndEvidenceTests
                     }],
                     null));
         }
+    }
+
+    private sealed class NumericHashQuery : ILogAnalyticsQuery
+    {
+        public Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken) =>
+            Task.FromResult(kql.StartsWith("DCRLogErrors", StringComparison.Ordinal)
+                ? new QueryRows([], null)
+                : new QueryRows([new Dictionary<string, JsonNode?> { ["PolicyHash"] = JsonValue.Create(42) }], null));
     }
 
     private sealed class PartialQuery : ILogAnalyticsQuery

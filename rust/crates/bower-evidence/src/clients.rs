@@ -5,6 +5,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use bower_contracts::JsonElement;
 use bower_output_azure::{AzureCredentialMode, TokenProvider, credential_from_mode};
 use serde_json::{Map, Value, json};
 
@@ -204,65 +205,70 @@ impl LogAnalyticsQueryClient {
 
     /// Parses a query response into column-name rows (first table only). A non-null
     /// `error` (partial results) yields no rows and the `query-incomplete` code. A body
-    /// that is empty (204 No Content), not JSON or not a JSON object is a failed query
-    /// with the `query-invalid-response` code, never an empty result; the body is not kept.
+    /// that is empty (204 No Content), not JSON, not a JSON object, nested deeper than
+    /// `MAX_QUERY_DEPTH`, has a duplicate key, or lacks a first table with object columns
+    /// named by strings and array rows is a failed query with the `query-invalid-response`
+    /// code, never an empty result; the body is not kept (same as the C# client).
     pub fn parse(body: &str) -> Result<QueryRows, EvidenceError> {
+        Ok(Self::parse_rows(body).unwrap_or_else(|| QueryRows {
+            rows: Vec::new(),
+            error: Some(crate::probe::outcomes::QUERY_INVALID_RESPONSE_CODE.to_owned()),
+        }))
+    }
+
+    /// `None` when the body is not a usable query response.
+    fn parse_rows(body: &str) -> Option<QueryRows> {
+        // `serde_json` keeps the last of duplicate keys where System.Text.Json (with
+        // `AllowDuplicateProperties = false`) rejects the document, so check first.
+        let element = JsonElement::parse_with_max_depth(body, MAX_QUERY_DEPTH).ok()?;
+        if has_duplicate_key(&element) {
+            return None;
+        }
         let Ok(Value::Object(root)) = serde_json::from_str::<Value>(body) else {
-            return Ok(QueryRows {
-                rows: Vec::new(),
-                error: Some(crate::probe::outcomes::QUERY_INVALID_RESPONSE_CODE.to_owned()),
-            });
+            return None;
         };
         if root.get("error").is_some_and(|error| !error.is_null()) {
-            return Ok(QueryRows {
+            return Some(QueryRows {
                 rows: Vec::new(),
                 error: Some(crate::probe::outcomes::QUERY_INCOMPLETE_CODE.to_owned()),
             });
         }
-        let table = match root
-            .get("tables")
-            .and_then(Value::as_array)
-            .and_then(|tables| tables.first())
-        {
-            Some(Value::Object(table)) => table,
-            _ => {
-                return Ok(QueryRows {
-                    rows: Vec::new(),
-                    error: None,
-                });
-            }
+        // Log Analytics always returns at least the PrimaryResult table with column and row
+        // arrays; zero rows is an empty rows array. Anything less cannot prove absence.
+        let Some(Value::Object(table)) = root.get("tables")?.as_array()?.first() else {
+            return None;
         };
-        let columns: Vec<String> = table
-            .get("columns")
-            .and_then(Value::as_array)
-            .map(|columns| {
-                columns
-                    .iter()
-                    .map(|column| {
-                        column
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                            .to_owned()
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let columns = table
+            .get("columns")?
+            .as_array()?
+            .iter()
+            .map(|column| column.as_object()?.get("name")?.as_str().map(str::to_owned))
+            .collect::<Option<Vec<String>>>()?;
         let mut rows = Vec::new();
-        for row in table
-            .get("rows")
-            .and_then(Value::as_array)
-            .into_iter()
-            .flatten()
-        {
-            let Value::Array(values) = row else { continue };
+        for row in table.get("rows")?.as_array()? {
             let mut record = Map::new();
-            for (column, value) in columns.iter().zip(values) {
+            for (column, value) in columns.iter().zip(row.as_array()?) {
                 record.insert(column.clone(), value.clone());
             }
             rows.push(record);
         }
-        Ok(QueryRows { rows, error: None })
+        Some(QueryRows { rows, error: None })
+    }
+}
+
+/// `JsonReaderOptions.MaxDepth` default, which the C# query client reads with.
+const MAX_QUERY_DEPTH: usize = 64;
+
+fn has_duplicate_key(element: &JsonElement) -> bool {
+    match element {
+        JsonElement::Array(items) => items.iter().any(has_duplicate_key),
+        JsonElement::Object(properties) => {
+            let mut keys = std::collections::HashSet::new();
+            properties
+                .iter()
+                .any(|(key, value)| !keys.insert(key.as_str()) || has_duplicate_key(value))
+        }
+        _ => false,
     }
 }
 

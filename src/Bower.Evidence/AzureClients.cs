@@ -42,6 +42,9 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
 {
     private static readonly string[] Scopes = ["https://api.loganalytics.io/.default"];
 
+    // Duplicate keys fail the parse; MaxDepth is the reader default, pinned for Rust parity.
+    private static readonly JsonDocumentOptions QueryDocumentOptions = new() { AllowDuplicateProperties = false, MaxDepth = 64 };
+
     public async Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken)
     {
         AccessToken token = await credential.GetTokenAsync(new TokenRequestContext(Scopes), cancellationToken);
@@ -90,7 +93,7 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         // non-JSON page is a failed query, never an empty result; the body is not kept.
         if (ParseObject(body) is not JsonObject root)
         {
-            return new QueryRows([], ProbeOutcomes.QueryInvalidResponseCode);
+            return Invalid;
         }
 
         if (root.TryGetPropertyValue("error", out JsonNode? error) && error is not null)
@@ -100,20 +103,37 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
             return new QueryRows([], ProbeOutcomes.QueryIncompleteCode);
         }
 
-        JsonObject? table = (root["tables"] as JsonArray)?.FirstOrDefault() as JsonObject;
-        if (table is null)
+        // Log Analytics always returns at least the PrimaryResult table with column and row
+        // arrays; zero rows is an empty rows array. Anything less cannot prove absence.
+        if (root["tables"] is not JsonArray { Count: > 0 } tables
+            || tables[0] is not JsonObject table
+            || table["columns"] is not JsonArray columnNodes
+            || table["rows"] is not JsonArray rowNodes)
         {
-            return new QueryRows([], null);
+            return Invalid;
         }
 
-        string[] columns = (table["columns"] as JsonArray ?? [])
-            .Select(column => column?["name"]?.GetValue<string>() ?? string.Empty)
-            .ToArray();
-        List<IReadOnlyDictionary<string, JsonNode?>> rows = [];
-        foreach (JsonArray row in (table["rows"] as JsonArray ?? []).OfType<JsonArray>())
+        List<string> columns = [];
+        foreach (JsonNode? column in columnNodes)
         {
+            if (column is not JsonObject named || ProbeOutcomes.Text(named["name"]) is not { } name)
+            {
+                return Invalid;
+            }
+
+            columns.Add(name);
+        }
+
+        List<IReadOnlyDictionary<string, JsonNode?>> rows = [];
+        foreach (JsonNode? rowNode in rowNodes)
+        {
+            if (rowNode is not JsonArray row)
+            {
+                return Invalid;
+            }
+
             Dictionary<string, JsonNode?> values = new(StringComparer.Ordinal);
-            for (int index = 0; index < columns.Length && index < row.Count; index++)
+            for (int index = 0; index < columns.Count && index < row.Count; index++)
             {
                 values[columns[index]] = row[index]?.DeepClone();
             }
@@ -124,11 +144,15 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         return new QueryRows(rows, null);
     }
 
+    private static QueryRows Invalid => new([], ProbeOutcomes.QueryInvalidResponseCode);
+
     private static JsonObject? ParseObject(string body)
     {
         try
         {
-            return JsonNode.Parse(body) as JsonObject;
+            // Rejecting duplicate keys here means no later read can throw an exception whose
+            // message names a key.
+            return JsonNode.Parse(body, documentOptions: QueryDocumentOptions) as JsonObject;
         }
         catch (JsonException)
         {

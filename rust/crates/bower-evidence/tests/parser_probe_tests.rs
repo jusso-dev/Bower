@@ -242,6 +242,7 @@ impl LogAnalyticsQuery for FailingDestination {
                     rows: vec![object(json!({"EventId": "candidate"}))],
                     error: Some(outcomes::QUERY_INCOMPLETE_CODE.to_owned()),
                 }),
+                "answered-then-invalid" => error(outcomes::QUERY_INVALID_RESPONSE_CODE),
                 _ => error("BadArgumentError"),
             }
         };
@@ -415,6 +416,13 @@ async fn destination_failures_stay_distinct() {
             3,
             outcomes::QUERY_INCOMPLETE_CODE,
         ),
+        // So may an invalid one: a later valid answer can still verify, but the last one decides.
+        (
+            "answered-then-invalid",
+            outcomes::DESTINATION_QUERY_FAILED,
+            3,
+            outcomes::QUERY_INVALID_RESPONSE_CODE,
+        ),
     ] {
         let clock = SteppingClock::new();
         let destination = Arc::new(FailingDestination {
@@ -439,6 +447,33 @@ async fn destination_failures_stay_distinct() {
         );
         assert!(!bundle.arrival.found);
     }
+}
+
+/// C# `GenericCanary_InvalidLastAnswerFailsAfterACleanOne`: the generic canary reports the
+/// last query's error, so it fails closed too.
+#[tokio::test]
+async fn generic_canary_invalid_last_answer_fails_after_a_clean_one() {
+    let clock = SteppingClock::new();
+    let destination = Arc::new(FailingDestination {
+        failure: "answered-then-invalid",
+        clock: clock.clone(),
+        probe_queries: Mutex::new(0),
+    });
+    let mut options = options(Some(WORKSPACE));
+    options.probe_profile = probe::GENERIC.to_owned();
+    options.timeout = Duration::from_secs(60);
+    let bundle = runner(FakeCollector::new(200), Some(destination))
+        .with_clock(clock)
+        .run(&options)
+        .await
+        .unwrap();
+    assert_eq!(bundle.mode, modes::FAILED);
+    assert_eq!(bundle.arrival.attempts, 3);
+    assert_eq!(
+        bundle.arrival.query_error.as_deref(),
+        Some(outcomes::QUERY_INVALID_RESPONSE_CODE)
+    );
+    assert!(!bundle.arrival.found);
 }
 
 #[tokio::test]
@@ -795,6 +830,20 @@ async fn invalid_query_response_body_is_a_failed_query_not_a_crash() {
         ),
         (axum::http::StatusCode::OK, r#"["sensitive body marker"]"#),
         (axum::http::StatusCode::OK, r#""sensitive body marker""#),
+        (axum::http::StatusCode::OK, "{}"),
+        (axum::http::StatusCode::OK, r#"{"tables":[]}"#),
+        (
+            axum::http::StatusCode::OK,
+            r#"{"sensitive body marker":1,"sensitive body marker":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[]}]}"#,
+        ),
+        (
+            axum::http::StatusCode::OK,
+            r#"{"tables":[{"columns":[{"name":1}],"rows":[]}]}"#,
+        ),
+        (
+            axum::http::StatusCode::OK,
+            r#"{"tables":[{"columns":["sensitive body marker"],"rows":[]}]}"#,
+        ),
     ] {
         let app = Router::new().route(
             "/v1/workspaces/{workspace}/query",

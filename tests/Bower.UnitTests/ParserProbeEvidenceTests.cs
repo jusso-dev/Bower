@@ -150,6 +150,8 @@ public sealed partial class ParserProbeEvidenceTests
     [InlineData("answered-then-failed", ProbeOutcomes.DestinationRowMissing, 3, ProbeOutcomes.DestinationRowMissing)]
     // A partial answer at the deadline may have dropped the probe row: never "row missing".
     [InlineData("answered-then-incomplete", ProbeOutcomes.DestinationQueryFailed, 3, ProbeOutcomes.QueryIncompleteCode)]
+    // So may an invalid one: a later valid answer can still verify, but the last one decides.
+    [InlineData("answered-then-invalid", ProbeOutcomes.DestinationQueryFailed, 3, ProbeOutcomes.QueryInvalidResponseCode)]
     public async Task ParserProbe_DestinationFailuresStayDistinct(string failure, string outcome, int attempts, string queryError)
     {
         FakeClock clock = new(TestEvents.Now);
@@ -171,6 +173,30 @@ public sealed partial class ParserProbeEvidenceTests
         Assert.Equal(attempts, bundle.Arrival.Attempts);
         Assert.Equal(queryError, bundle.Arrival.QueryError);
         Assert.False(bundle.Arrival.Found);
+    }
+
+    [Fact]
+    public async Task GenericCanary_InvalidLastAnswerFailsAfterACleanOne()
+    {
+        // The generic canary reports the last query's error, so it fails closed too.
+        FakeClock clock = new(TestEvents.Now);
+        EvidenceRunner runner = new(new FakeCollector(), new FailingDestination("answered-then-invalid", clock), null, clock);
+
+        EvidenceBundle bundle = await runner.RunAsync(
+            new EvidenceOptions
+            {
+                CollectorUrl = new Uri("http://collector.test:4319/"),
+                WorkspaceId = Workspace,
+                Timeout = TimeSpan.FromMinutes(1),
+                PollInterval = TimeSpan.Zero
+            },
+            TestContext.Current.CancellationToken);
+
+        Assert.Equal(EvidenceModes.Failed, bundle.Mode);
+        Assert.Equal(3, bundle.Arrival.Attempts);
+        Assert.Equal(ProbeOutcomes.QueryInvalidResponseCode, bundle.Arrival.QueryError);
+        Assert.False(bundle.Arrival.Found);
+        Assert.Equal(ProbeOutcomes.DestinationQueryFailed, Bower.Management.Api.SetupOutcomes.Classify(bundle));
     }
 
     [Theory]
@@ -212,6 +238,11 @@ public sealed partial class ParserProbeEvidenceTests
     [InlineData(System.Net.HttpStatusCode.OK, "<html><body>sensitive body marker</body></html>")]
     [InlineData(System.Net.HttpStatusCode.OK, """["sensitive body marker"]""")]
     [InlineData(System.Net.HttpStatusCode.OK, "\"sensitive body marker\"")]
+    [InlineData(System.Net.HttpStatusCode.OK, "{}")]
+    [InlineData(System.Net.HttpStatusCode.OK, """{"tables":[]}""")]
+    [InlineData(System.Net.HttpStatusCode.OK, """{"sensitive body marker":1,"sensitive body marker":2,"tables":[{"columns":[{"name":"EventId"}],"rows":[]}]}""")]
+    [InlineData(System.Net.HttpStatusCode.OK, """{"tables":[{"columns":[{"name":1}],"rows":[]}]}""")]
+    [InlineData(System.Net.HttpStatusCode.OK, """{"tables":[{"columns":["sensitive body marker"],"rows":[]}]}""")]
     public async Task InvalidQueryResponseBody_IsAFailedQueryNotACrash(System.Net.HttpStatusCode status, string body)
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
@@ -721,6 +752,7 @@ public sealed partial class ParserProbeEvidenceTests
                 "gateway" => Task.FromResult(new QueryRows([], "GatewayTimeout")),
                 "answered-then-incomplete" => Task.FromResult(new QueryRows(
                     [new Dictionary<string, JsonNode?> { ["EventId"] = "candidate" }], ProbeOutcomes.QueryIncompleteCode)),
+                "answered-then-invalid" => Task.FromResult(new QueryRows([], ProbeOutcomes.QueryInvalidResponseCode)),
                 _ => Task.FromResult(new QueryRows([], "BadArgumentError"))
             };
         }

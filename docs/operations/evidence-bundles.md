@@ -21,7 +21,7 @@ of Sentinel**.
    ```
 
 3. Records end-to-end latency (send to `ingestion_time()`), the policy hash on the
-   row, table plan and retention (via ARM), the workspace region, and `DCRLogErrors`
+   row (`null` when the cell is not a string), table plan and retention (via ARM), the workspace region, and `DCRLogErrors`
    from the last hour when DCR error logging is enabled.
 4. Maps the result to controls and signs the bundle (ECDSA P-256).
 
@@ -54,10 +54,24 @@ Every Log Analytics query sends `Cache-Control: no-cache`, so polling sees curre
 destination state rather than a cached empty result. A query answered with HTTP 200
 and any non-null `error` (partial results) is a failed query with code
 `query-incomplete`: its rows are never used as evidence and the error details are not
-recorded. A 2xx answer whose body is empty (including `204 No Content`), not JSON or
-not a JSON object is a failed query with code `query-invalid-response`, never an empty
-result: the run completes as `failed` (parser probes report `destination-query-failed`)
-and the body is not recorded. The C# and Rust clients behave the same.
+recorded. A 2xx answer is a failed query with code `query-invalid-response`, never an
+empty result, when its body is empty (including `204 No Content`), not JSON, not a JSON
+object, nested more than 64 levels deep or has a duplicate key anywhere, or when it has
+no usable first table: `tables` missing, not an array or empty, a first table that is not
+an object, `columns` or `rows` that are not arrays, a column that is not an object with
+a string `name`, or a row that is not an array. Log Analytics always returns at least
+the `PrimaryResult` table, so a real zero-row answer (one table with columns and an
+empty `rows` array) is still a clean empty result. The body, its keys and any parser
+message are not recorded. The C# and Rust clients behave the same.
+
+A failed query does not end polling by itself. A later valid answer can still verify
+delivery; if the last query is invalid or incomplete the run is `failed` and the parser
+probe reports `destination-query-failed` with that query error, even if an earlier
+query answered cleanly, because the bad answer may have hidden the probe row. The
+generic canary always reports the last query's error (or `not-found-before-timeout`),
+so a last invalid answer fails it the same way and the setup wizard shows
+`destination-query-failed`. A last transport error or timeout after a clean answer still
+reports the row missing for parser probes (`destination-row-missing`).
 
 ## Parser probes (opt-in)
 
@@ -128,11 +142,11 @@ fixture was not sent.
 | `collector-output-not-sentinel` | `/v1/status` reports an `output` outside the Sentinel allowlist (`azure-logs-ingestion`, `ama-spool`, `relay`), for example `s3`, `http` or any future output. No probe is sent and a `NOT SENTINEL` limitation is added. The generic canary does the same, with this code in `arrival.queryError`. A missing `output` field, an allowlisted value or unreadable status proceeds, and only the Sentinel query can verify. See [S3 output](../deployment/s3-output.md#evidence) and [HTTP output](../deployment/http-splunk-hec-output.md#status-health-and-evidence). |
 | `collector-rejected` | Any other refusal (capacity, rate limit, identity conflict). |
 | `destination-permission-denied` | The verifier identity may not query the workspace (stops at once). |
-| `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed, but the last one was not a partial `query-incomplete` result). |
+| `destination-row-missing` | At least one query answered, and none returned the probe row before the timeout (later queries may have failed or timed out, but the last one was not `query-incomplete` or `query-invalid-response`). |
 | `destination-wrong-event` | A row came back but it is not the exact probe event. |
 | `configuration-mismatch` | The exact probe row arrived, but its policy hash differs from the one the collector reported for the probe. |
 | `destination-timeout` | No query was ever answered: they timed out (including gateway 408/504 with any body). |
-| `destination-query-failed` | No query was ever answered: they failed with another error (for example `query-invalid-response`). Also reported, with `query-incomplete`, when the last query returned partial results, because the dropped rows may have held the probe row. |
+| `destination-query-failed` | No query was ever answered: they failed with another error. Also reported, with that query error, when the last query was `query-incomplete` (partial results) or `query-invalid-response` (unusable body), even after an earlier clean answer, because the bad answer may have hidden the probe row. |
 
 Every parser bundle lists what it did not test: generic intake, other packs and parsers,
 other event types and privacy rules of the pack, upstream agents and readers, and any
