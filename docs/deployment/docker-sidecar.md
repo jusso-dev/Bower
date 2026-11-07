@@ -136,7 +136,9 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   `max-file: 1` the log was deleted and created again), or the saved chunks no longer
   match their length and digest, the gap is logged (event 3003) and the rest is a
   fragment. So is a line an entry the sidecar cannot read sits between the chunks of (it
-  may have been one of them). A fragment is never mapped, whatever it contains, so it can
+  may have been one of them), and the next line of each stream after such an entry
+  (malformed, over 100 KiB or torn: it may have been that line's head, and its stream is
+  unknown; for a line still open then, the next line once another time ends it). A fragment is never mapped, whatever it contains, so it can
   neither become a signal with a cut-off address nor pass as a Bower envelope; it is
   dropped and counted in the pass summary (`fragment(s) dropped`, event 3001), as is a
   line the sidecar had read part of and lost when nothing more of it arrives.
@@ -165,7 +167,10 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   crash, or `mode: non-blocking`, whose ring buffer drops messages, including chunks,
   when it is full. A line whose final chunk was dropped is read as a whole line when the
   next line of its stream arrives, so use the default blocking mode for collected
-  containers.
+  containers. The exception: if the file holding the line was rotated out of the files
+  Docker keeps before its stream wrote again, the line cannot be read again, so the gap
+  is logged (event 3003) and the line is counted as lost (`fragment(s) dropped`), never
+  read as a whole line.
 - **Compressed rotation.** With `compress: "true"` Docker gzips `.1` to `.1.gz` shortly
   after each rotation and removes `.1`. The sidecar does not read compressed files, so
   unless a pass drains `.1` before then, whatever it had not read when the log rotated is
@@ -177,10 +182,15 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
   budget read from its first chunk with nothing else completed, is never buffered: its
   chunks are consumed and committed as they are read, across passes and restarts, and
   the line is counted as oversized once when its final chunk arrives or its stream
-  starts another line. Other lines are read normally meanwhile. A line still open at the
-  end of a pass is read again on the next pass, its saved chunks only (at most one line
-  per stream, each within 64 KiB), never what lies between them; those bytes count
-  against the pass's byte budget, and each pass still reads at least one new entry.
+  starts another line. Only a line open alone is skipped that way: with another stream's
+  line open too, both are kept. Other lines are read normally meanwhile. A line still
+  open at the end of a pass is read again on the next pass, its saved chunks only (at most
+  one line per stream, each within 64 KiB), never what lies between them; those bytes,
+  the look back and identifying rotated files after `.1` count against the pass's byte
+  budget, and each pass still reads at least one new entry, so a pass reads at most its
+  budget plus one entry. A line that cannot be read again within what is left of the
+  budget (never with the default 4 MiB, which holds two whole lines at their limit) is
+  skipped and counted as oversized in the same way.
   An entry over 100 KiB (more than a 16 KiB chunk escaped six bytes a byte) is malformed.
 
 ## Cursor format
@@ -203,8 +213,10 @@ and ordinary cursors serialise byte-for-byte as before:
   after `offset`, and the `length` and `digest` read so far, checked when the head is
   read again. The rest of one whose head was lost has `"fragment":true` (and
   `"lost":true` when the sidecar had read part of it). A stream not proven clean after a
-  gap or a first sight has `"unproven":true`, `"fragment":true` and no `time`: its next
-  line is a fragment. Offsets, a length, a digest and the time only, never line content.
+  gap or a first sight, or after an entry the sidecar could not read, has
+  `"unproven":true`, `"fragment":true` and no `time`: its next line is a fragment. An open
+  line with `"unproven":true` and its `time` had such an entry come while it was open: if
+  another time ends it, the line that time starts is a fragment. Offsets, a length, a digest and the time only, never line content.
 
 A rotation the sidecar drains carries them into the new file. Truncation, a missed
 rotation or a lost rotated file turns each open line into the rest of one

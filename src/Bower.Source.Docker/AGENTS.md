@@ -38,7 +38,8 @@ Read-only Docker source for the sidecar.
   committed before it (`file` the cursor's own, `start` at or after its offset, `length`
   and `digest` checked when it is met again); the rest of a line whose head is lost
   (`fragment`, `lost` when Bower had read part of it); or a stream not proven clean
-  (`unproven`, `fragment`, no time). Never store line content there, and never drop a key:
+  (`unproven`, `fragment`, no time; with a time, `unproven` on any other form marks a line
+  an unreadable entry came during). Never store line content there, and never drop a key:
   a cursor without one for an open line lets a gap turn its rest into a whole line. A
   read that ends with lines open commits the last point with none open only while
   nothing has been emitted or counted since (the old reader's position), naming those
@@ -48,11 +49,16 @@ Read-only Docker source for the sidecar.
   cursor formats are supported: a `pending` form from an unreleased build that this one
   does not write is refused as damaged, never migrated. Re-reading costs a line's own size, never the
   span to the cursor. The look back, the identities of rotated files after `.1` opened by
-  the decoder, and re-reading all count against the byte budget, so a pass stays within
-  the budget plus one entry (each read still takes one new entry);
-  `LookBackOutsideBudget` exists only for the differential test. A line that began where the read did and is still open, alone, after a whole
-  byte budget is discarded, except at the end of a final `.1`, where every open line is
-  carried into the new file and joined there. `Deserialize` refuses a cursor whose ranges
+  the decoder, and re-reading all count against the byte budget and stop where it runs out,
+  so a pass stays within the budget plus one entry (each read still takes one new entry),
+  apart from the fixed 64-byte identities of the current file and `.1`;
+  `LookBackOutsideBudget` exists only for the differential test. Re-reading an open line
+  that does not fit what is left of the budget skips it as oversized (its key kept): no pass
+  could join it within the budget, and a skipped line costs nothing to restore, so the next
+  read always moves on. A line that began where the read did and is still open, alone (no
+  other stream's line being assembled), after a whole byte budget is discarded; with another
+  stream's line open too, both lines' chunks are recorded instead. Neither applies at the end
+  of a final `.1`, where every open line is carried into the new file and joined there. `Deserialize` refuses a cursor whose ranges
   are impossible (past its offset, out of order, shared); the sidecar logs event 3007 for
   a damaged stored cursor. Each record carries `Resume`, a cursor that emits it and every
   later record in its batch again (and may emit again earlier records of the batch that
@@ -61,7 +67,10 @@ Read-only Docker source for the sidecar.
 - Fragments: never emit a head or a rest of a line as if it were whole. A line is a
   fragment (`DockerLogRecord.Fragment`) when its head cannot be read again (rotated past
   the files Docker keeps, removed or changed, or `max-file: 1` deleting the log; counted
-  as a gap), when an entry between its chunks cannot be read, and when it may have been
+  as a gap), when an entry between its chunks cannot be read, when it is a stream's next line
+  after an entry that cannot be read (malformed, over-long or torn: that entry's stream is
+  unknown, so every stream with no line open becomes `unproven`, and an open line's stream
+  does once another time ends it), and when it may have been
   open where a first sight or a gap starts reading. `DockerLogEventMapper` never maps a
   fragment, as a `SemanticEvent` or a signal; the sidecar drops and counts it, and counts
   a lost line nothing more of which arrives (`DockerLogBatch.Lost`). Entries up to
@@ -99,3 +108,5 @@ Read-only Docker source for the sidecar.
 - Persisted `DockerLogCursor` values must keep loading (`DockerCursorCompatibilityTests`);
   change the schema only with a versioned migration.
 - Changes need malformed-input, rotation, interleaved-stream and durable cursor tests.
+- Follow-up, not taken yet: always record an open line's chunks (no pinning), which would
+  remove the pin, its skip and the read-once head form.

@@ -32,7 +32,8 @@ namespace Bower.UnitTests;
 /// writes them, a line left open going on with its time), so keys that differ are compared too.</item>
 /// <item>The current reader marks as a <see cref="DockerLogRecord.Fragment"/> the rest of a line it
 /// saw open but cannot read whole (open when the log is first seen or at a gap, or with an entry
-/// it cannot read between its chunks); the old reader emitted the same text as a line. Records are
+/// it cannot read between its chunks), and each stream's next line after such an entry, which may
+/// have been its head; the old reader emitted the same text as a line. Records are
 /// compared without the flag; the flag is pinned by <c>DockerLineIdentityTests</c>. Its entry limit
 /// is a whole Docker chunk however it is escaped, where the old one followed the line limit, so the
 /// histories' over-long entries are longer than both.</item>
@@ -205,13 +206,15 @@ public sealed class DockerReaderDifferentialTests
     public void OrdinarySingleStreamLogs_KeepTheirRecordsOffsetsCursorsAndEventIds(int lineBytes, int records, int bytes)
     {
         // Ordinary logs (one stream, Docker's own time on every chunk) read exactly as before:
-        // the same records at the same offsets, the same cursors and the same event ids.
+        // the same records at the same offsets, the same cursors and the same event ids. The one
+        // deliberate difference: the line after an entry that cannot be read is a fragment (its
+        // id compared as if it were mapped).
         DockerLogReaderOptions options = new() { StartAtEnd = false, MaximumLineBytes = lineBytes, MaximumRecordsPerBatch = records, MaximumBytesPerBatch = bytes };
         DockerLogEventMapper mapper = new(new DockerMapperOptions { SidecarId = "sidecar-test" });
         using TemporaryDirectory root = new();
         DockerContainer container = DockerFixture.Catalogued(root);
         DockerLogCursor? legacyCursor = null, currentCursor = null;
-        List<string> legacyIds = [], currentIds = [];
+        List<string> legacyIds = [], currentIds = [], fragments = [];
         string[] history =
         [
             Entry("Server listening on 0.0.0.0 port 22.\n"),
@@ -231,19 +234,22 @@ public sealed class DockerReaderDifferentialTests
             {
                 DockerLogBatch legacy = LegacyDockerJsonLogReader.Read(container, legacyCursor, options);
                 DockerLogBatch current = DockerJsonLogReader.Read(container, currentCursor, options);
-                Assert.Equal(legacy.Records, current.Records.Select(Unresumed));
+                Assert.Equal(legacy.Records, current.Records.Select(Comparable));
+                fragments.AddRange(current.Records.Where(record => record.Fragment).Select(record => record.Text));
                 Assert.All(current.Records, AssertResumesWhereTheOldSidecarRewound);
                 Assert.Equal(legacy.Cursor, Legacy(current.Cursor));
                 Assert.Equal(legacy.Cursor.Serialize(), Legacy(current.Cursor).Serialize());
                 Assert.Equal((legacy.Malformed, legacy.Oversized, legacy.RotationGap), (current.Malformed, current.Oversized, current.RotationGap));
                 legacyIds.AddRange(legacy.Records.Select(record => mapper.Map(container, record, DateTimeOffset.UnixEpoch).Json ?? "-"));
-                currentIds.AddRange(current.Records.Select(record => mapper.Map(container, record, DateTimeOffset.UnixEpoch).Json ?? "-"));
+                currentIds.AddRange(current.Records.Select(record => mapper.Map(container, Comparable(record), DateTimeOffset.UnixEpoch).Json ?? "-"));
                 (legacyCursor, currentCursor) = (legacy.Cursor, current.Cursor);
             }
         }
 
         Assert.Equal(legacyIds, currentIds);
         Assert.True(currentIds.Count(json => json != "-") >= 2, string.Join(", ", currentIds));
+        // The line after the entry that cannot be read may be the rest of a line whose head it was.
+        Assert.Equal(["Accepted publickey for deploy from 192.0.2.4 port 50000 ssh2"], fragments);
     }
 
     [Fact]

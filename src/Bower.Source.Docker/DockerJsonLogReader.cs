@@ -122,10 +122,12 @@ public sealed record DockerLogCursor(
     private static bool LineIsValid(DockerPendingLine line, DockerLogCursor cursor, HashSet<(string File, long Offset)> taken)
     {
         bool keyOnly = line is { File: null, Start: null, Length: null, Chunks: null, Rest: null, Digest: null, Through: null };
-        if (line.Unproven)
+        if (line is { Unproven: true, Time: null })
         {
-            return keyOnly && line.Fragment && !line.Discarding && !line.Lost && line.Time is null;
+            return keyOnly && line.Fragment && !line.Discarding && !line.Lost;
         }
+
+        // With a time, unproven marks an open line in any of the other forms (see DockerPendingLine).
 
         if (line.Lost && (!keyOnly || !line.Fragment || line.Discarding))
         {
@@ -216,7 +218,10 @@ public sealed record DockerLogCursor(
 /// whose head could not be read (<paramref name="Fragment"/> and no start). A stream not proven
 /// clean (<paramref name="Unproven"/>, also <paramref name="Fragment"/>, no time): after a gap or
 /// a first sight the look back found neither its last entry nor a point where no line of it was
-/// open, so its next entry, whatever its time, keys a line that is a fragment. Read once and
+/// open, or an entry that could not be read came while none was, so its next entry, whatever its
+/// time, keys a line that is a fragment. <paramref name="Unproven"/> with a time, on any other
+/// form: an entry that could not be read came while this line was open, so if another time ends
+/// it (it never got its final chunk) the line that time starts is a fragment. Read once and
 /// committed before its head (<paramref name="File"/> the cursor's own and
 /// <paramref name="Start"/> at or after its offset): the next read meets it again and checks
 /// that its first <paramref name="Length"/> characters give <paramref name="Digest"/>.
@@ -266,6 +271,11 @@ public sealed record DockerPendingLine(
 
     /// <summary>A stream whose next line is a fragment, whatever its time.</summary>
     internal static DockerPendingLine UnprovenStream(string stream) => new(stream, null, Fragment: true, Unproven: true);
+
+    /// <summary>This open line, its stream's next line a fragment when another time ends it.</summary>
+    internal DockerPendingLine WithUnprovenNext(bool unproven) => !unproven
+        ? this
+        : Time is null ? UnprovenStream(Stream) : this with { Unproven = true }; // No time: only the keyless form can say so.
 
     /// <summary>The digest kept for an assembled line's text.</summary>
     internal static string DigestOf(string text) =>
@@ -394,7 +404,10 @@ public sealed record DockerLogReaderOptions
 /// it again instead of renaming it), or its saved chunks no longer match their length and
 /// digest, what is read of it is a <see cref="DockerLogRecord.Fragment"/>. A line's chunks are
 /// found by the identity of their file in the current file or any rotated one, <c>.1</c> to
-/// <c>.N</c>, so a line that spans several rotations while Bower keeps up stays whole.
+/// <c>.N</c>, so a line that spans several rotations while Bower keeps up stays whole. An entry
+/// that cannot be read (malformed, over-long or torn) may be any stream's, a chunk of an open
+/// line or the head of a stream's next one, so the open lines are fragments and each stream's
+/// next line is one too (for a line still open, the line another time starts after it).
 /// </para>
 /// <para>
 /// Fail closed after a gap or a first sight. Where a read starts anywhere but its own last
@@ -521,21 +534,40 @@ public static class DockerJsonLogReader
         /// <summary>Whether <c>.age</c> is there, identified or not.</summary>
         public bool Exists(int age) => System.IO.File.Exists(Path(age));
 
+        /// <summary>At most what opening <c>.age</c> reads: nothing for <c>.1</c> or a file already opened.</summary>
+        public long IdentityCost(int age) => age > 1 && age > opened.Count ? FileTailHandle.PrefixIdentityBytes : 0;
+
         /// <summary>0 for any file that is not a rotated one (the current file), else its age.</summary>
         public int AgeOf(FileTailHandle file) => opened.FindIndex(open => ReferenceEquals(open, file)) + 1;
 
-        /// <summary>The youngest rotated file other than <paramref name="except"/> with this identity.</summary>
-        public FileTailHandle? Find(string fingerprint, FileTailHandle except)
+        /// <summary>
+        /// The youngest rotated file other than <paramref name="except"/> with this identity,
+        /// identifying files only within <paramref name="allowance"/> bytes; when it would need
+        /// more, <paramref name="outOfBudget"/> and null.
+        /// </summary>
+        public FileTailHandle? Find(string fingerprint, FileTailHandle except, long allowance, out bool outOfBudget)
         {
-            for (int age = 1; Rotated(age) is { } file; age++)
+            outOfBudget = false;
+            for (int age = 1; ; age++)
             {
+                if (IdentityCost(age) > allowance)
+                {
+                    outOfBudget = true;
+                    return null;
+                }
+
+                long identified = IdentityBytes;
+                if (Rotated(age) is not { } file)
+                {
+                    return null;
+                }
+
+                allowance -= IdentityBytes - identified;
                 if (!ReferenceEquals(file, except) && string.Equals(file.Fingerprint, fingerprint, StringComparison.Ordinal))
                 {
                     return file;
                 }
             }
-
-            return null;
         }
 
         public void Dispose()
@@ -611,7 +643,7 @@ public static class DockerJsonLogReader
                 .Select(line => line switch
                 {
                     { Start: { } start } when start >= from.Offset && string.Equals(line.File, from.Fingerprint, StringComparison.Ordinal) =>
-                        new DockerPendingLine(line.Stream, line.Time, Fragment: true, Lost: true),
+                        new DockerPendingLine(line.Stream, line.Time, Fragment: true, Lost: true).WithUnprovenNext(line.Unproven),
                     { Rest: { Count: > 0 } rest } => line with { Rest = null, Through = [.. line.Through ?? [], new DockerChunkRun(from.Fingerprint, rest)] },
                     _ => line
                 })
@@ -645,9 +677,9 @@ public static class DockerJsonLogReader
             DockerPendingLine?[] known = new DockerPendingLine?[2];
             foreach (DockerPendingLine line in input?.Pending ?? [])
             {
-                known[Slot(line.Stream)] = line.Unproven
+                known[Slot(line.Stream)] = line is { Unproven: true, Time: null }
                     ? line
-                    : new DockerPendingLine(line.Stream, line.Time, Fragment: true, Lost: line.Lost || line.Digest is not null);
+                    : new DockerPendingLine(line.Stream, line.Time, Fragment: true, Lost: line.Lost || line.Digest is not null).WithUnprovenNext(line.Unproven);
             }
 
             if (input is { Discarding: true, Pending: null })
@@ -663,7 +695,7 @@ public static class DockerJsonLogReader
             {
                 // An open last entry of a line the cursor knew keeps that line's own key.
                 DockerPendingLine? line = look.Found[slot]
-                    ? look.Open[slot] is { } open && known[slot] is { Unproven: false } same && string.Equals(same.Time, open.Time, StringComparison.Ordinal)
+                    ? look.Open[slot] is { } open && known[slot] is { } same && same is not { Unproven: true, Time: null } && string.Equals(same.Time, open.Time, StringComparison.Ordinal)
                         ? same
                         : look.Open[slot]
                     : look.AtInput
@@ -715,7 +747,15 @@ public static class DockerJsonLogReader
                     return look;
                 }
 
+                // Identifying .2 and on is read from the same budget.
+                if (generations.IdentityCost(age + 1) > budget)
+                {
+                    return look;
+                }
+
+                long identified = generations.IdentityBytes;
                 FileTailHandle? older = generations.Rotated(++age);
+                budget -= generations.IdentityBytes - identified;
                 if (older is null)
                 {
                     // The start of the oldest file, unless one is there that cannot be identified.
@@ -836,6 +876,12 @@ public static class DockerJsonLogReader
 
         /// <summary>A stream not proven clean: its next entry keys the line, whatever its time.</summary>
         public bool Unproven { get; private set; }
+
+        /// <summary>
+        /// An entry that could not be read came while it was open: if another time ends it, that
+        /// entry may have been the head of the line the time starts, which is then a fragment.
+        /// </summary>
+        public bool UnprovenNext { get; set; }
 
         public bool Discarding { get; private set; }
 
@@ -1000,9 +1046,7 @@ public static class DockerJsonLogReader
 
         public DockerLogBatch Read(bool rotationGap, bool final)
         {
-            long identified = generations.IdentityBytes;
             rotationGap |= RestorePending();
-            consumed += generations.IdentityBytes - identified;
 
             // The look back and reading the open lines again count against the byte budget, but
             // every read still takes at least one entry, so it always moves on.
@@ -1043,18 +1087,23 @@ public static class DockerJsonLogReader
             // A file that is never written again (a drained .1) ends here: every line still open
             // goes into the cursor, which moves to the new file, so it is re-read from the rotated
             // files and joined with its rest there. Otherwise, a read that would commit where it
-            // began (a line that began there, open and alone) after a whole byte budget can never
-            // read that line within bounds: skip it rather than read the same bytes every poll.
+            // began after a whole byte budget would read the same bytes every poll. A line that
+            // began there, open alone, can never be read within bounds: skip it. With another
+            // stream's line open too, record both lines' chunks instead: the next read takes them
+            // again within its budget, and skips one that does not fit (RestorePending).
             bool ended = final && position >= stream.Length;
             bool pinned = !ended && quiet && safe is not null && lines.Any(line => line is { Assembling: true })
                 && lines.All(line => line is not { Assembling: true } || string.Equals(line.File, cursor.Fingerprint, StringComparison.Ordinal));
             if (pinned && safe!.Offset == cursor.Offset && position - cursor.Offset >= options.MaximumBytesPerBatch)
             {
-                foreach (OpenLine? line in lines)
+                if (lines.Count(line => line is { Assembling: true }) == 1)
                 {
-                    if (line is { Assembling: true } && line.Origin == cursor.Offset)
+                    foreach (OpenLine? line in lines)
                     {
-                        line.Skip();
+                        if (line is { Assembling: true } && line.Origin == cursor.Offset)
+                        {
+                            line.Skip();
+                        }
                     }
                 }
 
@@ -1089,8 +1138,11 @@ public static class DockerJsonLogReader
             if (line is not null && !line.Matches(entry.Time))
             {
                 // The same stream with another time: that line ended at stream end, unterminated.
+                // After an entry that could not be read while it was open, this one may be the
+                // rest of a line whose head was that entry.
+                bool unproven = line.UnprovenNext;
                 Close(slot);
-                line = null;
+                line = unproven ? lines[slot] = new OpenLine(entry.Stream, entry.Time) { Fragment = true } : null;
             }
 
             if (line is null || line is { Discarding: false, Start: < 0 })
@@ -1145,14 +1197,25 @@ public static class DockerJsonLogReader
             }
         }
 
-        // An entry that cannot be read may be a chunk of any line being assembled: none is whole now.
+        /// <summary>
+        /// An entry that cannot be read may belong to either stream: a chunk of a line being
+        /// assembled (none is whole now), or the head of a stream's next line. So a stream with
+        /// no line open is not proven clean, and an open line's stream is not either once
+        /// another time ends that line.
+        /// </summary>
         private void Unreadable()
         {
-            foreach (OpenLine? line in lines)
+            for (int slot = 0; slot < 2; slot++)
             {
-                if (line is { Assembling: true })
+                if (lines[slot] is not { } line)
                 {
-                    line.Fragment = true;
+                    lines[slot] = new OpenLine(slot == 0 ? "stdout" : "stderr", null);
+                    lines[slot]!.MarkUnproven();
+                }
+                else if (!line.Unproven)
+                {
+                    line.Fragment |= line.Assembling;
+                    line.UnprovenNext = true;
                 }
             }
         }
@@ -1201,7 +1264,7 @@ public static class DockerJsonLogReader
                 }
 
                 pending ??= [];
-                pending.Add(line switch
+                DockerPendingLine saved = (line switch
                 {
                     { Discarding: true } => new DockerPendingLine(line.Stream, line.Time, Discarding: true),
                     { Unproven: true } => DockerPendingLine.UnprovenStream(line.Stream),
@@ -1220,8 +1283,9 @@ public static class DockerJsonLogReader
                         Rest: line.Rest.Count > 0 ? [.. line.Rest] : null,
                         Digest: line.Digest(),
                         Through: line.Through.Count > 0 ? [.. line.Through.Select(run => new DockerChunkRun(run.File, [.. run.Chunks]))] : null)
-                });
-                discarding |= line.Discarding;
+                }).WithUnprovenNext(line.UnprovenNext);
+                pending.Add(saved);
+                discarding |= saved.Discarding;
             }
 
             return cursor with { Offset = offset, Discarding = discarding, Pending = pending };
@@ -1277,13 +1341,19 @@ public static class DockerJsonLogReader
             bool gap = false;
             foreach (DockerPendingLine saved in pending)
             {
-                OpenLine line = new(saved.Stream, saved.Time) { Fragment = saved.Fragment, Lost = saved.Lost, Resume = cursor };
+                OpenLine line = new(saved.Stream, saved.Time)
+                {
+                    Fragment = saved.Fragment,
+                    Lost = saved.Lost,
+                    UnprovenNext = saved is { Unproven: true, Time: not null },
+                    Resume = cursor
+                };
                 lines[Slot(saved.Stream)] = line;
                 if (saved.Discarding)
                 {
                     line.Skip();
                 }
-                else if (saved.Unproven)
+                else if (saved is { Unproven: true, Time: null })
                 {
                     line.MarkUnproven();
                 }
@@ -1293,11 +1363,21 @@ public static class DockerJsonLogReader
                 {
                     line.Expect(start, length, digest);
                 }
-                else if (saved.Digest is not null && !RestoreChunks(line, saved))
+                else if (saved.Digest is not null)
                 {
-                    // Its files rotated away or no longer hold it: the rest is only a fragment.
-                    gap = true;
-                    line.Lose();
+                    switch (RestoreChunks(line, saved))
+                    {
+                        case Reread.Changed:
+                            // Its files rotated away or no longer hold it: the rest is only a fragment.
+                            gap = true;
+                            line.Lose();
+                            break;
+                        case Reread.OverBudget:
+                            // Not within what is left of the byte budget, so never joined within
+                            // one: skipped as oversized, its key kept, so its rest is never a line.
+                            line.Skip();
+                            break;
+                    }
                 }
 
                 // Otherwise known by its key only: the rest of a lost head.
@@ -1306,13 +1386,21 @@ public static class DockerJsonLogReader
             return gap;
         }
 
+        private enum Reread
+        {
+            Matched,
+            Changed,
+            OverBudget
+        }
+
         /// <summary>
         /// Reads an open line's saved chunks again, each from the file its identity names (this
         /// one or any rotated one): at most <see cref="DockerLogCursor.MaximumChunks"/> entries, so
-        /// the cost is the line's own size, never the span to the cursor. They must give the
-        /// saved length and digest.
+        /// the cost is the line's own size, never the span to the cursor, and never more than is
+        /// left of the byte budget (with the identities of rotated files after <c>.1</c>). They
+        /// must give the saved length and digest.
         /// </summary>
-        private bool RestoreChunks(OpenLine line, DockerPendingLine saved)
+        private Reread RestoreChunks(OpenLine line, DockerPendingLine saved)
         {
             line.File = saved.File;
             List<(string File, IReadOnlyList<long> Chunks)> runs = [(saved.File!, [saved.Start!.Value, .. saved.Chunks ?? []])];
@@ -1325,34 +1413,55 @@ public static class DockerJsonLogReader
                     continue;
                 }
 
-                FileTailHandle? source = string.Equals(fingerprint, cursor.Fingerprint, StringComparison.Ordinal)
-                    ? file
-                    : generations.Find(fingerprint, file);
+                FileTailHandle? source = file;
+                bool outOfBudget = false;
+                if (!string.Equals(fingerprint, cursor.Fingerprint, StringComparison.Ordinal))
+                {
+                    long identified = generations.IdentityBytes;
+                    source = generations.Find(fingerprint, file, options.MaximumBytesPerBatch - consumed, out outOfBudget);
+                    consumed += generations.IdentityBytes - identified;
+                }
+
                 if (source is null)
                 {
-                    return false;
+                    return outOfBudget ? Reread.OverBudget : Reread.Changed;
                 }
 
                 long limit = ReferenceEquals(source, file) ? cursor.Offset : long.MaxValue;
                 foreach (long offset in chunks)
                 {
-                    if (!ReadChunk(source, offset, limit, line, fingerprint))
+                    Reread chunk = ReadChunk(source, offset, limit, line, fingerprint);
+                    if (chunk != Reread.Matched)
                     {
-                        return false;
+                        return chunk;
                     }
                 }
             }
 
-            return line.Text.Length == saved.Length && string.Equals(line.Digest(), saved.Digest, StringComparison.Ordinal);
+            return line.Text.Length == saved.Length && string.Equals(line.Digest(), saved.Digest, StringComparison.Ordinal) ? Reread.Matched : Reread.Changed;
         }
 
-        /// <summary>One saved chunk: a whole, unterminated entry of the line's key that ends by <paramref name="limit"/>.</summary>
-        private bool ReadChunk(FileTailHandle source, long offset, long limit, OpenLine line, string fingerprint)
+        /// <summary>
+        /// One saved chunk: a whole, unterminated entry of the line's key that ends by
+        /// <paramref name="limit"/>, read only within what is left of the byte budget.
+        /// </summary>
+        private Reread ReadChunk(FileTailHandle source, long offset, long limit, OpenLine line, string fingerprint)
         {
             FileStream stream = source.Stream;
             stream.Seek(offset, SeekOrigin.Begin);
-            byte[]? entry = ReadEntry(stream, consumeLong: false, out bool complete, out bool tooLong);
+            long left = options.MaximumBytesPerBatch - consumed;
+            if (left <= 0)
+            {
+                return Reread.OverBudget;
+            }
+
+            byte[]? entry = ReadEntry(stream, consumeLong: false, out bool complete, out bool tooLong, left);
             consumed += stream.Position - offset;
+            if (!complete && stream.Position - offset == left)
+            {
+                return Reread.OverBudget;
+            }
+
             if (!complete || tooLong || entry is null || stream.Position > limit
                 || !TryParseEntry(entry, out Entry parsed)
                 || parsed.Stream != line.Stream
@@ -1360,13 +1469,13 @@ public static class DockerJsonLogReader
                 || parsed.Log.EndsWith('\n')
                 || line.Text.Length + parsed.Log.Length > options.MaximumLineBytes)
             {
-                return false; // Not the open line the cursor recorded.
+                return Reread.Changed; // Not the open line the cursor recorded.
             }
 
             line.ParsedTime ??= parsed.ParsedTime;
             line.Append(parsed.Log, offset, fingerprint, cursor.Fingerprint);
             line.End = stream.Position;
-            return true;
+            return Reread.Matched;
         }
 
         /// <summary>
@@ -1438,16 +1547,17 @@ public static class DockerJsonLogReader
     private static int Slot(string stream) => stream == "stderr" ? 1 : 0;
 
     /// <summary>
-    /// Reads bytes up to and including '\n'. Incomplete means no newline before EOF. An entry
-    /// over <see cref="MaximumEntryBytes"/> is too long: read to its newline when
-    /// <paramref name="consumeLong"/>, so the scan can pass it, else left at once.
+    /// Reads bytes up to and including '\n', at most <paramref name="within"/>. Incomplete means
+    /// no newline before EOF or within them. An entry over <see cref="MaximumEntryBytes"/> is too
+    /// long: read to its newline when <paramref name="consumeLong"/>, so the scan can pass it,
+    /// else left at once.
     /// </summary>
-    private static byte[]? ReadEntry(FileStream stream, bool consumeLong, out bool complete, out bool tooLong)
+    private static byte[]? ReadEntry(FileStream stream, bool consumeLong, out bool complete, out bool tooLong, long within = long.MaxValue)
     {
         using MemoryStream buffer = new();
         tooLong = false;
         int value;
-        while ((value = stream.ReadByte()) >= 0)
+        for (long read = 0; read < within && (value = stream.ReadByte()) >= 0; read++)
         {
             if (value == '\n')
             {

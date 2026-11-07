@@ -90,6 +90,8 @@ public sealed partial class DockerSidecarWorker(
             DockerLogBatch batch = DockerJsonLogReader.Read(container, cursor, readerOptions);
             malformed += batch.Malformed;
             oversized += batch.Oversized;
+            // Stats only: after a rewind to a record's resume cursor, a lost line closed after that
+            // record is counted again on the next pass (as malformed and oversized entries are).
             fragments += batch.Lost;
             if (batch.RotationGap)
             {

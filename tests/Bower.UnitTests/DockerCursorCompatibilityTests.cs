@@ -165,6 +165,21 @@ public sealed class DockerCursorCompatibilityTests
             """{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":[{"stream":"stdout","time":"t","fragment":true,"lost":true}]}""",
             (carried with { Pending = [new DockerPendingLine("stdout", "t", Fragment: true, Lost: true)] }).Serialize());
 
+        // An open line an unreadable entry came during: "unproven" with its time, on any form.
+        foreach (string pending in new[]
+        {
+            """[{"stream":"stdout","time":"t","fragment":true,"unproven":true}]""",
+            """[{"stream":"stdout","time":"t","fragment":true,"unproven":true,"lost":true}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":7,"length":5,"fragment":true,"digest":"{{digest}}","unproven":true}]""",
+            $$"""[{"stream":"stdout","time":"t","file":"abc","start":50,"length":5,"digest":"{{digest}}","unproven":true}]"""
+        })
+        {
+            DockerLogCursor? keyed = DockerLogCursor.Deserialize($$"""{"schemaVersion":1,"fingerprint":"abc","offset":42,"pending":{{pending}}}""");
+            Assert.True(Assert.Single(keyed!.Pending!).Unproven);
+        }
+
+        Assert.NotNull(DockerLogCursor.Deserialize("""{"schemaVersion":1,"fingerprint":"abc","offset":42,"discarding":true,"pending":[{"stream":"stdout","time":"t","discarding":true,"unproven":true}]}"""));
+
         // A damaged cursor is refused as a whole, as any other damaged Docker cursor.
         foreach (string pending in new[]
         {
@@ -175,7 +190,7 @@ public sealed class DockerCursorCompatibilityTests
             """[{"stream":"stdout","time":"t","start":1,"length":1}]""",
             """[{"stream":"stdout","time":"t","file":"f","start":-1,"length":1}]""",
             """[{"stream":"stdout","time":"t","discarding":true,"start":1}]""",
-            """[{"stream":"stdout","time":"t","discarding":true,"unproven":true}]""",
+            """[{"stream":"stdout","time":"t","discarding":true,"fragment":true,"unproven":true}]""",
             $$"""[{"stream":"stdout","time":"{{new string('9', DockerLogCursor.MaximumTimeLength + 1)}}","discarding":true}]""",
             """[null]"""
         })
@@ -219,8 +234,9 @@ public sealed class DockerCursorCompatibilityTests
             """[{"stream":"stdout","time":"t","file":"def","start":42,"length":0}]""",
             """[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0}]""",
             """[{"stream":"stdout","time":"t","file":"abc","start":42,"length":0,"fragment":true}]""",
-            // Unproven: a key-only fragment with no time; lost: a key-only fragment.
-            """[{"stream":"stdout","time":"t","fragment":true,"unproven":true}]""",
+            // Unproven: with no time, a key-only fragment (with a time, any valid form); lost: a
+            // key-only fragment.
+            """[{"stream":"stdout","time":"t","unproven":true}]""",
             """[{"stream":"stdout","time":null,"unproven":true}]""",
             """[{"stream":"stdout","time":null,"fragment":true,"unproven":true,"lost":true}]""",
             $$"""[{"stream":"stdout","time":null,"file":"abc","start":7,"length":5,"digest":"{{d}}","fragment":true,"unproven":true}]""",

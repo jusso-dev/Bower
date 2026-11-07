@@ -1301,6 +1301,143 @@ public sealed class DockerLineIdentityTests
         Assert.Equal([true, .. Enumerable.Repeat(false, 99)], records.Select(record => record.Fragment));
     }
 
+    // ---- Reproductions from council round 5 ----
+
+    [Theory]
+    [InlineData("idle", false)]
+    [InlineData("idle", true)]
+    [InlineData("stderr open", false)]
+    [InlineData("stderr open", true)]
+    [InlineData("stdout open", false)]
+    [InlineData("stdout open", true)]
+    public void UnreadableEntryThatMayBeAnUnseenHead_TheNextLineOfEachStreamIsAFragment(string open, bool restart)
+    {
+        // Sol's P1: an entry that cannot be read marked only the lines being assembled, so an
+        // idle stdout stayed clean and the valid terminator of a malformed head mapped as a
+        // signal (also with stderr open). With stdout open, the line ends at stream end and the
+        // malformed entry may be the next line's head, so that line is a fragment too.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, Replay).Cursor;
+        if (open == "stderr open")
+        {
+            DockerFixture.AppendAt(container, "stderr", T2, "stderr head ");
+        }
+        else if (open == "stdout open")
+        {
+            DockerFixture.AppendAt(container, "stdout", T4, "ended at stream end ");
+        }
+
+        // A line that ends before the bad entry, on the stream not left open, so the cursor
+        // records the open line's chunks rather than its head.
+        DockerFixture.AppendAt(container, open == "stdout open" ? "stderr" : "stdout", T0, "a complete line\n");
+        DockerFixture.AppendRaw(container, "{\"log\":\"comment from a user: \",\"stream\":\"stdout\",\"time\":\"" + T1 + "\"\n");
+        DockerLogBatch first = DockerJsonLogReader.Read(container, start, Replay);
+        DockerFixture.AppendAt(container, "stdout", T1, SshFailure + "\n");
+        if (open == "stderr open")
+        {
+            DockerFixture.AppendAt(container, "stderr", T2, "rest\n");
+        }
+
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+        DockerLogBatch second = DockerJsonLogReader.Read(container, restart ? Restart(first.Cursor) : first.Cursor, Replay);
+
+        List<DockerLogRecord> records = [.. first.Records, .. second.Records];
+        Assert.Equal((1, 0), (first.Malformed, second.Malformed));
+        List<(string, bool)> stdout = open == "stdout open"
+            ? [("ended at stream end ", true), (SshFailure, true), (FreshSignal, false)]
+            : [("a complete line", false), (SshFailure, true), (FreshSignal, false)];
+        List<(string, bool)> stderr = open switch
+        {
+            "stdout open" => [("a complete line", false)],
+            "stderr open" => [("stderr head rest", true)],
+            _ => []
+        };
+        Assert.Equal(stdout, records.Where(record => record.Stream == "stdout").Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(stderr, records.Where(record => record.Stream == "stderr").Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(DockerMappingKind.Fragment, Map(container, records.Single(record => record.Text == SshFailure)).Kind);
+        Assert.Equal(DockerMappingKind.RecognisedSignal, Map(container, records[^1]).Kind);
+    }
+
+    [Fact]
+    public void LookBackThroughManyRotatedFiles_ChargesTheirIdentitiesToItsBudget()
+    {
+        // Sol's P2: identifying .2 and on took nothing from the look-back window, so a replay
+        // through 31 rotated files read 5,338 bytes against a 4,096-byte budget.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 4_096 };
+        for (int file = 0; file < 31; file++)
+        {
+            DockerFixture.AppendAt(container, "stdout", $"2026-10-07T10:04:00.{file:D9}Z", $"only line of file {file:D2}, long enough to identify it\n");
+            Rotate(container, maxFile: 32);
+        }
+
+        DockerFixture.AppendAt(container, "stdout", T1, "the current file, long enough to identify it\n");
+        long longest = Directory.GetFiles(Path.GetDirectoryName(container.LogPath)!, "*.log*").SelectMany(File.ReadAllLines).Max(entry => entry.Length + 1L);
+
+        DockerLogBatch batch = DockerJsonLogReader.Read(container, null, options);
+
+        Assert.True(File.Exists(container.LogPath + ".31"));
+        Assert.True(batch.BytesRead <= options.MaximumBytesPerBatch + longest, $"{batch.BytesRead} bytes within a {options.MaximumBytesPerBatch}-byte budget");
+        Assert.NotEmpty(batch.Records);
+    }
+
+    [Fact]
+    public void OpenLineThatCannotBeReadAgainWithinTheBudget_IsSkippedAndThePassStaysWithinIt()
+    {
+        // Sol's P2: re-reading an open line was charged but never limited, and the scan then took
+        // one more entry: a 16 KiB head in .1 and another 16 KiB chunk read 32,906 bytes in one
+        // pass against a 4,096-byte budget (20,549 with one entry). A line that cannot be read
+        // again within the budget can never be joined within it: it is skipped as oversized.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 4_096 };
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.AppendAt(container, "stdout", T1, new string('h', 16_384));
+        Rotate(container);
+        DockerFixture.AppendAt(container, "stderr", T2, "file B, long enough to give it an identity\n");
+        DockerFixture.AppendAt(container, "stdout", T1, new string('c', 16_384), "end\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+        long longest = File.ReadAllLines(container.LogPath + ".1").Concat(File.ReadAllLines(container.LogPath)).Max(entry => entry.Length + 1L);
+
+        List<DockerLogBatch> polls = Poll(container, start, options, 8);
+
+        Assert.All(polls, poll => Assert.True(poll.BytesRead <= options.MaximumBytesPerBatch + longest, $"{poll.BytesRead} bytes within {options.MaximumBytesPerBatch + longest}"));
+        Assert.Equal(
+            [("file B, long enough to give it an identity", false), (FreshSignal, false)],
+            polls.SelectMany(poll => poll.Records).Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(1, polls.Sum(poll => poll.Oversized));
+        Assert.Equal(new FileInfo(container.LogPath).Length, polls[^1].Cursor.Offset);
+    }
+
+    [Fact]
+    public void ShortLineOpenBesideALongOneAfterAWholeBudget_IsNotSkipped()
+    {
+        // Opus: the skip after a whole byte budget took the line that began where the read did
+        // even with another stream's line open, so a short stdout line was dropped as oversized
+        // because a long stderr line filled a 600-byte budget. Only a line open alone is skipped.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = Replay with { MaximumBytesPerBatch = 600 };
+        DockerFixture.Append(container, Before);
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.AppendAt(container, "stdout", T1, "short head ");
+        DockerFixture.AppendAt(container, "stderr", T2, [.. Enumerable.Repeat(new string('e', 100), 8), "end\n"]);
+        DockerFixture.AppendAt(container, "stdout", T1, "tail\n");
+        DockerFixture.AppendAt(container, "stdout", T3, FreshSignal + "\n");
+
+        List<DockerLogBatch> polls = Poll(container, start, options, 12);
+
+        Assert.Equal(
+            [("short head tail", false), (FreshSignal, false)],
+            polls.SelectMany(poll => poll.Records).Select(record => (record.Text, record.Fragment)));
+        Assert.Equal(1, polls.Sum(poll => poll.Oversized));
+        Assert.Equal(new FileInfo(container.LogPath).Length, polls[^1].Cursor.Offset);
+    }
+
     internal static string Envelope() => JsonSerializer.Serialize(TestEvents.AuthenticationFailure(TestEvents.Now), BowerJson.Options);
 
     private static SecurityEventEnvelope Envelope(DockerMappedEvent mapped) =>
