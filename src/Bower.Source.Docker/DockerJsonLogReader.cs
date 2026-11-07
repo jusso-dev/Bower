@@ -87,10 +87,12 @@ public sealed record DockerLogReaderOptions
 /// File identity, rotation (<c>.1</c> draining), truncation and the start position come
 /// from the shared tailer (<see cref="FileTailFiles"/>) with Docker's own policy: the
 /// 64-byte identity, no rotation grace window, no copy drain on a same-identity truncation,
-/// waiting while the current file cannot be identified, and an oversized-line discard
-/// carried across rotation. This class is the Docker line decoder on top of it: json-file
-/// entries, the 16 KiB partial-chunk join, malformed entries and the oversized-line discard,
-/// within the record and byte bounds.
+/// waiting while the current file cannot be identified, an oversized-line discard carried
+/// across rotation, and a drained <c>.1</c> taken as final (Docker never writes it again), so
+/// a line split across the rotation is skipped in the new file rather than holding the cursor
+/// on <c>.1</c> while the new file goes unread. This class is the Docker line decoder on top
+/// of it: json-file entries, the 16 KiB partial-chunk join, malformed entries and the
+/// oversized-line discard, within the record and byte bounds.
 /// </para>
 /// </summary>
 public static class DockerJsonLogReader
@@ -126,7 +128,10 @@ public static class DockerJsonLogReader
     /// where the reader used to measure it (truncation, the start-at-end scan, leaving a drained
     /// <c>.1</c>), wait while the current file cannot be identified, no copy drain, no grace
     /// window, no abandoned tracking, the oversized discard carried across rotation and an
-    /// unbounded start-at-end scan.
+    /// unbounded start-at-end scan. One deliberate change from the old reader: a renamed
+    /// <c>.1</c> is final, so a line Docker split across the rotation no longer stalls the
+    /// cursor at its start in <c>.1</c> until the new file is rotated away and lost; that one
+    /// line is skipped instead, counted as oversized.
     /// </summary>
     private static readonly FileTailPolicy StartAtEndPolicy = new()
     {
@@ -137,6 +142,7 @@ public static class DockerJsonLogReader
         RotationGracePolls = null,
         RotationDrainMaxPolls = null,
         CarryDiscardingAcrossRotation = true,
+        RenamedFileIsFinal = true,
         TrackAbandoned = false
     };
 
@@ -148,12 +154,9 @@ public static class DockerJsonLogReader
     /// </summary>
     private sealed class Decoder(DockerLogReaderOptions options) : IFileTailDecoder<DockerLogBatch>
     {
-        // Only a copy drain or a settled grace window ends a line at end of file; Docker's
-        // policy has neither, so reaching this would mean a policy change, not data.
+        // eofEndsLine: a drained .1 that Docker never writes again (RenamedFileIsFinal).
         public DockerLogBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap) =>
-            eofEndsLine
-                ? throw new UnreachableException("The Docker policy never ends a line at end of file.")
-                : ReadFile(file, Docker(cursor), options, gap);
+            ReadFile(file, Docker(cursor), options, gap, eofEndsLine);
 
         public DockerLogBatch Empty(FileTailCursor cursor, bool gap) => DockerJsonLogReader.Empty(Docker(cursor)) with { RotationGap = gap };
 
@@ -185,7 +188,8 @@ public static class DockerJsonLogReader
         FileTailHandle file,
         DockerLogCursor cursor,
         DockerLogReaderOptions options,
-        bool rotationGap)
+        bool rotationGap,
+        bool final = false)
     {
         List<DockerLogRecord> records = [];
         int malformed = 0;
@@ -213,6 +217,13 @@ public static class DockerJsonLogReader
             byte[]? entry = ReadEntry(stream, options.MaximumLineBytes * 2 + 4_096, out bool complete, out bool tooLong);
             if (!complete)
             {
+                if (final)
+                {
+                    // A torn entry at the end of a file that is never written again.
+                    malformed++;
+                    position = stream.Position;
+                }
+
                 break; // Writer has not finished this line; read it next time.
             }
 
@@ -300,6 +311,15 @@ public static class DockerJsonLogReader
         {
             committed = position;
             committedDiscarding = true;
+        }
+
+        // A file that is never written again (a drained .1) ends here: a logical line still open
+        // continues in the new file, where its remaining chunks are skipped up to its terminating
+        // chunk and counted as oversized, as for a line too long to assemble.
+        if (final && position >= stream.Length)
+        {
+            committed = position;
+            committedDiscarding = pendingStart >= 0;
         }
 
         return new DockerLogBatch(

@@ -64,6 +64,16 @@ public sealed record FileTailPolicy
     /// <summary>Keep skipping an oversized line that continues in the new file (the Docker source).</summary>
     public bool CarryDiscardingAcrossRotation { get; init; }
 
+    /// <summary>
+    /// A renamed <c>path.1</c> is never written again once the current file is identified (the
+    /// Docker source: Docker renames under the lock it writes with). Without a grace window, its
+    /// drain then scans to its end with <c>eofEndsLine</c>, so a line left unfinished there
+    /// (split across the rotation) cannot hold the cursor on it forever while the current file
+    /// goes unread; the decoder decides what becomes of that line. Ignored with a grace window,
+    /// which settles <c>path.1</c> itself.
+    /// </summary>
+    public bool RenamedFileIsFinal { get; init; }
+
     /// <summary>Record the generation a rename left, so its later growth is reported as a gap.</summary>
     public bool TrackAbandoned { get; init; } = true;
 }
@@ -71,7 +81,11 @@ public sealed record FileTailPolicy
 /// <summary>A line format on top of the shared tailer: scans one opened generation within its bounds.</summary>
 public interface IFileTailDecoder<TBatch>
 {
-    /// <param name="eofEndsLine">The generation no longer grows: its unterminated last line is complete.</param>
+    /// <param name="eofEndsLine">
+    /// The generation no longer grows: its unterminated last line ends at end of file (plain
+    /// lines take it as complete; Docker json-file entries give up a split line, see
+    /// <see cref="FileTailPolicy.RenamedFileIsFinal"/>).
+    /// </param>
     TBatch Scan(FileTailHandle file, FileTailCursor cursor, bool eofEndsLine, bool gap);
 
     TBatch Empty(FileTailCursor cursor, bool gap);
@@ -272,7 +286,9 @@ public static class FileTailFiles
                 return copyCapped ? Leave(counted, next, at, file) : counted;
             }
 
-            (TBatch batch, bool capped) = CountDrainPoll(decoder.Scan(file, at, false, false), at, file);
+            // A path.1 that is never written again: its unfinished last line ends at its end.
+            bool final = policy.RenamedFileIsFinal && policy.RotationGracePolls is null && fingerprint is not null;
+            (TBatch batch, bool capped) = CountDrainPoll(decoder.Scan(file, at, final, false), at, file);
             if (capped)
             {
                 return Leave(batch, next, at, file);
@@ -287,7 +303,8 @@ public static class FileTailFiles
             {
                 // No grace window: leave once drained to its end, measured after the scan, so
                 // bytes appended meanwhile keep the cursor on it (never leaves early, whatever the
-                // policy's decision length).
+                // policy's decision length). Only a final path.1 is drained past an unfinished
+                // last line; otherwise that line keeps the cursor here until it ends.
                 return fingerprint is null || decoder.CursorOf(batch).Offset < file.Stream.Length
                     ? batch
                     : decoder.MovedToCurrent(batch, Abandon(Carry(next, batch), at, file));

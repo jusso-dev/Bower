@@ -17,11 +17,17 @@ Read-only Docker source for the sidecar.
   measured again where the old reader measured it (`FileTailLength.Measured`: truncation,
   the start-at-end scan, leaving a drained `.1`), no device or inode use, no rotation grace
   window or drain cap, no copy drain on a same-identity truncation, no abandoned-generation
-  tracking, waiting while the current file cannot be identified, and the oversized discard
-  carried across rotation. `DockerLogCursor` keeps no rotation state, so each read detects a
+  tracking, waiting while the current file cannot be identified, the oversized discard
+  carried across rotation, and a renamed `.1` taken as final (`RenamedFileIsFinal`): Docker
+  never writes it again, so once it is read to its end a line left unfinished there (split
+  across the rotation, or a torn entry) moves the cursor to the new file with `Discarding`
+  set, and the rest of that line is skipped and counted as oversized (a torn entry as
+  malformed) instead of holding the cursor on `.1` until the new file is lost. `DockerLogCursor` keeps no rotation state, so each read detects a
   rotation again. Changing any of that changes Docker output:
   `DockerReaderDifferentialTests` compares the reader with the frozen pre-refactor copy
-  (`LegacyDockerJsonLogReader`) and must keep passing, as must the open-to-decision races
+  (`LegacyDockerJsonLogReader`) and must keep passing (its histories end an open line
+  before rotating, the one deliberate difference, pinned by
+  `LineSplitAcrossRotation_IsSkippedWhereThePreRefactorReaderLostTheNextFile`), as must the open-to-decision races
   in `DockerSharedTailerTests`, which hit both readers through matching hooks.
 - Persisted `DockerLogCursor` values must keep loading (`DockerCursorCompatibilityTests`);
   change the schema only with a versioned migration.

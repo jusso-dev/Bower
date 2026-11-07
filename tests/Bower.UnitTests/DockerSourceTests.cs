@@ -333,6 +333,170 @@ public sealed class DockerSourceTests
     }
 
     [Fact]
+    public void Reader_SkipsLineSplitAcrossRotationAndReadsTheWholeNewFile()
+    {
+        // Docker rotated between two chunks of one line: .1 ends with an unfinished line it
+        // never completes. The old reader waited on it until the new file was rotated away.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { StartAtEnd = false };
+        DockerFixture.Append(container, "file A line one\n", "first chunk of a split line ");
+        DockerLogBatch first = DockerJsonLogReader.Read(container, null, options);
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "rest of the split line\n", "file B line one\n", "file B line two\n");
+
+        List<DockerLogBatch> polls = Poll(container, first.Cursor, options, 5);
+        File.Move(container.LogPath, container.LogPath + ".1", overwrite: true);
+        DockerFixture.Append(container, "file C line one\n");
+        List<DockerLogBatch> after = Poll(container, polls[^1].Cursor, options, 2);
+
+        Assert.Equal("file A line one", Assert.Single(first.Records).Text);
+        Assert.Equal(
+            ["file B line one", "file B line two", "file C line one"],
+            polls.Concat(after).SelectMany(batch => batch.Records).Select(record => record.Text));
+        Assert.Equal(1, polls.Sum(batch => batch.Oversized));
+        Assert.Equal(0, after.Sum(batch => batch.Oversized));
+        Assert.DoesNotContain(polls.Concat(after), batch => batch.RotationGap || batch.Malformed > 0);
+    }
+
+    [Fact]
+    public void Reader_SkipsLineSplitAtTheVeryEndOfRotatedFile()
+    {
+        // The cursor is already at the last entry of .1, a partial chunk, and the new file
+        // starts with nothing but the line's terminating chunk.
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { StartAtEnd = false };
+        DockerFixture.Append(container, "a line long enough to fingerprint the file\n", "partial chunk at the very end ");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "\n", "first whole line in the new file\n");
+
+        DockerLogBatch rotated = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch current = DockerJsonLogReader.Read(container, rotated.Cursor, options);
+
+        Assert.Empty(rotated.Records);
+        Assert.Equal((0L, true, false), (rotated.Cursor.Offset, rotated.Cursor.Discarding, rotated.RotationGap));
+        Assert.Equal("first whole line in the new file", Assert.Single(current.Records).Text);
+        Assert.Equal((1, false), (current.Oversized, current.RotationGap));
+    }
+
+    [Fact]
+    public void Reader_SkipsLineSplitAcrossRotationInSeveralChunks()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { StartAtEnd = false };
+        DockerFixture.Append(container, "before rotation\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.Append(container, "kept before the split\n", "chunk one ", "chunk two ", "chunk three ");
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "chunk four ", "chunk five ", "last chunk\n", "kept after the split\n");
+
+        DockerLogBatch rotated = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch current = DockerJsonLogReader.Read(container, rotated.Cursor, options);
+
+        Assert.Equal("kept before the split", Assert.Single(rotated.Records).Text);
+        Assert.True(rotated.Cursor.Discarding);
+        Assert.Equal("kept after the split", Assert.Single(current.Records).Text);
+        Assert.Equal(1, current.Oversized);
+        Assert.False(rotated.RotationGap || current.RotationGap);
+    }
+
+    [Fact]
+    public void Reader_ResumesSkippingASplitLineFromAPersistedCursor()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { StartAtEnd = false };
+        DockerFixture.Append(container, "before rotation, long enough to fingerprint\n", "chunk one ");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "chunk two of the split line, written after the rotation ");
+
+        DockerLogBatch rotated = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch discarding = DockerJsonLogReader.Read(container, rotated.Cursor, options);
+        // A restart: the cursor comes back from the store mid-discard.
+        DockerLogCursor restored = DockerLogCursor.Deserialize(discarding.Cursor.Serialize())!;
+        DockerFixture.Append(container, "last chunk\n", "kept after the restart\n");
+        DockerLogBatch resumed = DockerJsonLogReader.Read(container, restored, options);
+
+        Assert.Empty(rotated.Records);
+        Assert.Empty(discarding.Records);
+        Assert.True(discarding.Cursor.Discarding);
+        Assert.True(discarding.Cursor.Offset > 0);
+        Assert.Equal(discarding.Cursor, restored);
+        Assert.Equal("kept after the restart", Assert.Single(resumed.Records).Text);
+        Assert.Equal((0, 0, 1), (rotated.Oversized, discarding.Oversized, resumed.Oversized));
+        Assert.False(resumed.Cursor.Discarding);
+        Assert.False(rotated.RotationGap || discarding.RotationGap || resumed.RotationGap);
+    }
+
+    [Fact]
+    public void Reader_WaitsOnSplitLineUntilTheNewFileCanBeIdentified()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { StartAtEnd = false };
+        DockerFixture.Append(container, "before rotation, long enough to fingerprint\n", "chunk one ");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+
+        // Not rotated: the line is still being written, so the reader waits on it.
+        DockerLogBatch unrotated = DockerJsonLogReader.Read(container, start, options);
+        File.Move(container.LogPath, container.LogPath + ".1");
+        // Rotated, but no new file yet, then one too short to identify.
+        DockerLogBatch missing = DockerJsonLogReader.Read(container, start, options);
+        DockerFixture.AppendRaw(container, "{\"log\":\"x\\n\"}\n");
+        DockerLogBatch tooShort = DockerJsonLogReader.Read(container, start, options);
+        DockerFixture.Append(container, "the new file, now long enough to identify\n");
+        DockerLogBatch rotated = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch current = DockerJsonLogReader.Read(container, rotated.Cursor, options);
+
+        foreach (DockerLogBatch waiting in new[] { unrotated, missing, tooShort })
+        {
+            Assert.Empty(waiting.Records);
+            Assert.Equal(start, waiting.Cursor);
+            Assert.False(waiting.RotationGap);
+        }
+
+        Assert.True(rotated.Cursor.Discarding);
+        // The new file's first line ends the split line, so it is the one skipped.
+        Assert.Equal("the new file, now long enough to identify", Assert.Single(current.Records).Text);
+        Assert.Equal((1, false), (current.Oversized, current.RotationGap));
+    }
+
+    [Fact]
+    public void Reader_CountsTornEntryAtTheEndOfRotatedFileAndReadsTheNewFile()
+    {
+        using TemporaryDirectory root = new();
+        DockerContainer container = DockerFixture.Catalogued(root);
+        DockerLogReaderOptions options = new() { StartAtEnd = false };
+        DockerFixture.Append(container, "before rotation, long enough to fingerprint\n");
+        DockerLogCursor start = DockerJsonLogReader.Read(container, null, options).Cursor;
+        DockerFixture.AppendRaw(container, "{\"log\":\"torn en");
+        File.Move(container.LogPath, container.LogPath + ".1");
+        DockerFixture.Append(container, "first line of the new file\n");
+
+        DockerLogBatch rotated = DockerJsonLogReader.Read(container, start, options);
+        DockerLogBatch current = DockerJsonLogReader.Read(container, rotated.Cursor, options);
+
+        Assert.Equal((1, false, 0L), (rotated.Malformed, rotated.Cursor.Discarding, rotated.Cursor.Offset));
+        Assert.Equal("first line of the new file", Assert.Single(current.Records).Text);
+        Assert.False(rotated.RotationGap || current.RotationGap);
+    }
+
+    private static List<DockerLogBatch> Poll(DockerContainer container, DockerLogCursor cursor, DockerLogReaderOptions options, int count)
+    {
+        List<DockerLogBatch> batches = [];
+        for (int poll = 0; poll < count; poll++)
+        {
+            batches.Add(DockerJsonLogReader.Read(container, batches.Count == 0 ? cursor : batches[^1].Cursor, options));
+        }
+
+        return batches;
+    }
+
+    [Fact]
     public void Reader_ClearsDiscardAfterTruncation()
     {
         using TemporaryDirectory root = new();

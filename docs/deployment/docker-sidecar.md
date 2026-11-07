@@ -98,6 +98,15 @@ docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build
 - **Rotation.** Files are identified by their first bytes, so Docker's
   `max-size`/`max-file` rotation is detected; the rotated file is drained before the
   new one. If a log rotates more than once between passes, the gap is logged.
+- **A line split by rotation.** Docker writes a line over 16 KiB as several chunks and
+  can rotate between two of them. Docker never writes to `.1` again, so once `.1` is
+  read to its end and only that unfinished line is left, the sidecar moves to the new
+  file, skips the rest of the line there (up to its final chunk) and counts it once as
+  oversized; the lines after it are read normally. That one line is lost, counted, with
+  no gap. Earlier releases waited on `.1` until the new file was itself rotated away,
+  which lost that whole file. A torn entry at the end of `.1` (no newline, possible only
+  after a crash or a full disk) is counted as malformed and the sidecar moves on the
+  same way.
 - **Bounds.** Lines over 64 KiB are counted and skipped; each pass reads at most
   1,000 lines or 4 MiB per container. Docker's 16 KiB partial chunks are reassembled.
   A line that is over 64 KiB, or whose chunks fill a whole pass's byte budget without
@@ -115,7 +124,8 @@ field is additive and omitted when false, so cursors written before it existed r
 unchanged and normal cursors serialise byte-for-byte as before. It holds no line
 content. Truncation or a missed rotation clears it; a rotation the sidecar drains
 carries it into the new file, so the rest of a line split by rotation is still
-skipped. Downgrading is not recommended while a line is being skipped: an older
+skipped. Leaving a `.1` that ends with an unfinished line sets it too, so a restart
+during that skip resumes it. Downgrading is not recommended while a line is being skipped: an older
 sidecar ignores the field and reads the rest of that line as if it were a new line.
 
 ## Security model
