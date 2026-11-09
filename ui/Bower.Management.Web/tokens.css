@@ -63,8 +63,9 @@
   --color-ink-muted: oklch(66% 0.018 245);
   --color-rule: oklch(35.5% 0.032 250);
   --color-rule-strong: oklch(47% 0.035 248);
-  --color-accent: oklch(56% 0.116 238);
-  --color-accent-hover: oklch(62% 0.112 235);
+  /* 68% keeps links and accent text at 4.5:1 or more on every dark surface (#106). */
+  --color-accent: oklch(68% 0.116 238);
+  --color-accent-hover: oklch(74% 0.108 235);
   --color-accent-soft: oklch(27% 0.058 248);
   --color-accent-ink: oklch(17% 0.028 252);
   --color-focus: oklch(94% 0.028 220);

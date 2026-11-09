@@ -41,7 +41,7 @@ describe("guided primitives", () => {
     expect(items).toHaveLength(2);
     const current = within(nav).getByRole("button", { name: /Step 2: Choose where events go/ });
     expect(current.getAttribute("aria-current")).toBe("step");
-    const done = within(nav).getByRole("button", { name: "Step 1: Sign in, Done" });
+    const done = within(nav).getByRole("button", { name: "Step 1: Sign in Done" });
     expect(done.getAttribute("aria-current")).toBeNull();
     expect(done.tagName).toBe("BUTTON");
     fireEvent.click(done);

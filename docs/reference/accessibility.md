@@ -13,9 +13,24 @@ appearance control to select light mode. Your choice is remembered across pages.
 - The five event-stage buttons work with Enter or Space. The selected explanation is announced politely by assistive technology.
 - Use the skip link to move past repeated navigation.
 
+## Management console
+
+The console follows your system light or dark preference, and the **Dark mode** /
+**Light mode** control in the side rail overrides it; the choice is remembered. Pages
+reflow to a single column at narrow widths, and tables become stacked cards, so nothing
+scrolls sideways at 320 px.
+
+Every console route is checked automatically in light and dark mode, on desktop and a
+mobile viewport, with axe-core against the WCAG 2.0, 2.1 and 2.2 A and AA rules; the
+build fails on any serious or critical finding. The same checks run at 320 px, and a
+keyboard-only test tabs into the setup wizard, checks every control shows a focus
+indicator and operates the first step with Enter. Setup and source steps are named from
+their visible text (for example "Step 1: Sign in Done"), so voice control can select
+what you can see.
+
 ## Checks and limits
 
-The site build checks internal links and anchors. Browser checks cover keyboard
+The documentation site build checks internal links and anchors. Browser checks cover keyboard
 interaction, reduced motion, local search and narrow layouts. Automated axe checks
 help find accessibility defects; they do not establish WCAG conformance by themselves.
 A full manual assistive-technology and non-technical-user evaluation remains to be
