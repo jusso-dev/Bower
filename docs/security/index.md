@@ -16,7 +16,8 @@ Read the [threat model](threat-model.md) for the data flows and assumptions, the
 and [producer scopes](producer-scopes.md) for intake permissions.
 
 The [ISM alignment](ism-alignment.md) document maps controls and evidence. It is not
-certification or a statement that a particular deployment is compliant.
+certification or a statement that a particular deployment is compliant. Cited ASVS and
+ISM IDs come only from the [verified lists](verified-standards.md).
 
 ## Privacy controls
 
