@@ -1,0 +1,308 @@
+{
+  "standard": "OWASP Application Security Verification Standard",
+  "version": "5.0.0",
+  "source": {
+    "repository": "https://github.com/OWASP/ASVS",
+    "tag": "v5.0.0_release",
+    "commit": "5cf9b032440be53ce345ab3c130fda46ba1ce7a2",
+    "asset": "https://github.com/OWASP/ASVS/releases/download/v5.0.0_release/OWASP_Application_Security_Verification_Standard_5.0.0_en.flat.json",
+    "assetSha256": "8201b20eec2908c3380ac600c91c8ba746346fbb808859366abb232027532311",
+    "chapter": "https://github.com/OWASP/ASVS/blob/5cf9b032440be53ce345ab3c130fda46ba1ce7a2/5.0/en/0x25-V16-Security-Logging-and-Error-Handling.md"
+  },
+  "requirements": [
+    {
+      "id": "V16.1.1",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.1 Security Logging Documentation",
+      "text": "Verify that an inventory exists documenting the logging performed at each layer of the application's technology stack, what events are being logged, log formats, where that logging is stored, how it is used, how access to it is controlled, and for how long logs are kept."
+    },
+    {
+      "id": "V16.2.1",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.2 General Logging",
+      "text": "Verify that each log entry includes necessary metadata (such as when, where, who, what) that would allow for a detailed investigation of the timeline when an event happens."
+    },
+    {
+      "id": "V16.2.2",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.2 General Logging",
+      "text": "Verify that time sources for all logging components are synchronized, and that timestamps in security event metadata use UTC or include an explicit time zone offset. UTC is recommended to ensure consistency across distributed systems and to prevent confusion during daylight saving time transitions."
+    },
+    {
+      "id": "V16.2.3",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.2 General Logging",
+      "text": "Verify that the application only stores or broadcasts logs to the files and services that are documented in the log inventory."
+    },
+    {
+      "id": "V16.2.4",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.2 General Logging",
+      "text": "Verify that logs can be read and correlated by the log processor that is in use, preferably by using a common logging format."
+    },
+    {
+      "id": "V16.2.5",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.2 General Logging",
+      "text": "Verify that when logging sensitive data, the application enforces logging based on the data's protection level. For example, it may not be allowed to log certain data, such as credentials or payment details. Other data, such as session tokens, may only be logged by being hashed or masked, either in full or partially."
+    },
+    {
+      "id": "V16.3.1",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.3 Security Events",
+      "text": "Verify that all authentication operations are logged, including successful and unsuccessful attempts. Additional metadata, such as the type of authentication or factors used, should also be collected."
+    },
+    {
+      "id": "V16.3.2",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.3 Security Events",
+      "text": "Verify that failed authorization attempts are logged. For L3, this must include logging all authorization decisions, including logging when sensitive data is accessed (without logging the sensitive data itself)."
+    },
+    {
+      "id": "V16.3.3",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.3 Security Events",
+      "text": "Verify that the application logs the security events that are defined in the documentation and also logs attempts to bypass the security controls, such as input validation, business logic, and anti-automation."
+    },
+    {
+      "id": "V16.3.4",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.3 Security Events",
+      "text": "Verify that the application logs unexpected errors and security control failures such as backend TLS failures."
+    },
+    {
+      "id": "V16.4.1",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.4 Log Protection",
+      "text": "Verify that all logging components appropriately encode data to prevent log injection."
+    },
+    {
+      "id": "V16.4.2",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.4 Log Protection",
+      "text": "Verify that logs are protected from unauthorized access and cannot be modified."
+    },
+    {
+      "id": "V16.4.3",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.4 Log Protection",
+      "text": "Verify that logs are securely transmitted to a logically separate system for analysis, detection, alerting, and escalation. The aim is to ensure that if the application is breached, the logs are not compromised."
+    },
+    {
+      "id": "V16.5.1",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.5 Error Handling",
+      "text": "Verify that a generic message is returned to the consumer when an unexpected or security-sensitive error occurs, ensuring no exposure of sensitive internal system data such as stack traces, queries, secret keys, and tokens."
+    },
+    {
+      "id": "V16.5.2",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.5 Error Handling",
+      "text": "Verify that the application continues to operate securely when external resource access fails, for example, by using patterns such as circuit breakers or graceful degradation."
+    },
+    {
+      "id": "V16.5.3",
+      "level": 2,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.5 Error Handling",
+      "text": "Verify that the application fails gracefully and securely, including when an exception occurs, preventing fail-open conditions such as processing a transaction despite errors resulting from validation logic."
+    },
+    {
+      "id": "V16.5.4",
+      "level": 3,
+      "chapter": "V16 Security Logging and Error Handling",
+      "section": "V16.5 Error Handling",
+      "text": "Verify that a \"last resort\" error handler is defined which will catch all unhandled exceptions. This is both to avoid losing error details that must go to log files and to ensure that an error does not take down the entire application process, leading to a loss of availability."
+    },
+    {
+      "id": "V2.4.1",
+      "level": 2,
+      "chapter": "V2 Validation and Business Logic",
+      "section": "V2.4 Anti-automation",
+      "text": "Verify that anti-automation controls are in place to protect against excessive calls to application functions that could lead to data exfiltration, garbage-data creation, quota exhaustion, rate-limit breaches, denial-of-service, or overuse of costly resources."
+    },
+    {
+      "id": "V4.1.3",
+      "level": 2,
+      "chapter": "V4 API and Web Service",
+      "section": "V4.1 Generic Web Service Security",
+      "text": "Verify that any HTTP header field used by the application and set by an intermediary layer, such as a load balancer, a web proxy, or a backend-for-frontend service, cannot be overridden by the end-user. Example headers might include X-Real-IP, X-Forwarded-*, or X-User-ID."
+    },
+    {
+      "id": "V6.1.1",
+      "level": 1,
+      "chapter": "V6 Authentication",
+      "section": "V6.1 Authentication Documentation",
+      "text": "Verify that application documentation defines how controls such as rate limiting, anti-automation, and adaptive response, are used to defend against attacks such as credential stuffing and password brute force. The documentation must make clear how these controls are configured and prevent malicious account lockout."
+    },
+    {
+      "id": "V6.3.1",
+      "level": 1,
+      "chapter": "V6 Authentication",
+      "section": "V6.3 General Authentication Security",
+      "text": "Verify that controls to prevent attacks such as credential stuffing and password brute force are implemented according to the application's security documentation."
+    },
+    {
+      "id": "V6.3.5",
+      "level": 3,
+      "chapter": "V6 Authentication",
+      "section": "V6.3 General Authentication Security",
+      "text": "Verify that users are notified of suspicious authentication attempts (successful or unsuccessful). This may include authentication attempts from an unusual location or client, partially successful authentication (only one of multiple factors), an authentication attempt after a long period of inactivity or a successful authentication after several unsuccessful attempts."
+    },
+    {
+      "id": "V6.3.7",
+      "level": 3,
+      "chapter": "V6 Authentication",
+      "section": "V6.3 General Authentication Security",
+      "text": "Verify that users are notified after updates to authentication details, such as credential resets or modification of the username or email address."
+    },
+    {
+      "id": "V6.4.3",
+      "level": 2,
+      "chapter": "V6 Authentication",
+      "section": "V6.4 Authentication Factor Lifecycle and Recovery",
+      "text": "Verify that a secure process for resetting a forgotten password is implemented, that does not bypass any enabled multi-factor authentication mechanisms."
+    },
+    {
+      "id": "V6.4.6",
+      "level": 3,
+      "chapter": "V6 Authentication",
+      "section": "V6.4 Authentication Factor Lifecycle and Recovery",
+      "text": "Verify that administrative users can initiate the password reset process for the user, but that this does not allow them to change or choose the user's password. This prevents a situation where they know the user's password."
+    },
+    {
+      "id": "V6.5.6",
+      "level": 3,
+      "chapter": "V6 Authentication",
+      "section": "V6.5 General Multi-factor authentication requirements",
+      "text": "Verify that any authentication factor (including physical devices) can be revoked in case of theft or other loss."
+    },
+    {
+      "id": "V6.6.3",
+      "level": 2,
+      "chapter": "V6 Authentication",
+      "section": "V6.6 Out-of-Band authentication mechanisms",
+      "text": "Verify that a code based out-of-band authentication mechanism is protected against brute force attacks by using rate limiting. Consider also using a code with at least 64 bits of entropy."
+    },
+    {
+      "id": "V6.6.4",
+      "level": 3,
+      "chapter": "V6 Authentication",
+      "section": "V6.6 Out-of-Band authentication mechanisms",
+      "text": "Verify that, where push notifications are used for multi-factor authentication, rate limiting is used to prevent push bombing attacks. Number matching may also mitigate this risk."
+    },
+    {
+      "id": "V7.2.4",
+      "level": 1,
+      "chapter": "V7 Session Management",
+      "section": "V7.2 Fundamental Session Management Security",
+      "text": "Verify that the application generates a new session token on user authentication, including re-authentication, and terminates the current session token."
+    },
+    {
+      "id": "V7.4.1",
+      "level": 1,
+      "chapter": "V7 Session Management",
+      "section": "V7.4 Session Termination",
+      "text": "Verify that when session termination is triggered (such as logout or expiration), the application disallows any further use of the session. For reference tokens or stateful sessions, this means invalidating the session data at the application backend. Applications using self-contained tokens will need a solution such as maintaining a list of terminated tokens, disallowing tokens produced before a per-user date and time or rotating a per-user signing key."
+    },
+    {
+      "id": "V7.4.2",
+      "level": 1,
+      "chapter": "V7 Session Management",
+      "section": "V7.4 Session Termination",
+      "text": "Verify that the application terminates all active sessions when a user account is disabled or deleted (such as an employee leaving the company)."
+    },
+    {
+      "id": "V7.4.3",
+      "level": 2,
+      "chapter": "V7 Session Management",
+      "section": "V7.4 Session Termination",
+      "text": "Verify that the application gives the option to terminate all other active sessions after a successful change or removal of any authentication factor (including password change via reset or recovery and, if present, an MFA settings update)."
+    },
+    {
+      "id": "V7.4.5",
+      "level": 2,
+      "chapter": "V7 Session Management",
+      "section": "V7.4 Session Termination",
+      "text": "Verify that application administrators are able to terminate active sessions for an individual user or for all users."
+    },
+    {
+      "id": "V7.5.1",
+      "level": 2,
+      "chapter": "V7 Session Management",
+      "section": "V7.5 Defenses Against Session Abuse",
+      "text": "Verify that the application requires full re-authentication before allowing modifications to sensitive account attributes which may affect authentication such as email address, phone number, MFA configuration, or other information used in account recovery."
+    },
+    {
+      "id": "V8.2.1",
+      "level": 1,
+      "chapter": "V8 Authorization",
+      "section": "V8.2 General Authorization Design",
+      "text": "Verify that the application ensures that function-level access is restricted to consumers with explicit permissions."
+    },
+    {
+      "id": "V8.2.2",
+      "level": 1,
+      "chapter": "V8 Authorization",
+      "section": "V8.2 General Authorization Design",
+      "text": "Verify that the application ensures that data-specific access is restricted to consumers with explicit permissions to specific data items to mitigate insecure direct object reference (IDOR) and broken object level authorization (BOLA)."
+    },
+    {
+      "id": "V8.2.3",
+      "level": 2,
+      "chapter": "V8 Authorization",
+      "section": "V8.2 General Authorization Design",
+      "text": "Verify that the application ensures that field-level access is restricted to consumers with explicit permissions to specific fields to mitigate broken object property level authorization (BOPLA)."
+    },
+    {
+      "id": "V8.3.2",
+      "level": 3,
+      "chapter": "V8 Authorization",
+      "section": "V8.3 Operation Level Authorization",
+      "text": "Verify that changes to values on which authorization decisions are made are applied immediately. Where changes cannot be applied immediately, (such as when relying on data in self-contained tokens), there must be mitigating controls to alert when a consumer performs an action when they are no longer authorized to do so and revert the change. Note that this alternative would not mitigate information leakage."
+    },
+    {
+      "id": "V13.4.5",
+      "level": 2,
+      "chapter": "V13 Configuration",
+      "section": "V13.4 Unintended Information Leakage",
+      "text": "Verify that documentation (such as for internal APIs) and monitoring endpoints are not exposed unless explicitly intended."
+    },
+    {
+      "id": "V14.1.2",
+      "level": 2,
+      "chapter": "V14 Data Protection",
+      "section": "V14.1 Data Protection Documentation",
+      "text": "Verify that all sensitive data protection levels have a documented set of protection requirements. This must include (but not be limited to) requirements related to general encryption, integrity verification, retention, how the data is to be logged, access controls around sensitive data in logs, database-level encryption, privacy and privacy-enhancing technologies to be used, and other confidentiality requirements."
+    },
+    {
+      "id": "V14.2.4",
+      "level": 2,
+      "chapter": "V14 Data Protection",
+      "section": "V14.2 General Data Protection",
+      "text": "Verify that controls around sensitive data related to encryption, integrity verification, retention, how the data is to be logged, access controls around sensitive data in logs, privacy and privacy-enhancing technologies, are implemented as defined in the documentation for the specific data's protection level."
+    },
+    {
+      "id": "V15.3.4",
+      "level": 2,
+      "chapter": "V15 Secure Coding and Architecture",
+      "section": "V15.3 Defensive Coding",
+      "text": "Verify that all proxying and middleware components transfer the user's original IP address correctly using trusted data fields that cannot be manipulated by the end user, and the application and web server use this correct value for logging and security decisions such as rate limiting, taking into account that even the original IP address may not be reliable due to dynamic IPs, VPNs, or corporate firewalls."
+    }
+  ]
+}

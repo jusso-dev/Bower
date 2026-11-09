@@ -7,6 +7,9 @@ table shows which Bower capability supports each control and what the organisati
 still owns. Evidence bundles record the subset Bower can observe directly; see
 [evidence bundles](../operations/evidence-bundles.md).
 
+Every control below was re-checked against the September 2026 OSCAL catalogue
+(`v2026.09.4`) on 09-11-2026; see [verified ASVS and ISM IDs](verified-standards.md).
+
 | Control | Requirement (summary) | Bower support | Organisation responsibility |
 |---|---|---|---|
 | ISM-0580 | Security monitoring policy developed, implemented and maintained | Versioned, hashed policies and signed packs state which events are collected; `bower policy diff` shows the population effect of each change; evidence bundles observe central logging of a canary | Own and approve the policy; review at least annually |
