@@ -11,6 +11,7 @@ on:
       - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
+      - 'src/Bower.Cli/Commands/CliHelp.cs'
       - '.github/workflows/docs.yml'
   push:
     branches: [main]
@@ -23,6 +24,7 @@ on:
       - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
+      - 'src/Bower.Cli/Commands/CliHelp.cs'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -48,6 +50,7 @@ jobs:
       - name: Validate and build
         run: |
           .venv-docs/bin/python tools/docs/generate_glossary.py --check
+          .venv-docs/bin/python tools/docs/generate_cli_reference.py --check
           .venv-docs/bin/python -m unittest discover -s tools/docs/tests -p 'test_*.py'
           .venv-docs/bin/mkdocs build --strict
           .venv-docs/bin/python tools/docs/check_links.py site

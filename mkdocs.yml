@@ -148,6 +148,7 @@ nav:
           - Policy population review: operations/policy-population-2026-10-23.md
   - Reference:
       - reference/index.md
+      - bower CLI: reference/cli.md
       - Architecture: architecture/overview.md
       - Collector enrolment: architecture/collector-enrolment.md
       - Heartbeats: architecture/heartbeat-v2.md
