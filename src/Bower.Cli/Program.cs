@@ -45,6 +45,7 @@ static async Task<int> RunAsync(string[] args)
             ["archive", "verify", .. string[] rest] => await ArchiveCommands.VerifyAsync(rest),
             ["archive", "replay", .. string[] rest] => await ArchiveCommands.ReplayAsync(rest),
             ["sources", "check", .. string[] rest] => await SourceCommands.CheckAsync(rest),
+            ["wec", "subscription", "generate", .. string[] rest] => WecCommands.GenerateSubscription(rest),
             ["tap", .. string[] rest] => await TapAndTopCommands.TapAsync(rest),
             ["top", .. string[] rest] => await TapAndTopCommands.TopAsync(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),
@@ -298,6 +299,9 @@ static int WriteHelp()
           bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
                                [--event-type TYPE]... [--collector-id ID] [--dry-run]
           bower sources check --expectations FILE [--database FILE]
+          bower wec subscription generate --config FILE --subscription ID [--mode MinLatency|Normal|MinBandwidth|Custom]
+                [--max-items N --max-latency-seconds N] [--heartbeat-seconds N] [--read-existing] [--subscription-id NAME]
+                [--allowed-domain-computers SDDL] [--issuer-ca THUMBPRINT]... [--log-file CHANNEL] [--out FILE]   (C# CLI only)
           bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
                     [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)
           bower top [--collector URL] [--interval SECONDS] [--once] [--iterations N]
