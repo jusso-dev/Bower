@@ -199,6 +199,17 @@ button:disabled {
   display: none;
 }
 
+/* The rail is dark in both themes: its text uses rail colours, not body colours (#106). */
+.side-rail .brand small {
+  color: var(--color-rail-muted);
+}
+
+.side-rail .text-button {
+  color: var(--color-rail-active-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
 .side-rail nav {
   display: grid;
   gap: var(--space-1);
@@ -788,6 +799,13 @@ tbody tr:last-child td {
   transform: translateY(1px);
 }
 
+/* A standalone link on its own line: at least 24 px tall (WCAG 2.5.8). */
+.inline-action {
+  display: inline-flex;
+  min-height: 1.5rem;
+  align-items: center;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -1256,6 +1274,9 @@ tbody tr:last-child td {
   gap: var(--space-3);
   padding: var(--space-2) 0;
   border: 0;
+  /* Long ids and hashes wrap instead of making the stacked card scroll sideways at
+     320 px (WCAG 1.4.10 reflow). */
+  overflow-wrap: anywhere;
 }
 
 .responsive-table td::before {

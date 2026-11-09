@@ -487,6 +487,9 @@ jobs:
         working-directory: ui/Bower.Management.Web
         env:
           BOWER_E2E_CANARY: "1"
+      # WCAG 2.2 AA on every route, light and dark, 320 px and keyboard onboarding (#106).
+      - run: npx playwright test e2e/accessibility.spec.ts
+        working-directory: ui/Bower.Management.Web
       - if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
