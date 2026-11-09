@@ -1,8 +1,7 @@
 # Amazon S3 output
 
 `BOWER_OUTPUT=s3` writes queued Bower events to one Amazon S3 bucket as batched
-NDJSON objects. Both collectors (C# `Bower.Output.S3`, Rust `bower-output-s3`) produce
-the same object keys and bodies.
+NDJSON objects (`Bower.Output.S3`).
 
 It is an extra sink for events Bower has already selected and redacted, for example a
 security data lake or a long-term archive bucket. It is not a generic log forwarder and
@@ -26,8 +25,8 @@ and evidence bundles say so (see [Evidence](#evidence)).
     count, then each UTF-8 event id prefixed with its byte length (32-bit big-endian),
     then the SHA-256 of the **uncompressed** NDJSON body. The same batch always gets the
     same key; the same ids with any other content, or a different id split (`a\nb`,`c`
-    versus `a`,`b\nc`), get a different key. Gzip output differs between the C# and
-    Rust collectors, so only the uncompressed body is hashed.
+    versus `a`,`b\nc`), get a different key. Gzip bytes are not guaranteed stable across
+    compression library versions, so only the uncompressed body is hashed.
 - **Batching**: one delivery (up to 500 queued events) is split, in order, into objects
   under `BOWER_S3_MAX_OBJECT_BYTES` (uncompressed, newlines included) and
   `BOWER_S3_MAX_OBJECT_EVENTS`. An event that is not one JSON object on one line, or is
@@ -91,8 +90,8 @@ configuration hash reported to management.
 ### Credentials
 
 Only the AWS default credential chain is used: environment variables, web identity
-(EKS IRSA), the ECS task role or the EC2 instance profile. The Rust collector builds
-`aws-config` without SSO or `credential_process`; the C# collector has no SSO packages.
+(EKS IRSA), the ECS task role or the EC2 instance profile. The collector has no SSO
+packages.
 Bower has no setting for keys. `BOWER_S3_ACCESS_KEY_ID`, `BOWER_S3_SECRET_ACCESS_KEY`,
 `BOWER_S3_SESSION_TOKEN` and the same `BOWER_AWS_*` names stop start-up with a message
 that does not echo the value. Credentials are resolved on the first delivery, held by
@@ -187,7 +186,7 @@ per PUT in memory (standard retry mode); longer outages wait in the durable queu
 ## Evidence
 
 S3 delivery is not Sentinel delivery. A collector with `BOWER_OUTPUT=s3` reports
-`"output": "s3"` in `/v1/status`. `bower evidence` (C# and Rust) reads status first and
+`"output": "s3"` in `/v1/status`. `bower evidence` reads status first and
 refuses any `output` outside the Sentinel allowlist (`azure-logs-ingestion`, `ama-spool`,
 `relay`; a missing field or unreadable status proceeds to the Sentinel query). For such a
 collector it sends no canary or probe: the bundle is `failed` (or `simulated`
@@ -200,11 +199,10 @@ reconciling event ids, as the live qualification in
 
 - One bucket per collector; objects are written one at a time per delivery.
 - No S3 Express One Zone directory buckets, access points or Object Lambda.
-- Gzip bytes differ between the C# and Rust collectors; bodies and keys do not.
+- Gzip bytes are not guaranteed stable across compression library versions; bodies and
+  keys are.
 - Changing `BOWER_COLLECTOR_ID` starts a new key namespace; events already written stay
   under the old one.
-- The Rust worker has no delivery deadline token, so it never produces
-  `destination-s3-cancelled`; on shutdown unsettled events return after the lease.
 - Every object is one `PutObject`. Adding multipart upload later would conflict with the
   `s3:if-none-match` IAM condition: `CreateMultipartUpload` and `UploadPart` carry no
   `If-None-Match`, so the policy would deny them; only `CompleteMultipartUpload` can.

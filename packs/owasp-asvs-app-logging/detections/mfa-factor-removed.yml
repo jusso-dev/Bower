@@ -1,0 +1,21 @@
+title: MFA factor removed or revoked
+id: bower-pack-asvs-mfa-factor-removed-001
+status: stable
+description: >-
+  An authentication factor was removed or revoked (ASVS 5.0 V6.5.6, V7.5.1). Removal after
+  an unusual sign-in is a common account takeover step.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: identity-management
+detection:
+  selection:
+    EventType: mfa_factor_removed
+    EventResult: Success
+  condition: selection
+tags:
+  - attack.t1556.006
+  - attack.persistence
+falsepositives:
+  - User replacing a lost device through the help desk

@@ -556,8 +556,6 @@ public sealed class S3OutputTests
             Prefix = "security/bower",
             ServerSideEncryption = S3OutputOptions.SseKms
         }, settings.S3Output);
-
-        // rust/crates/bower-collector/tests/s3_output.rs pins the same hash.
         Assert.Equal("sha256:a9429d32a9a415445bb25f4290db2a46c94e1667fb3f089fdc7c88429dd54b45", settings.ConfigurationHash());
 
         // AWS default-chain variables never reach Bower settings or the configuration hash.
@@ -595,8 +593,8 @@ public sealed class S3OutputTests
     /// <summary>
     /// Live qualification only (skipped unless BOWER_S3_LIVE_BUCKET is set): delivers one
     /// fixed batch twice through the default credential chain, then the same ids with other
-    /// content. The Rust test <c>live_same_batch_writes_one_object</c> sends the same batches,
-    /// so both runtimes and every retry land on one key per content (later PUTs get 412 and
+    /// content.
+    /// Every retry lands on one key per content (later PUTs get 412 and
     /// count as delivered) and changed content always gets its own key.
     /// </summary>
     [Fact]

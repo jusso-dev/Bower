@@ -44,7 +44,7 @@ public sealed record ParserProbeFixture(
 
     public string Path => $"/v1/packs/{PackId}/parsers/{ParserIndex.ToString(CultureInfo.InvariantCulture)}/events";
 
-    /// <summary>The raw record JSON for <paramref name="eventId"/>; keep byte-identical with the Rust port.</summary>
+    /// <summary>The raw record JSON for <paramref name="eventId"/>; keep it byte-stable (evidence pins it).</summary>
     public string Render(string eventId, DateTimeOffset sentAt) =>
         Build(eventId, sentAt).ToJsonString();
 

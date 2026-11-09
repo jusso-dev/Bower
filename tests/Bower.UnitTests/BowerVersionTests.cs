@@ -44,7 +44,7 @@ public sealed partial class BowerVersionTests
             Assert.Equal(
                 BowerVersion.Current,
                 assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()!.InformationalVersion);
-            // Pinned: YAML error text (and the Rust parity vectors) carry the assembly identity.
+            // Pinned: YAML error text carry the assembly identity.
             Assert.Equal(new Version(1, 0, 0, 0), assembly.GetName().Version);
             Assert.StartsWith(core + ".", assembly.GetCustomAttribute<AssemblyFileVersionAttribute>()!.Version, StringComparison.Ordinal);
         }
@@ -72,14 +72,11 @@ public sealed partial class BowerVersionTests
     }
 
     [Fact]
-    public void VersionFile_MatchesTheRustWorkspaceVersion()
+    public void VersionFile_FollowsTheReleaseScheme()
     {
-        string root = RepositoryRoot();
-        string core = File.ReadAllText(Path.Combine(root, "VERSION")).Trim();
-        string cargo = File.ReadAllText(Path.Combine(root, "rust", "Cargo.toml"));
+        string core = File.ReadAllText(Path.Combine(RepositoryRoot(), "VERSION")).Trim();
 
         Assert.Matches(Scheme(), core);
-        Assert.Contains($"[workspace.package]\nversion = \"{core}\"", cargo.ReplaceLineEndings("\n"), StringComparison.Ordinal);
     }
 
     private static string RepositoryRoot()

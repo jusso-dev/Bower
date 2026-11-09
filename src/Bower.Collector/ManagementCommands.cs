@@ -107,7 +107,7 @@ public sealed record ManagementCommandVerification(
 /// <summary>
 /// Verifies signed management commands. Order (first failure wins): shape, signature,
 /// collector binding, closed command set, validity window. Must match the management API's
-/// <c>ManagementCommandSigner</c> and the Rust collector byte for byte.
+/// <c>ManagementCommandSigner</c> byte for byte.
 /// </summary>
 public static class ManagementCommandVerifier
 {

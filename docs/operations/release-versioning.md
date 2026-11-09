@@ -37,8 +37,7 @@ it, and `0.2.1` is newer than a `0.2.0` rebuilt later.
 | .NET assemblies | `AssemblyInformationalVersion` (`BowerVersion.Current`) | `0.1.1-dev.362` |
 | | `AssemblyVersion` (pinned: error text and parity vectors carry it) | `1.0.0.0` |
 | | `FileVersion` (Windows file properties) | `0.1.1.362` |
-| Rust crates | `bower_contracts::version::CURRENT` (compile-time `BOWER_VERSION`); Cargo workspace version = `VERSION` | `0.1.1-dev.362` |
-| Collector (C# and Rust) | `/v1/status` `version`; management enrolment and heartbeat `version`; `collector.version` on every event, including `collector_health` | `0.1.1-dev.362` |
+| Collector | `/v1/status` `version`; management enrolment and heartbeat `version`; `collector.version` on every event, including `collector_health` | `0.1.1-dev.362` |
 | CLI and collector binaries | `bower --version`, `bower version`, `Bower.Collector --version`, `bower-collector --version` | `bower 0.1.1-dev.362` |
 | deb | `Version` (`~` sorts a pre-release before the release; release `1`) | `0.1.1~dev.362-1` |
 | rpm | `Version`, `Release` | `0.1.1~dev.362`, `1` |
@@ -85,21 +84,18 @@ python3 tools/ci/version.py --ref-type tag --ref-name v0.1.1 --build-number 400
 python3 tools/ci/version.py --ref-type tag --ref-name v0.2.0 --build-number 401
 # error: tag v0.2.0 does not match VERSION 0.1.1: tag v0.1.1 or v0.1.1-rc.N, or update VERSION first
 python3 tools/ci/version.py --build-number 402 --check-released   # after v0.1.1 is tagged, on main
-# error: v0.1.1 is already released: bump VERSION (and rust/Cargo.toml) before building more development builds, ...
+# error: v0.1.1 is already released: bump VERSION before building more development builds, ...
 ```
 
 - `publish` builds the .NET binaries with the MSBuild properties `BowerVersion` and
   `BowerBuildNumber`. `Directory.Build.props` reads `VERSION`, defaults to
   `<VERSION>-dev.0`, and fails the build if `BowerVersion` is not `<VERSION>`,
   `<VERSION>-dev.N` or `<VERSION>-rc.N`.
-- `rust` and the `bower-collector-rs` image compile with `BOWER_VERSION`; a malformed value
-  is a compile error. The `rust` job also sets `BOWER_EXPECTED_VERSION`, so the
-  `bower_contracts::version` test checks the stamped version.
 - `package-linux` and `package-windows` pass the version (and the build number for the MSI)
   to `deploy/installers/linux/build.sh` and `deploy/installers/windows/build.ps1`. They also
   build the **upgrade-test fixtures**: the same binaries packaged as `<VERSION>-dev.0`
   (artefacts `bower-upgrade-test-*`). They are never releases.
-- `docker` builds `bower-collector` and `bower-collector-rs` with
+- `docker` builds `bower-collector` with
   `--build-arg BOWER_VERSION=...` and checks `--version` and the image label.
 - `images.yml` (release tags and manual runs) publishes images with the release version, or
   `<VERSION>-dev.0` for a manual run of main; identify a manual image by its `sha-<commit>`
@@ -118,12 +114,10 @@ checklist in [07 soak and release validation](../production-readiness/07-soak-an
 complete for the candidate commit.
 
 1. Make sure `VERSION` on main holds the number you are releasing. If not, open a PR that
-   changes `VERSION` **and** `version` under `[workspace.package]` in `rust/Cargo.toml` (CI
-   fails if they differ), and merge it.
+   changes `VERSION` (the only version source) and merge it.
 
    ```bash
    cat VERSION                                       # 0.2.0
-   grep -A1 '^\[workspace.package\]' rust/Cargo.toml # version = "0.2.0"
    ```
 
 2. Optional: tag a release candidate on the candidate commit and let CI build it.
@@ -147,7 +141,7 @@ complete for the candidate commit.
 4. Record the exact version, build number, commit, package versions, MSI ProductVersion and
    hashes in the release record (07, check 0).
 5. **Immediately bump `VERSION` on main** to the next number (for example `0.2.1` or
-   `0.3.0`, with `rust/Cargo.toml`). Until you do, every non-tag CI run fails in the `version`
+   `0.3.0`). Until you do, every non-tag CI run fails in the `version`
    job with `v0.2.0 is already released`, because its `0.2.0-dev.N` builds would sort before
    the release.
 
@@ -203,7 +197,6 @@ docker run --rm ghcr.io/<owner>/bower-collector:0.2.0 --version              # b
 kubectl --context <context> -n <namespace> exec deploy/bower-collector -- /app/Bower.Collector --version
 ```
 
-The Rust image (`bower-collector-rs`) answers the same `--version` at `/app/bower-collector`.
 Pin images by release tag or digest in `deploy/kubernetes`, never by `edge`.
 
 ### On-premises and the destination
@@ -277,13 +270,11 @@ dpkg/rpm, `100` for apt, `1603` for msiexec), and the installed version, service
 | Symptom | Cause | Action |
 | --- | --- | --- |
 | Build fails: `BowerVersion must be 0.1.1, 0.1.1-dev.N or 0.1.1-rc.N` | `-p:BowerVersion` (or the `BowerVersion` environment variable) does not match `VERSION` | Use `tools/ci/version.py` output, or omit it for a local `-dev.0` build |
-| Rust build fails: `BOWER_VERSION must be the workspace version...` | `BOWER_VERSION` does not match `rust/Cargo.toml` | Unset it, or bump `VERSION` and the workspace version together |
 | CI `version` job fails: `tag vX does not match VERSION Y` | Tag pushed before `VERSION` was bumped | Delete the tag, bump `VERSION`, tag again |
-| `test_rust_workspace_version_matches_the_version_file` fails | `VERSION` and `rust/Cargo.toml` differ | Change both |
 | `bower-collector: refusing to downgrade from X to Y.` | Installing an older package | Use the newer package, or roll back on purpose (above) |
 | `bower-collector: refusing to install X: /usr/share/bower/version does not hold a Bower version` | The marker is corrupted or was edited by hand | Check what is installed (`dpkg -s bower-collector` or `rpm -q bower-collector`), back up the queue (`bower queue backup`), then rerun the install with `BOWER_ALLOW_DOWNGRADE=1` |
 | msiexec `1603`, log `A newer Bower Collector is already installed (X)` | Installing an older version, even one built later | Use the newer MSI, or roll back with `BOWERALLOWDOWNGRADE=1` |
-| CI `version` job fails: `vX is already released: bump VERSION` | A non-tag build after the release tag | Bump `VERSION` and `rust/Cargo.toml` |
+| CI `version` job fails: `vX is already released: bump VERSION` | A non-tag build after the release tag | Bump `VERSION` |
 | An older dev MSI upgrades over a newer one | Both are pre-scheme `0.1.0.N` MSIs | Install a build made with this scheme first |
 | The collector reports `0.1.0` | A build from before this scheme | Upgrade; check the package version instead |
 | Status reports `X-dev.0` on a host | A local build, a manual image, or the CI upgrade-test package was installed | Install a CI or release artefact |
@@ -318,7 +309,7 @@ No cloud resources were needed: the CI install jobs are the live proof, and they
 change to the installers, packaging or workflows.
 
 - `tools/ci/test_version.py`: version parsing and ordering, tag validation, MSI version
-  mapping, the `VERSION` / Cargo parity, and the rendered `preinstall.sh` guard with faked
+  mapping, and the rendered `preinstall.sh` guard with faked
   account commands (refusal, override, upgrade, same-version reinstall, unparseable versions).
 - `BowerVersionTests` (C#): the stamped version reaches every assembly, `CollectorSettings`
   (no environment variable overrides it), and equals `BOWER_EXPECTED_VERSION` in CI.
@@ -326,9 +317,6 @@ change to the installers, packaging or workflows.
   `/v1/status`, the heartbeat and `collector_health` (`collector.version`).
   `DurabilityAdversarialTests.Replay_AfterAnUpgradeIsADuplicateAlthoughCollectorVersionChanged`
   proves a replay across an upgrade or downgrade is a duplicate, not an identity conflict.
-- Rust: `bower_contracts::version` unit tests (scheme, `VERSION` file parity), CLI tests for
-  `version` and `--version`, and the CI step that rebuilds with `BOWER_VERSION` and checks
-  both binaries.
 - `install-linux` (`tests/installers/upgrade-linux.sh`) on Ubuntu (deb) and Rocky Linux 9
   (rpm) and `install-windows` (`tests/installers/windows.ps1`) on Windows Server: install
   `<VERSION>-dev.0`, upgrade, check every reported version, attempt each downgrade path,

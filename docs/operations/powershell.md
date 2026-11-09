@@ -10,7 +10,7 @@ servers do not already enforce. Windows PowerShell 5.1 is not supported.
 |---|---|---|
 | `Bower.Events` | Build, validate and send security events | `New-BowerSecurityEvent`, `Test-BowerSecurityEvent`, `Send-BowerSecurityEvent` |
 | `Bower.Management` | Operate the management API | `Connect-BowerManagement`, `Disconnect-BowerManagement`, `Get-BowerManagementConnection`, `Invoke-BowerManagementRequest`, `Get-BowerCollector`, `Approve-BowerCollector`, `Deny-BowerCollector`, `Suspend-BowerCollector`, `Resume-BowerCollector`, `Revoke-BowerCollector`, `Get-BowerAuditEvent`, `Get-BowerJob`, `Start-BowerJob`, `Invoke-BowerPrivacyProfilePreview`, `Submit-BowerPrivacyProfile`, `Get-BowerPrivacyProfileVersion`, `Approve-BowerPrivacyProfileVersion`, `Deny-BowerPrivacyProfileVersion`, `Set-BowerCollectorPrivacyProfile`, `Clear-BowerCollectorPrivacyProfile`, `Get-BowerPrivacyProfileAssignment` |
-| `Bower.Deployment` | Plan-first deployment wrappers | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsLambda`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
+| `Bower.Deployment` | Plan-first deployment wrappers | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
 | `Bower.Privacy` | Local privacy profile tooling | `Test-BowerPrivacyProfile`, `New-BowerCustomDetector`, `ConvertTo-BowerSecretFieldName` |
 | `Bower.Policy` | Local telemetry policy tooling | `New-BowerPolicy`, `Test-BowerPolicy`, `Test-BowerPolicyEvent` |
 | `Bower` | Meta-module: nests all five | all of the above |
@@ -37,7 +37,6 @@ Optional modules and tools, loaded only by the commands that need them:
 | Needed for | Requirement |
 |---|---|
 | Entra tokens without `-AccessToken` | `Az.Accounts` (`Connect-AzAccount` first) |
-| `Send-BowerSecurityEvent -Target Lambda` | `AWS.Tools.Common` (credentials for SigV4) |
 | `New-BowerEntraApplication -Apply` | `Microsoft.Graph.Applications` (`Connect-MgGraph -Scopes Application.ReadWrite.All`) |
 | Bicep deployments | Azure CLI `az` with Bicep |
 | CloudFormation deployments | AWS CLI v2 `aws` |
@@ -58,7 +57,6 @@ refused (no URL keys).
 |---|---|
 | Collector `/v1/events` | Producer token: `-Token` (SecureString) or `-TokenProvider`. Required for non-loopback collectors. |
 | Azure Function collector | Entra access token: `-AccessToken`, `-TokenProvider`, or `-Audience` (Az.Accounts `Get-AzAccessToken -ResourceUrl <Audience>`). |
-| Lambda Function URL (`AWS_IAM`) | SigV4 with AWS credentials from `AWS.Tools.Common`: `-AwsProfileName`, `Set-AWSCredential`, or the SDK default chain. |
 | Management API | `Connect-BowerManagement` with Az.Accounts (`-Audience api://<api-client-id>`), `-AccessToken`, or `-TokenProvider`. |
 
 `SecretManagement` works well as a token provider:
@@ -90,7 +88,6 @@ $event | Test-BowerSecurityEvent -Detailed
 $event | Send-BowerSecurityEvent                                   # loopback collector
 Get-Content ./events.jsonl | Send-BowerSecurityEvent -Uri https://collector.example.gov.au -Token $token
 $events | Send-BowerSecurityEvent -Target AzureFunction -Uri https://bower-fn.azurewebsites.net/api -Audience api://bower-function
-$events | Send-BowerSecurityEvent -Target Lambda -Uri https://abc123.lambda-url.ap-southeast-2.on.aws -AwsProfileName bower
 ```
 
 - Validation mirrors `schemas/envelope/security-event.schema.json` 1.0.0: required
@@ -226,8 +223,7 @@ output and remaining manual checks. External CLIs run with argument arrays (no s
 | `New-BowerEntraApplication` | Returns the API and SPA application bodies from `deploy/entra/*.json`; calls nothing | Creates both registrations and service principals through Microsoft Graph. No secrets or certificates. |
 | `Deploy-BowerSentinelResource` | `az deployment group what-if` on `deploy/bicep/main.bicep` | `az deployment group create` |
 | `Deploy-BowerAzureFunction` | `az deployment group what-if` on `deploy/azure-function/main.bicep` | `az deployment group create` |
-| `Deploy-BowerAwsLambda` | `aws cloudformation deploy --no-execute-changeset` on `deploy/aws/bower-aws-lambda.yaml` (CloudWatch Logs by default, or `-Destination cloudtrail-lake`) | `aws cloudformation deploy` |
-| `Deploy-BowerAwsSecurity` | same, for `bower-aws-security.yaml` or `bower-aws-global-forwarder.yaml` | `aws cloudformation deploy` |
+| `Deploy-BowerAwsSecurity` | `aws cloudformation deploy --no-execute-changeset` on `deploy/aws/bower-aws-security.yaml` or `bower-aws-global-forwarder.yaml` | `aws cloudformation deploy` |
 | `Deploy-BowerGcpSecurity` | `terraform init` + `terraform plan -out` in `deploy/gcp` (refuses to overwrite a plan) | `terraform apply <reviewed plan>` |
 
 ```powershell
@@ -237,17 +233,6 @@ Deploy-BowerSentinelResource -ResourceGroupName rg-sentinel -WorkspaceName law-s
 Deploy-BowerAzureFunction -ResourceGroupName rg-bower -Location australiaeast `
     -DcrResourceId <dcr-resource-id> -LogsIngestionEndpoint https://<dce>.australiaeast-1.ingest.monitor.azure.com `
     -EntraTenantId <tenant-id> -EntraAudience api://bower-function
-
-# CloudWatch Logs (the cmdlet default; always passed explicitly): an event log group kept on stack deletion
-Deploy-BowerAwsLambda -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip `
-    -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer -EventLogRetentionDays 365
-# CloudTrail Lake (accounts onboarded before 31 May 2026)
-Deploy-BowerAwsLambda -StackName bower-lambda-lake -Destination cloudtrail-lake -RetentionDays 365 `
-    -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-producer
-# One ingress per stack: a separate stack for direct Invoke, attributed to one producer
-Deploy-BowerAwsLambda -StackName bower-lambda-lake-invoke -Destination cloudtrail-lake -RetentionDays 365 `
-    -IngressMode invoke -InvokeProducer batch -ExistingChannelArn <ChannelArn output of the first stack> `
-    -CodeS3Bucket bower-artifacts -CodeS3Key lambda/bower-lambda.zip -AllowedInvokerPrincipalArns arn:aws:iam::123456789012:role/bower-batch
 
 Deploy-BowerGcpSecurity -VarFile ./prod.tfvars -PlanFile ./bower-gcp.tfplan
 Deploy-BowerGcpSecurity -PlanFile ./bower-gcp.tfplan -Apply

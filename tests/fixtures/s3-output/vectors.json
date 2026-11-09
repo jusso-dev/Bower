@@ -1,5 +1,5 @@
 {
-  "description": "S3 output vectors shared by src/Bower.Output.S3 and rust/crates/bower-output-s3. Keys are <prefix>/<collectorId>/yyyy/MM/dd/HH/<objectHash>.jsonl[.gz]; objectHash is SHA-256 over u32be(count), then u32be(utf8 length) + utf8 bytes per id, then SHA-256 of the uncompressed NDJSON body. Bodies are uncompressed; gzip changes only the extension and the uploaded bytes.",
+  "description": "S3 output vectors for src/Bower.Output.S3. Keys are <prefix>/<collectorId>/yyyy/MM/dd/HH/<objectHash>.jsonl[.gz]; objectHash is SHA-256 over u32be(count), then u32be(utf8 length) + utf8 bytes per id, then SHA-256 of the uncompressed NDJSON body. Bodies are uncompressed; gzip changes only the extension and the uploaded bytes.",
   "objectHash": [
     {
       "name": "newline-split-1",

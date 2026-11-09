@@ -7,7 +7,7 @@ using Bower.PolicyEngine;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// Pins the C# outcomes the Rust port (<c>rust/crates/bower-policy</c>) is tested against, so
+/// Pins loader and evaluator outcomes (<c>tests/fixtures/policy-vectors</c>), so
 /// the shared vectors cannot drift from the specification. Set
 /// <c>BOWER_POLICY_VECTOR_OUTPUT</c> to a directory to write the actual outcomes there when
 /// regenerating them after an intended behaviour change.

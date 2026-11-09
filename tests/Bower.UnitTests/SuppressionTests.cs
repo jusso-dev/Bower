@@ -229,7 +229,7 @@ public sealed class SuppressionTests
 
     [Theory]
     [InlineData("neverSample: false", "neverSample: true", "A neverSample policy cannot define suppression.")]
-    [InlineData("action: accept", "action: reject", "Suppression applies only to accept or redact-and-accept policies.")]
+    [InlineData("action: accept", "action: reject", "Suppression applies only to accept, redact-and-accept or aggregate policies.")]
     [InlineData("    - source.ipAddress\n  windowSeconds", "    - attributes.password\n  windowSeconds", "Policy suppression keyFields must list 1–5 distinct string field paths.")]
     [InlineData("    - source.ipAddress\n  windowSeconds", "    - actor.username\n  windowSeconds", "Policy suppression keyFields must list 1–5 distinct string field paths.")]
     [InlineData("windowSeconds: 60", "windowSeconds: 0", "Policy suppression windowSeconds must be between 1 and 86400.")]
@@ -243,6 +243,84 @@ public sealed class SuppressionTests
             () => PolicyLoader.LoadYaml(yaml, "suppressed.yaml"));
 
         Assert.Equal(message, failure.Message);
+    }
+
+    private static string AggregatePolicy =>
+        SuppressingPolicy
+            .Replace("BWR-POL-AUTH-SUPPRESSED", "BWR-POL-AUTH-AGGREGATED", StringComparison.Ordinal)
+            .Replace("action: accept", "action: aggregate", StringComparison.Ordinal)
+            .Replace("\n  allowPerWindow: 2", string.Empty, StringComparison.Ordinal);
+
+    [Fact]
+    public async Task Aggregate_CountsEveryMatchDurablyAndStoresNoIndividualEvent()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        Assert.DoesNotContain("allowPerWindow", AggregatePolicy, StringComparison.Ordinal);
+        IReadOnlyList<LoadedPolicy> policies = LoadPolicies(directory, AggregatePolicy, SummaryPolicy);
+        SqliteEventStore store = await CreateStoreAsync(directory, clock, cancellationToken);
+        SecurityEventProcessor processor = CreateProcessor(store, clock, policies, new PipelineTelemetry(clock));
+
+        List<ProcessingResult> results = [];
+        for (int index = 1; index <= 3; index++)
+        {
+            results.Add(await processor.ProcessAsync(Candidate(clock, index), Identity, cancellationToken));
+        }
+
+        // Counts survive a restart mid-window.
+        SqliteEventStore restarted = await CreateStoreAsync(directory, clock, cancellationToken);
+        processor = CreateProcessor(restarted, clock, policies, new PipelineTelemetry(clock));
+        results.Add(await processor.ProcessAsync(Candidate(clock, 4), Identity, cancellationToken));
+        // A suppressed event is never stored, so the duplicate check cannot see it: a producer
+        // retry of a counted event counts again (as with suppression beyond the allowance).
+        results.Add(await processor.ProcessAsync(Candidate(clock, 4), Identity, cancellationToken));
+
+        Assert.All(results, result => Assert.Equal(DecisionAction.Accept, result.Action));
+        Assert.All(results, result => Assert.False(result.Queued));
+        Assert.Equal([true, true, true, true, true], results.Select(item => item.Suppressed));
+        Assert.Contains(results[0].Reasons, reason => reason.StartsWith("Aggregate:", StringComparison.Ordinal));
+
+        clock.Advance(TimeSpan.FromMinutes(2));
+        Assert.Equal(1, await processor.CloseSuppressionWindowsAsync(Identity, cancellationToken));
+        Assert.Equal(0, await processor.CloseSuppressionWindowsAsync(Identity, cancellationToken));
+        QueuedEvent summary = Assert.Single(await restarted.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellationToken));
+        using JsonDocument document = JsonDocument.Parse(summary.Payload);
+        JsonElement attributes = document.RootElement.GetProperty("attributes");
+        Assert.Equal(SecurityEventTypes.TelemetryAggregationSummary, document.RootElement.GetProperty("eventType").GetString());
+        Assert.Equal(0, attributes.GetProperty("admittedCount").GetInt64());
+        Assert.Equal(0, attributes.GetProperty("allowPerWindow").GetInt64());
+        Assert.Equal(5, attributes.GetProperty("suppressedCount").GetInt64());
+        Assert.True((await restarted.VerifyLedgerAsync(cancellationToken)).Intact);
+    }
+
+    [Theory]
+    [InlineData("  windowSeconds: 60", "  windowSeconds: 60\n  allowPerWindow: 3", "An aggregate policy stores no individual events: omit allowPerWindow or set it to 0.")]
+    [InlineData("neverSample: false", "neverSample: true", "A neverSample policy cannot define suppression.")]
+    public void Loader_RejectsInvalidAggregate(string original, string replacement, string message)
+    {
+        string yaml = AggregatePolicy.Replace(original, replacement, StringComparison.Ordinal);
+        Assert.NotEqual(AggregatePolicy, yaml);
+
+        InvalidDataException failure = Assert.Throws<InvalidDataException>(() => PolicyLoader.LoadYaml(yaml, "aggregate.yaml"));
+
+        Assert.Equal(message, failure.Message);
+    }
+
+    [Fact]
+    public void Loader_RejectsAggregateWithoutKeysAndBundleRequiresTheSummaryPolicy()
+    {
+        string withoutSuppression = AggregatePolicy[..AggregatePolicy.IndexOf("suppression:", StringComparison.Ordinal)];
+        InvalidDataException noKeys = Assert.Throws<InvalidDataException>(() => PolicyLoader.LoadYaml(withoutSuppression, "aggregate.yaml"));
+        Assert.Equal("An aggregate policy needs a suppression section: its keyFields and windowSeconds define the counts.", noKeys.Message);
+
+        using TemporaryDirectory directory = new();
+        string policies = Path.Combine(directory.Path, "policies");
+        Directory.CreateDirectory(policies);
+        File.WriteAllText(Path.Combine(policies, "aggregate.yaml"), AggregatePolicy);
+        InvalidDataException noSummary = Assert.Throws<InvalidDataException>(
+            () => PolicyBundle.Load(new PolicyBundleSources { PolicyDirectory = policies }));
+        Assert.Equal("Policies define suppression but none accepts 'telemetry_aggregation_summary'.", noSummary.Message);
     }
 
     [Fact]

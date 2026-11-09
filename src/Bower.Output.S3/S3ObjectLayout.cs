@@ -11,7 +11,7 @@ namespace Bower.Output.S3;
 public sealed record S3PlannedObject(string Key, IReadOnlyList<string> EventIds, byte[] Body);
 
 /// <summary>
-/// Deterministic object layout, shared with the Rust port and pinned by
+/// Deterministic object layout, pinned by
 /// <c>tests/fixtures/s3-output/vectors.json</c>. Keys are
 /// <c>&lt;prefix&gt;/&lt;collectorId&gt;/yyyy/MM/dd/HH/&lt;object hash&gt;.jsonl[.gz]</c>, partitioned by
 /// the first event's queue receive time (UTC). Receive time is set once by the collector and

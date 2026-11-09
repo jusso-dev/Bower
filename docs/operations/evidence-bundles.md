@@ -63,7 +63,7 @@ a string `name`, a repeated column name, a row that is not an array, or a row wh
 count differs from the column count, or when a string cannot be decoded. Log Analytics
 always returns at least the `PrimaryResult` table, so a real zero-row answer (one table
 with columns and an empty `rows` array) is still a clean empty result. The body, its keys and any parser
-message are not recorded. The C# and Rust clients behave the same.
+message are not recorded.
 
 An invalid or incomplete answer (and, for parser probes, a timeout or transport
 failure) does not end polling: a later valid answer can still verify delivery. Two
@@ -158,7 +158,7 @@ event other than the probe. A probe row is a real `authentication_failure` row i
 table; filter `EventId startswith "bower-probe-"` out of analytics if needed. Probes run
 only when someone runs the command, or when an administrator chooses **Send test event**
 in the console's setup wizard (audited, one at a time; see
-[console onboarding](console-onboarding.md)): there is no automatic scheduling. The C# and Rust CLIs implement the same profiles, fixture bytes and outcomes.
+[console onboarding](console-onboarding.md)): there is no automatic scheduling.
 
 ## Modes
 

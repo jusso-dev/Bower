@@ -237,7 +237,7 @@ public sealed class StoragePressureTests
             () => processor.ProcessAsync(candidate, new CollectorIdentity("c", "1", "test", "sha256:x"), Cancellation));
         IntakeMetricsSnapshot intake = telemetry.IntakeSnapshot();
         StorageRefusalSnapshot storage = telemetry.StorageRefusalSnapshot();
-        // Intake keeps its Rust-shared shape and reason codes; storage detail is separate.
+        // Intake keeps its stable shape and reason codes; storage detail is separate.
         Assert.Equal((1, bytes), (intake.CapacityRefusals, intake.CapacityRefusedBytes));
         Assert.Equal(PipelineTelemetry.QueueCapacityReason, intake.LastRefusalReason);
         Assert.Equal((1, bytes), (storage.Refusals, storage.RefusedBytes));

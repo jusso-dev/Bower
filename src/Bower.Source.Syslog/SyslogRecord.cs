@@ -105,7 +105,7 @@ public static class SyslogRecord
         return "syslog-" + Convert.ToHexStringLower(hash.GetHashAndReset())[..32];
     }
 
-    /// <summary>UTC, microsecond precision (truncated), so both runtimes write identical text.</summary>
+    /// <summary>UTC, microsecond precision (truncated), so the text is stable.</summary>
     internal static string Format(DateTimeOffset value) =>
         value.UtcDateTime.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'ffffff'Z'", CultureInfo.InvariantCulture);
 }

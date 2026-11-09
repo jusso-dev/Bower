@@ -977,7 +977,7 @@ public sealed record CollectorSettings
 
     /// <summary>
     /// True when an App Service reference marker appears anywhere in the value. ASCII
-    /// case folding only, so no culture or Unicode mapping can differ from the Rust port.
+    /// case folding only, so no culture or Unicode mapping can change the result.
     /// </summary>
     private static bool ContainsSettingReference(string value)
     {

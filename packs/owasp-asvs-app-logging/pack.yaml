@@ -1,0 +1,37 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: owasp-asvs-app-logging
+  version: 1.0.0
+  name: OWASP ASVS 5.0 application security logging
+  description: >-
+    Starter pack for the security events OWASP ASVS 5.0 chapter V16 asks applications to
+    log: authentication success, MFA, factor and password lifecycle, account status,
+    sessions, authorisation failures, sensitive record access, privileged and
+    configuration changes, validation and anti-automation hits, errors and control
+    failures, and normalised database audit records. Composes with policies/default,
+    which keeps authentication_failure, account_lockout, role_membership_changed and
+    sensitive_data_exported; the pack never redefines those types. Ships a privacy
+    profile that pseudonymises usernames and session ids and neutralises CR and LF.
+  owner: Security Operations
+policies:
+  - policies/authentication-success.yaml
+  - policies/mfa.yaml
+  - policies/authentication-factor-lifecycle.yaml
+  - policies/account-status.yaml
+  - policies/session.yaml
+  - policies/authorisation-failure.yaml
+  - policies/sensitive-data.yaml
+  - policies/administrative.yaml
+  - policies/control-bypass.yaml
+  - policies/suppression-summary.yaml
+  - policies/errors-and-control-failures.yaml
+  - policies/database-audit.yaml
+privacyProfile: privacy.yaml
+detections:
+  - detections/mfa-factor-removed.yml
+  - detections/authorisation-stale-grant.yml
+  - detections/backend-tls-failure.yml
+samples:
+  - samples/asvs.jsonl
+dcr: true
