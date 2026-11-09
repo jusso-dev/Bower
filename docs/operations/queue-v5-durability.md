@@ -231,6 +231,29 @@ small shared-memory file and transient memory are additional overhead. All write
 must use the supported APIs and matching limits; raw administrative SQL is outside
 this enforcement boundary.
 
+## Unclean shutdown and temporary files
+
+Every queue connection runs with `PRAGMA synchronous = FULL` in WAL mode (C# and Rust), so a
+committed transaction, and therefore every 202, survives a process kill; the cost is one
+flush per commit, which is why intake throughput follows the disk's flush latency. A power
+cut is covered by SQLite's WAL recovery only to the extent the disk honours flushes; this is
+not power-loss certified (#136 tracks the lab test).
+
+The C# collector writes `collector.running` beside the queue at start and removes it when
+the host stops cleanly. If the file is still there at the next start, the previous run was
+killed, crashed or lost power: the collector verifies the queue ledger before serving, logs
+warning 1600 (error 1601 if the ledger is broken; run `bower queue verify`) and reports the
+result in `/v1/status` as `recovery` (`uncleanShutdown`, `previousStartedAt`,
+`ledgerIntact`, `ledgerIssues`, `temporaryFilesRemoved`, `checkedAt`). It never deletes or
+rewrites queue rows because of it.
+
+At start and hourly, the collector removes its own abandoned atomic-write temporaries
+(`.NAME.<32 hex>.tmp`, from the collector id, management credential, command ledger and
+privacy profile cache writers) older than one hour, from the queue directory and its
+`managed-privacy`, `management-credential` and `management-commands` directories only, not
+recursively, at most 1,000 per run. The AMA spool and the archive already clean their own
+temporaries when they open. No other file is touched.
+
 ## SQL Server timestamp cursor v3 and allocation bounds
 
 Timestamp cursor v3 keeps forward `(eventTime, sequence)` progress separate from a
