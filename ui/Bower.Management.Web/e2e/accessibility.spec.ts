@@ -55,9 +55,9 @@ for (const theme of ["light", "dark"] as const) {
   }
 }
 
-test("every route is usable at 320 px without horizontal scrolling", async ({ page }) => {
-  await page.setViewportSize({ width: 320, height: 720 });
-  for (const route of routes) {
+for (const route of routes) {
+  test(`${route} is usable at 320 px without horizontal scrolling`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 720 });
     await openRoute(page, route, "light");
     const overflow = await page.evaluate(() => {
       const width = document.documentElement.clientWidth;
@@ -69,8 +69,8 @@ test("every route is usable at 320 px without horizontal scrolling", async ({ pa
     });
     expect(overflow.by, `${route} scrolls sideways by ${overflow.by}px at 320 px: ${overflow.wide.join(", ")}`).toBeLessThanOrEqual(1);
     expect(await seriousViolations(page), route).toEqual([]);
-  }
-});
+  });
+}
 
 test("onboarding can be completed from the keyboard alone", async ({ page }) => {
   await openRoute(page, "/setup", "light");

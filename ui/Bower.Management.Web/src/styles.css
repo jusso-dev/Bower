@@ -1285,6 +1285,14 @@ tbody tr:last-child td {
   font-size: var(--text-xs);
 }
 
+/* Stacked cards only: nothing in a cell may refuse to wrap, or a nowrap label such as
+   "In sync · 4f2a9c1e" pushes the card sideways at 320 px (WCAG 1.4.10). */
+@media (max-width: 39.99rem) {
+  .responsive-table td * {
+    white-space: normal;
+  }
+}
+
 @media (min-width: 40rem) {
   .responsive-table table {
     display: table;

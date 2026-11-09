@@ -473,7 +473,10 @@ jobs:
           cd out/management
           # Setup canaries go to the loopback stub collector Playwright starts (simulated only).
           printf 'e2e-canary-token' > "$RUNNER_TEMP/canary.token"
+          # Development auth gives every browser test one principal, so the API's per-principal
+          # rate limit (600 a minute) would throttle the accessibility sweep; raised for CI only.
           ASPNETCORE_ENVIRONMENT=Development BOWER_AUTH_MODE=development \
+            BOWER_MANAGEMENT_RATE_PER_MINUTE=100000 \
             BOWER_MANAGEMENT_DB_PATH="$RUNNER_TEMP/management.db" \
             Bower__Setup__Canary__CollectorUrl=http://127.0.0.1:4399/ \
             Bower__Setup__Canary__IngestTokenFile="$RUNNER_TEMP/canary.token" \
