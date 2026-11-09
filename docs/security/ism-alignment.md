@@ -9,6 +9,8 @@ still owns. Evidence bundles record the subset Bower can observe directly; see
 
 Every control below was re-checked against the September 2026 OSCAL catalogue
 (`v2026.09.4`) on 09-11-2026; see [verified ASVS and ISM IDs](verified-standards.md).
+For application, software and database event logging controls see the
+[ASVS logging pack ISM mapping](asvs-logging-pack.md#ism-mapping).
 
 | Control | Requirement (summary) | Bower support | Organisation responsibility |
 |---|---|---|---|

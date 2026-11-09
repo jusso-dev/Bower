@@ -13,7 +13,7 @@ internal sealed partial class WindowsEventLogSourceSetup : SourceSetupType
     public override string Why => "A narrow, signed parser selects security decisions without forwarding the whole Windows log.";
     public override IReadOnlyList<string> Needs =>
     [
-        "The C# Bower collector installed as the Bower Windows service. The Rust collector does not support this reader.",
+        "The Bower collector installed as the Bower Windows service.",
         "The windows-security-logon pack installed, signed by a key the collector trusts, with parser 0 active.",
         "Windows auditing enabled for failed logons, and the Bower service identity granted access to the Security channel.",
         "An administrator to install the approved files and restart the service. Central WEC forwarding is a separate deployment step."

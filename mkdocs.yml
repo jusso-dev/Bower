@@ -93,7 +93,6 @@ nav:
           - Hosted collectors: deployment/hosted-collectors.md
           - Azure Functions: deployment/azure-function.md
           - AWS: deployment/aws.md
-          - AWS Lambda: deployment/aws-lambda.md
           - Google Cloud: deployment/gcp.md
           - Relay networks: deployment/relay.md
           - Amazon S3 output: deployment/s3-output.md
@@ -102,9 +101,18 @@ nav:
       - Connect a source:
           - Syslog: deployment/syslog-source.md
           - Windows Event Log: deployment/windows-event-log-source.md
+          - Windows Event Forwarding: deployment/windows-event-forwarding.md
           - Local files: deployment/file-tail-source.md
           - Azure Monitor Agent companion: deployment/ama-companion.md
           - ASP.NET Core: developer-integration/aspnetcore.md
+          - Web frameworks (ASVS pack): developer-integration/asvs-logging-frameworks.md
+          - Next.js: developer-integration/frameworks/nextjs.md
+          - Express, Fastify, NestJS: developer-integration/frameworks/node.md
+          - Django, Flask, FastAPI: developer-integration/frameworks/python.md
+          - Rails: developer-integration/frameworks/rails.md
+          - Laravel: developer-integration/frameworks/laravel.md
+          - Spring Boot: developer-integration/frameworks/spring-boot.md
+          - Go with log/slog: developer-integration/frameworks/go.md
           - Custom parsers: developer-integration/custom-log-parser.md
           - Transform language: developer-integration/transform-language.md
       - Privacy and packs:
@@ -112,6 +120,7 @@ nav:
           - Custom redaction: privacy/custom-redaction-rules.md
           - Managed profiles: privacy/managed-privacy-profiles.md
           - Signed packs: deployment/packs.md
+          - Database audit: deployment/database-audit.md
   - Production readiness:
       - production-readiness/index.md
       - 1. Syslog delivery: production-readiness/01-syslog-delivery-reliability.md
@@ -143,6 +152,7 @@ nav:
       - ISM alignment: security/ism-alignment.md
       - Verified ASVS and ISM IDs: security/verified-standards.md
       - Event catalogue: security/default-event-catalogue.md
+      - ASVS logging pack: security/asvs-logging-pack.md
       - Pack catalogue: security/pack-runtime-catalogue.md
       - Engineering reviews:
           - Adversarial remediation: security/adversarial-remediation-2026-10-23.md
@@ -153,6 +163,7 @@ nav:
       - Collector enrolment: architecture/collector-enrolment.md
       - Heartbeats: architecture/heartbeat-v2.md
       - Transform design: architecture/transform-language.md
+      - Windows Event Forwarding decision: architecture/windows-event-forwarding-decision.md
       - Azure ingestion API: deployment/logs-ingestion-api.md
       - Entra ingestion plan: deployment/entra-ingestion-plan.md
       - Cloud permissions: deployment/cloud-permission-context.md

@@ -38,8 +38,7 @@ writer lock for each run; a run that finds the lock held fails and the next minu
 retries.
 
 Management commands are **not** run by a scheduled job either. A `run-canary` queues an
-event, so the hosted `ManagementCommandWorker` (a task beside the delivery worker in
-Rust) runs every admitted command.
+event, so the hosted `ManagementCommandWorker` runs every admitted command.
 
 Closing suppression windows is **not** a scheduled job: it queues summary events,
 which is queue state, so it runs in the hosted `SuppressionWindowWorker` loop every

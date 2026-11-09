@@ -35,7 +35,7 @@ public static class CollectorCommandStatus
 
 /// <summary>
 /// Signs collector commands with the configured P-256 key. The canonical bytes must match the
-/// collectors' <c>ManagementCommandVerifier.SignedBytes</c> (C# and Rust) byte for byte. The
+/// collectors' <c>ManagementCommandVerifier.SignedBytes</c> byte for byte. The
 /// signed <c>kind</c> keeps a command signature from verifying as any other Bower document.
 /// </summary>
 public sealed class ManagementCommandSigner

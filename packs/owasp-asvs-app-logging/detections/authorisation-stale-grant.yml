@@ -1,0 +1,21 @@
+title: Action by a consumer no longer authorised
+id: bower-pack-asvs-authz-stale-grant-001
+status: stable
+description: >-
+  The application refused an action because the grant in a self-contained token was
+  already withdrawn (ASVS 5.0 V8.3.2). Repeats suggest a stolen or replayed token.
+version: 1.0.0
+level: high
+logsource:
+  product: bower
+  service: authorisation
+detection:
+  selection:
+    EventType: authorisation_failure
+    EventAction: authz.stale_grant
+  condition: selection
+tags:
+  - attack.t1550.001
+  - attack.defense_evasion
+falsepositives:
+  - Token lifetime longer than the role-change propagation time

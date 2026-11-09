@@ -1,0 +1,23 @@
+# ASVS 5.0 V7.4.2 (disable or delete terminates sessions), V16.3.3: account state changes.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-PACK-ASVS-ACCOUNT-STATUS
+  name: Account status changes
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-11-01
+match:
+  eventCategories: [identity-management]
+  eventTypes: [account_status_changed]
+  eventActions: [account.create, account.disable, account.enable, account.delete, account.unlock]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventResult, application.name, request.correlationId, actor.userId, target.id]
+  recommendedFields: [eventOutcomeReason, actor.role, source.ipAddress]
+decision:
+  action: accept
+  minimumValueScore: 80
+  neverSample: true
+routing:
+  profile: identity
+  destination: security-events

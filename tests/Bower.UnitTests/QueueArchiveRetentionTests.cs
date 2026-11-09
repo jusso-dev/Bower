@@ -219,7 +219,7 @@ public sealed class QueueArchiveRetentionTests
         await EnqueueAsync(store, 1, 2, clock, cancellationToken);
         Directory.CreateDirectory(ArchivePath(directory));
 
-        // The same exclusive lock another process (either runtime) takes while it writes.
+        // The same exclusive lock another writer process takes while it writes.
         using (new FileStream(
                    Path.Combine(ArchivePath(directory), QueueArchive.WriterLockFile),
                    FileMode.OpenOrCreate,

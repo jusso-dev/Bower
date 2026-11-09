@@ -124,7 +124,7 @@ public sealed class PipelineValidatorTests
     private const string SupportedKinds = "Source, Filter, Redact, Normalise, Detect, Enrich, Output";
 
     /// <summary>
-    /// <c>rust/crates/bower-pipeline/tests/fixtures/node-kinds.txt</c>, shared with the Rust
+    /// <c>tests/fixtures/pipeline-vectors/node-kinds.txt</c>,
     /// port: one <c>kind text|parsed kind name or error</c> per line.
     /// </summary>
     [Fact]

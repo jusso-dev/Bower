@@ -155,7 +155,6 @@ public sealed class RelayUnitTests
             ManagementAuthentication = ManagementAuthenticationModes.Enrolment,
             ManagementViaRelay = true
         };
-        // Pinned in the Rust collector too (rust/crates/bower-collector/tests/relay.rs).
         Assert.Equal("sha256:f7d49a6ca37ccdb7646c42e142cb809b2559d901b45d5c53572db76a7f95a997", relay.ConfigurationHash());
         Assert.Equal("sha256:887f9f1f62c825dbe67b4e257a52bdc8c147c56a2dae0c8a80e936bd271b2ab4", downstream.ConfigurationHash());
     }

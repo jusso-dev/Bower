@@ -1,0 +1,24 @@
+# ASVS 5.0 V16.3.1 (all authentication operations, including factors), V6.3.5, V6.6.3.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-PACK-ASVS-MFA
+  name: Multi-factor authentication challenges and results
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-11-01
+match:
+  eventCategories: [authentication]
+  eventTypes: [mfa_challenge, mfa_success, mfa_failure]
+  eventActions: [mfa.challenge, mfa.verify]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventResult, application.name, request.correlationId, labels.mfaFactor]
+  atLeastOne: [actor.userId, actor.username]
+  recommendedFields: [source.ipAddress, eventOutcomeReason, labels.userAgent, request.traceId]
+decision:
+  action: accept
+  minimumValueScore: 80
+  neverSample: true
+routing:
+  profile: authentication
+  destination: security-events

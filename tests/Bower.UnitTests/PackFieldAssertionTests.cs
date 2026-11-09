@@ -8,7 +8,7 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// expectFields: post-redaction field assertions in pack samples, parser-scoped runs and
-/// CI reports. Mirrored by rust/crates/bower-packs/tests/field_assertion_tests.rs.
+/// CI reports.
 /// </summary>
 public sealed class PackFieldAssertionTests
 {

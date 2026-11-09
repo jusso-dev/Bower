@@ -293,7 +293,7 @@ public sealed partial class ParserProbeEvidenceTests
     [InlineData("""{"error":{"code":"PartialError"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     [InlineData("""{"error":{},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     [InlineData("""{"error":{"code":"sensitive query marker"},"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
-    // Any non-null error, even a falsy scalar, is a partial result (same as the Rust client).
+    // Any non-null error, even a falsy scalar, is a partial result.
     [InlineData("""{"error":false,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     [InlineData("""{"error":"","tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
     [InlineData("""{"error":0,"tables":[{"columns":[{"name":"EventId"}],"rows":[["e1"]]}]}""", "query-incomplete")]
@@ -563,8 +563,6 @@ public sealed partial class ParserProbeEvidenceTests
     {
         ParserProbeFixture fixture = ProbeProfiles.ResolveParser(Profile);
         string raw = fixture.Render("bower-probe-0190aaaabbbbccccddddeeeeffff0000", DateTimeOffset.Parse("2026-10-26T01:02:03.4567891Z", System.Globalization.CultureInfo.InvariantCulture));
-
-        // Parity vector shared with rust/crates/bower-evidence/tests/evidence_tests.rs.
         Assert.Equal(
             """{"id":"bower-probe-0190aaaabbbbccccddddeeeeffff0000","timestamp":"2026-10-26T01:02:03.4567891Z","user":"bower-evidence-probe","source_ip":"192.0.2.10","result":"failure"}""",
             raw);

@@ -481,7 +481,7 @@ public sealed class SyslogSource : IAsyncDisposable
             // The stream is opened before keepalive: the NetworkStream constructor is the only
             // place that checks Socket.Connected, and a refused keepalive option (macOS and BSD
             // after an early reset, or a platform without per-socket timing) clears that flag.
-            // Keepalive stays best effort, as in Rust; a reset surfaces on the first read.
+            // Keepalive stays best effort; a reset surfaces on the first read.
             NetworkStream network = new(socket, ownsSocket: true);
             stream = network;
             ConfigureKeepAlive(socket);
@@ -1232,7 +1232,7 @@ public sealed class SyslogSource : IAsyncDisposable
     /// <summary>
     /// Sender identity for allow-lists, routes, <c>senderAddress</c> and event ids: IPv4-mapped
     /// IPv6 becomes IPv4, and an IPv6 interface scope (<c>fe80::1%2</c>) is dropped because it
-    /// is host-local and the Rust port never includes it.
+    /// is host-local and never included.
     /// </summary>
     internal static IPAddress NormaliseSender(IPAddress address) =>
         address.IsIPv4MappedToIPv6 ? address.MapToIPv4()
