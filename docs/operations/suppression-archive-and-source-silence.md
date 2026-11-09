@@ -16,7 +16,7 @@ decision:
 suppression:
   keyFields: [source.ipAddress]   # 1–5 string paths or labels.<key>
   windowSeconds: 60               # 1–86400, windows aligned to the Unix epoch
-  allowPerWindow: 20              # 1–100000
+  allowPerWindow: 20              # 1–100000 (0 or omitted for action: aggregate)
 ```
 
 - The first `allowPerWindow` events per key in each window are queued as usual.
@@ -25,6 +25,10 @@ suppression:
   Duplicates never consume allowance. Counts survive restarts. When the queue
   database is at its physical storage limit a suppressible event is refused with
   the same capacity backpressure as any other event and is not counted.
+- Counts are of accepted attempts. A suppressed event is not stored, so the duplicate
+  check cannot recognise it: a producer that retries an event after it was counted
+  (for example after a lost response) is counted again. Stored events still never
+  duplicate.
 - Within 5 seconds of a window ending, one `telemetry_aggregation_summary` event
   (action `telemetry.suppressed`) is queued with the suppressed and admitted counts,
   the key fields and their redacted values, the window bounds and the first and last
@@ -43,6 +47,30 @@ suppression:
   suppression is stateful and applies when an event is queued (the bundle comparison
   lists it under `notExercisedOffline`). The Azure Functions
   collector has no durable queue and never suppresses.
+
+### Aggregate: count only
+
+For noisy, low-value event types where individual events aren't needed, set the decision
+action to `aggregate`. Every matching event is counted per key and window exactly as
+above, and none is stored: the collector answers `"suppressed": true` (HTTP 202) and
+queues one `telemetry_aggregation_summary` per key and window with `admittedCount` 0.
+
+```yaml
+decision:
+  action: aggregate
+  minimumValueScore: 50
+  neverSample: false
+suppression:
+  keyFields: [application.name, eventType]
+  windowSeconds: 300               # allowPerWindow is omitted (or 0)
+```
+
+The same rules apply as for suppression: a `suppression` section is required (an
+`aggregate` policy without one fails to load), `neverSample` policies can't aggregate,
+the bundle must accept `telemetry_aggregation_summary`, and counts survive restarts.
+Choose keys that keep distinct actors apart (for example include `actor.userId` or
+`source.ipAddress`) if the counts will be used to investigate anyone: a count per
+application alone hides who did what.
 
 ## Population diff
 

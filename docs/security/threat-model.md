@@ -40,7 +40,9 @@ evidence.
   by a policy-approved summary event per window with the key values; a policy set
   that suppresses must accept the summary or it does not load, and a refused summary
   keeps the window open rather than dropping counts. Poorly chosen key fields can
-  still merge distinct actors, so review keys like any policy change.
+  still merge distinct actors, so review keys like any policy change. The `aggregate`
+  action stores no individual event at all, only these counts, so it carries the same
+  key review and is equally refused for `neverSample` policies.
 - Silent loss of a source: optional source expectations degrade `/health` and the
   heartbeat when an application stops delivering accepted events.
 - Archive tampering or loss after retention: archive segments carry file digests and
