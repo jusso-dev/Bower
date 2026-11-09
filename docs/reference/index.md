@@ -6,13 +6,14 @@ to understand the contract, implementation or operating assumptions.
 ## Interfaces and configuration
 
 - [Configuration schemas](https://github.com/jusso-dev/Bower/tree/main/schemas): versioned JSON schemas in the repository.
-- [CLI implementation](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Cli): current command definitions. Run `bower --help` for the installed version's commands.
+- [bower CLI reference](cli.md): every command and option, generated from the CLI's own help text and checked in CI.
+- [CLI implementation](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Cli): the command definitions.
 - [Management API](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Management.Api): endpoint definitions, role enforcement and management contracts.
 - [Collector API](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Collector): intake and collector host implementation.
 - [PowerShell reference](../operations/powershell.md): management and deployment modules.
 
-These are links to the implementation, not generated API or CLI documentation.
-Generated references and staleness checks remain tracked in
+Apart from the CLI reference, these link to the implementation. Generated API and
+configuration references remain tracked in
 [the documentation issue](https://github.com/jusso-dev/Bower/issues/139).
 
 ## Design and contracts
