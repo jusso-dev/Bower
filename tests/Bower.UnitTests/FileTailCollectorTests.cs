@@ -220,8 +220,7 @@ public sealed class FileTailCollectorTests
         Assert.Null(plain.FileTailConfigPath);
         Assert.NotEqual(plain.ConfigurationHash(), file.ConfigurationHash());
 
-        // Appended after syslog (and Windows Event Log, which Rust refuses). Pinned in the
-        // Rust collector too (rust/crates/bower-collector/tests/file_tail_source.rs).
+        // Appended after syslog and Windows Event Log.
         CollectorSettings pinned = new()
         {
             ListenUrl = "http://127.0.0.1:4319",

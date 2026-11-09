@@ -7,7 +7,7 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Council round 1 engine findings (A1-A6). Ported to
-/// rust/crates/bower-redaction/tests/custom_redaction_hardening.rs; byte parity is proven by
+/// Byte stability is proven by
 /// the generated vectors.
 /// </summary>
 public sealed class CustomRedactionHardeningTests

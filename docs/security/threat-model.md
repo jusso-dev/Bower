@@ -14,7 +14,7 @@ evidence.
   `eventSeverity`, `actor.type`, `security.decision`) accept a declared member name
   (any case) or a declared ordinal only; undefined ordinals, numeric strings and
   comma-joined names are schema-invalid, never fingerprinted or queued. Pipeline
-  document node kinds follow the same rule in both runtimes.
+  document node kinds follow the same rule.
 - Poison records at delivery: a queued payload the Azure output can never upload
   (invalid JSON, a repeated top-level property, invalid escapes) dead-letters alone
   as `payload-invalid-json`; it never fails or blocks the rest of the batch.
@@ -94,7 +94,7 @@ evidence.
   no wildcards, directories or default route; paths must lie strictly below an allowed
   root, with no linked directories and no linked file unless `allowSymlink` permits one
   link whose target passes the same checks, re-checked after each read (`path.1` too); on
-  Linux (and every Unix in Rust) the open is `O_NOFOLLOW | O_NONBLOCK` and the handle must
+  Linux the open is `O_NOFOLLOW | O_NONBLOCK` and the handle must
   match the path's device and inode. Bounded lines
   (at most 30 KiB), polls and json-lines depth; oversized lines are skipped without
   buffering. A line becomes an event only through its route's signed pack parser, then
@@ -133,11 +133,10 @@ evidence.
     prefer per-producer tokens for producers. Status `activity` lists application and
     environment names (metadata) behind the same token.
 - Windows Event Log (new local trust boundary, `BOWER_WINDOWS_EVENTLOG_CONFIG`, C#
-  collector on Windows only; the Rust collector and non-Windows hosts refuse the
-  setting): the collector reads local channels as a least-privilege account in Event
-  Log Readers. The query is generated from validated event ID and provider allow-lists
-  (no free text, no collect-all form), so the event log service returns only
-  allow-listed event content. Separate fixed boundary probes read only the oldest and
+  collector on Windows only; non-Windows hosts refuse the setting): the collector reads
+  local channels as a least-privilege account in Event Log Readers. The query is
+  generated from validated event ID and provider allow-lists (no free text, no
+  collect-all form), so the event log service returns only allow-listed event content. Separate fixed boundary probes read only the oldest and
   newest record IDs, never XML, messages or event properties, to detect resets reliably.
   Event XML is bounded (64 KiB, no DTD or resolver) and flattened
   into a bounded record; publisher-rendered message strings are opt-in and, like every

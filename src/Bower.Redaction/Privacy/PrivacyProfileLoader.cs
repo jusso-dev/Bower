@@ -335,7 +335,7 @@ public static class PrivacyProfileLoader
         return normalised;
     }
 
-    /// <summary>Every parsed string, in document-model order (identical in the Rust loader).</summary>
+    /// <summary>Every parsed string, in document-model order.</summary>
     private static void RequireSupportedValues(PrivacyProfileDocument document)
     {
         List<string?> values = [document.ApiVersion, document.Kind];

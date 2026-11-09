@@ -2,7 +2,6 @@
 
 import os
 from pathlib import Path
-import re
 import shutil
 import subprocess
 import sys
@@ -22,11 +21,6 @@ class VersionTests(unittest.TestCase):
     def test_repository_version_file_is_a_release_core(self):
         core = version.read_core(REPO / "VERSION")
         self.assertRegex(core, r"^\d+\.\d+\.\d+$")
-
-    def test_rust_workspace_version_matches_the_version_file(self):
-        cargo = (REPO / "rust/Cargo.toml").read_text(encoding="utf-8")
-        workspace = re.search(r'\[workspace\.package\]\s*\nversion = "([^"]+)"', cargo)
-        self.assertEqual(version.read_core(REPO / "VERSION"), workspace.group(1))
 
     def test_branch_builds_are_dev_prereleases_numbered_by_the_build(self):
         result = version.compute("0.2.0", "branch", "main", 362)

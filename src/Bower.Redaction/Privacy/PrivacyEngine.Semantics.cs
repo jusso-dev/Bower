@@ -51,7 +51,7 @@ public sealed partial class PrivacyEngine
     }
 
     // Deliberately discard all query/fragment values, not just familiar token keys.
-    // Lexical handling preserves path spelling and is identical in both runtimes.
+    // Lexical handling preserves path spelling.
     private static string SafeUrl(string text, string path)
     {
         string name = NormalizeFieldName(path[(path.LastIndexOf('.') + 1)..]);

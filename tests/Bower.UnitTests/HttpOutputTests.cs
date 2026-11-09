@@ -16,7 +16,7 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// HTTP output (Splunk HEC and NDJSON). Request and response vectors in
-/// tests/fixtures/http-output are shared with rust/crates/bower-output-http.
+/// tests/fixtures/http-output pin the wire format.
 /// </summary>
 public sealed class HttpOutputTests
 {
@@ -580,7 +580,7 @@ public sealed class HttpOutputTests
     }
 
     [Fact]
-    public void ConfigurationHash_ExcludesTheTokenAndIsPinnedForTheRustPort()
+    public void ConfigurationHash_ExcludesTheTokenAndIsPinned()
     {
         CollectorSettings first = CollectorSettings.FromEnvironment(Environment(new() { ["BOWER_HTTP_TOKEN"] = "first-token-value" }));
         CollectorSettings second = CollectorSettings.FromEnvironment(Environment(new() { ["BOWER_HTTP_TOKEN"] = "second-token-value" }));
@@ -595,7 +595,6 @@ public sealed class HttpOutputTests
         Assert.NotEqual(first.ConfigurationHash(), file.ConfigurationHash());
         Assert.NotEqual(file.ConfigurationHash(), gzip.ConfigurationHash());
         Assert.NotEqual(file.ConfigurationHash(), (file with { OutputType = "none", HttpOutput = null }).ConfigurationHash());
-        // Pinned in rust/crates/bower-collector/tests/http_output.rs.
         Assert.Equal("sha256:667066988faae4ac1c592a085d9c047006642836ff5209297a32b2b85e4e5c56", PinnedSettings().ConfigurationHash());
     }
 
@@ -830,7 +829,7 @@ public sealed class HttpOutputTests
         return name => values.GetValueOrDefault(name);
     }
 
-    /// <summary>The configuration pinned in both runtimes' hash tests.</summary>
+    /// <summary>The configuration pinned in the hash tests.</summary>
     internal static CollectorSettings PinnedSettings() => CollectorSettings.FromEnvironment(Environment(new()
     {
         ["BOWER_HTTP_TOKEN_FILE"] = "/run/secrets/hec-token",

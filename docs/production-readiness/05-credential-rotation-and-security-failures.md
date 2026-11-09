@@ -981,8 +981,8 @@ Full evidence, timings and preserved failures:
   tests used client secrets and certificates (the credential types that need rotation).
 - Windows hosts were not part of this run; the Windows XML fix is covered by unit and
   in-process collector tests, not a live WEC host.
-- The Rust collector has no Windows source; its syslog TLS, revocation and reload
-  behaviour matches C# (shared tests on both).
+- The Rust collector (retired in November 2026) had no Windows source; its syslog TLS,
+  revocation and reload behaviour matched C# (shared tests on both).
 - A signed `reload` cannot validate changed environment variables; use a supervisor
   restart for those.
 - Changes made after the live campaign (transport-versus-rejection classification of

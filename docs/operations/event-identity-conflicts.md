@@ -8,7 +8,7 @@ ID and source identity. A producer-local sequence, raw log ID or resettable
 counter alone is insufficient. Raw pack parsers map their configured ID field to
 `eventId`, so the same requirement applies to raw intake.
 
-Both C# and Rust collectors return HTTP **409 Conflict** with
+The collector returns HTTP **409 Conflict** with
 `reasons: ["event-identity-conflict"]` when a different durable identity already
 owns that ID. The existing ingest response fields remain; an additive
 `remediation` string explains recovery. Ordinary policy rejection stays 422,

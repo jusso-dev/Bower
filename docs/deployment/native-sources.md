@@ -1,7 +1,7 @@
 # Native Windows and syslog intake on the 473c6ec base
 
-This C# backport adds opt-in Windows Event Log/WEC and RFC 3164/5424 syslog
-sources. It does not add these sources to the Rust collector. Existing HTTP and
+This backport adds opt-in Windows Event Log/WEC and RFC 3164/5424 syslog
+sources. Existing HTTP and
 cloud intake settings retain their configuration hash when both sources are off.
 
 Both sources resolve parsers only from verified, trusted signed packs. Raw

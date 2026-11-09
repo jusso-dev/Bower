@@ -2,8 +2,7 @@
 
 `bower tap` shows what Bower decided, and what it would send, as events pass the
 collector. `bower top` shows per-stage throughput, queue, delivery, syslog and tap
-counters. Both exist in the C# and Rust CLIs and collectors with the same endpoints,
-limits, output and exit codes.
+counters.
 
 Neither one sees raw input. The earliest tap point is after the privacy engine.
 
@@ -172,12 +171,12 @@ Sections:
   and open connections.
 - Queue and delivery: from the `queue` and `delivery` blocks.
 
-Rates use integer tenths, so the C# and Rust CLIs print byte-identical text. The
-shared fixtures are in `rust/crates/bower-cli/tests/fixtures/top`.
+Rates use integer tenths, so the output is deterministic. The fixtures are in
+`tests/fixtures/top-fixtures`.
 
 ## Status fields added
 
-`/v1/status` gains two additive, metadata-only fields in both runtimes:
+`/v1/status` gains two additive, metadata-only fields:
 
 - `activity`: `[{application, environment, lastSeenAt, eventCount}]`, at most 50.
 - `tap`: `{enabled, activeSessions, maximumSessions, sessionsOpened, sessionsRefused,

@@ -178,7 +178,7 @@ public sealed class S3Output : IOutputAdapter, IDisposable
     public const string HttpCodePrefix = "destination-s3-http-";
 
     /// <summary>
-    /// Maps an S3 error response to a destination code (same table as the Rust port).
+    /// Maps an S3 error response to a destination code.
     /// Null means success: 412 answers <c>If-None-Match: *</c> when the key already exists,
     /// and the key binds the collector, the exact event ids and the uncompressed body
     /// (<see cref="S3ObjectLayout.ObjectHash"/>), so the stored object holds byte-identical

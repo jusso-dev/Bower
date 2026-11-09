@@ -43,7 +43,6 @@ control plane, or runtime AI filter.
 - `src/Bower.Source.WindowsEventLog`: channel and event ID allow-listed Windows Event Log subscriptions with durable bookmarks, mapped by signed pack parsers (C# collector on Windows, `BOWER_WINDOWS_EVENTLOG_CONFIG`).
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
 - `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `linux-authlog-ssh`, `windows-security-logon`, `aws-security`, `gcp-security`).
-- `rust`: Rust port of the data plane (`bower-collector`, `bower` CLI and their libraries); C# is the specification. See `rust/AGENTS.md`.
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal and the S3 output policy (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
 - `deploy/azure-webapp`, `deploy/docker/hosted`: private App Service pilot (Bicep, ephemeral queue) and hardened Compose for a hosted HTTPS collector. See `docs/deployment/hosted-collectors.md`.

@@ -1,8 +1,8 @@
 # Suppression, selection metrics, source silence and the archive
 
 Four collector capabilities for running Bower at volume and proving coverage. All are
-off unless configured, keep the queue at schema version 5 (new tables are additive)
-and behave the same in the C# and Rust collectors.
+off unless configured and keep the queue at schema version 5 (new tables are
+additive).
 
 ## Suppression
 
@@ -126,8 +126,8 @@ match, is reported even when acceptance stays the same.
 Exit codes: 0 when the comparison completes, 3 when `--fail-on-change` is set and any
 sample has a changed field, and 1 for invalid arguments (an `--at` outside the format
 above, a side with neither a directory nor a pack, a named directory that does not
-exist), bundle load or trust failures, or an unreadable sample. The C# and Rust CLIs print the same JSON for the same inputs and
-`--at`; `rust/crates/bower-cli/tests/fixtures/bundle-diff` pins it.
+exist), bundle load or trust failures, or an unreadable sample. The output JSON for
+given inputs and `--at` is pinned by `tests/fixtures/bundle-diff`.
 
 ## Selection metrics
 
@@ -145,7 +145,7 @@ match these rows. See [tap and top](tap-and-top.md).
 ## Intake metrics
 
 `GET /v1/status` also includes `intake`, so a full queue is distinguishable from an
-idle collector. The base fields are shared by the C# and Rust collectors:
+idle collector. The base fields are:
 
 ```json
 "intake": {"observedSince": "2026-10-26T01:00:00+00:00",
@@ -172,12 +172,12 @@ idle collector. The base fields are shared by the C# and Rust collectors:
   once admitted. After a `privacy-alert-capacity` refusal of an accepted event, the
   retry is reported as a duplicate (HTTP 200) and emits the alert; alert ids are stable,
   so retries never create a second alert.
-- For a WEC source using the C# collector's shared SQLite queue and cursor, the entire
+- For a WEC source using the collector's shared SQLite queue and cursor, the entire
   refused record is rolled back, including a main event whose generated privacy alert
   could not be queued. The additional `sourceRecordsRolledBack` and
   `sourceRecordRolledBackBytes` fields count affected source records and their candidate
   bytes for capacity refusals; they are a subset of the primary refusal counts, not
-  additional attempts. They are not currently present in the Rust collector's status.
+  additional attempts.
   Source retries are not HTTP responses.
 - `lastRefusalReason` is one of the two bounded codes above, matching `lastRefusalAt`
   (the latest refusal); both are `null` before any refusal.

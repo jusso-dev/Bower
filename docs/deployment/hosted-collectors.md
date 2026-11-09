@@ -1,8 +1,7 @@
 # Hosted collectors and application producers
 
-The container and Web App examples on this page use the C# collector image.
-They configure Kestrel's TLS certificate settings; do not substitute the Rust
-image without a separately configured TLS termination and validation.
+The container and Web App examples on this page use the collector image and
+configure Kestrel's TLS certificate settings.
 
 Choose the host based on the delivery guarantee you need:
 

@@ -192,7 +192,7 @@ internal sealed class TransformValue
     /// <summary>
     /// Canonical output: no whitespace, keys in record order, integers in decimal, opaque
     /// numbers as their source text, and only <c>"</c>, <c>\</c> and control characters
-    /// escaped. Byte-identical to the Rust port.
+    /// escaped.
     /// </summary>
     public static string Serialize(IReadOnlyList<KeyValuePair<string, TransformValue>> record)
     {

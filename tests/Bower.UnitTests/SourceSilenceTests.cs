@@ -136,7 +136,7 @@ public sealed class SourceSilenceTests
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText =
             "SELECT (SELECT COUNT(*) FROM source_monitoring) || '|' || (SELECT sql FROM sqlite_master WHERE name = 'source_monitoring');";
-        // The Rust store test pins the same text, so either runtime opens the other's table.
+        // Pinned DDL: existing queue databases open unchanged.
         Assert.Equal(
             """
             0|CREATE TABLE source_monitoring (

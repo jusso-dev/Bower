@@ -14,8 +14,8 @@ BOWER_STREAM_NAME=Custom-BowerSecurity
 ```
 
 Bower builds bounded requests and tracks the event IDs belonging to each request;
-concurrent completion cannot attach another batch's failure to those IDs. C# uses
-the supported Azure SDK protocol upload API; Rust owns its HTTP batches. Successful
+concurrent completion cannot attach another batch's failure to those IDs. Bower uses
+the supported Azure SDK protocol upload API. Successful
 responses yield `azure-logs-ingestion:accepted:owned-batches`. This records API
 acceptance only, never Sentinel queryability.
 
@@ -31,7 +31,7 @@ after a retried network error) or a missing or unusable credential configuration
 as retryable `destination-azure-credential-failed`. A token service that cannot be
 reached (DNS, proxy, TLS, timeout) or answers 5xx/408/429 is
 `destination-azure-unavailable`, like any other outage. A missing role is
-`destination-azure-http-403`. C# and Rust classify identically.
+`destination-azure-http-403`.
 Remote authentication, DCR/stream configuration, throttling,
 transport and server failures pause delivery through a durable destination circuit.
 Retry-After survives terminal SDK retries and collector restart. Configuration
@@ -42,8 +42,8 @@ records. See [outage recovery and historical reconciliation](../operations/azure
 
 ## Adaptive request concurrency
 
-Each output (one DCR stream) runs an AIMD controller over its upload requests, in
-C# and Rust alike. `MaximumConcurrency` / `maximum_concurrency` (1 to 32, default
+Each output (one DCR stream) runs an AIMD controller over its upload requests.
+`MaximumConcurrency` (1 to 32, default
 4) is the ceiling and the starting limit, so the healthy case is never slower than
 the old fixed setting. The minimum is 1. The collector uses one controller for the
 whole output (`ConcurrencyScope.Output`), because its single delivery loop is the only
@@ -69,8 +69,8 @@ request gets its own controller, bounded as the fixed setting was.
   order. Nothing is buffered beyond it; queue byte caps still return 503 to
   producers. No change to acknowledgement, dead-letter or ledger semantics.
 
-The controller is deterministic: it takes RTT and time from its caller (C#
-`TimeProvider`, Rust `IngestionClientOptions::time`), with no randomness. `/v1/status` (bearer token) adds a `delivery`
+The controller is deterministic: it takes RTT and time from its caller
+(`TimeProvider`), with no randomness. `/v1/status` (bearer token) adds a `delivery`
 block, omitted for outputs without adaptive concurrency:
 
 ```json
@@ -87,8 +87,8 @@ bodies. The whole block is process-local and resets on restart.
 it passes. It is not the durable pause: after a restart the queue's destination
 circuit still holds the stream (retrying `destination-*` rows, see
 `/v1/status` `queue.retrying`) while this field reads null. The Functions host
-reports no block because it keeps no output-wide controller. Tests: shared controller
-trace (C# `AdaptiveConcurrencyTests`, Rust `adaptive_concurrency.rs`), and a fake
+reports no block because it keeps no output-wide controller. Tests: a controller
+trace (`AdaptiveConcurrencyTests`), and a fake
 ingestion endpoint injecting 429, 503, latency and `Retry-After`, through the real
 SQLite queue and delivery worker (no loss, no premature acknowledgement, no
 dead-lettering of retryable events, cancellation releases every slot). Not
