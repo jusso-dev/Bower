@@ -164,6 +164,7 @@ nav:
       - Heartbeats: architecture/heartbeat-v2.md
       - Transform design: architecture/transform-language.md
       - Windows Event Forwarding decision: architecture/windows-event-forwarding-decision.md
+      - Durable Azure ingest (proposed): architecture/durable-azure-ingest-decision.md
       - Azure ingestion API: deployment/logs-ingestion-api.md
       - Entra ingestion plan: deployment/entra-ingestion-plan.md
       - Cloud permissions: deployment/cloud-permission-context.md
