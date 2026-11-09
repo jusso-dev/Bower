@@ -8,7 +8,7 @@ public static class RedactedEventIdentity
 {
     public const string RetryReason = "event-id-redacted";
 
-    // Match the collector/redactor input limit and Rust identity comparison.
+    // Match the collector/redactor input limit.
     public const int MaximumDocumentBytes = 1_048_576;
 
     public enum Comparison { InvalidOriginal, Unchanged, Changed }

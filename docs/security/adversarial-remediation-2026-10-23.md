@@ -38,7 +38,8 @@ Release gates: byte-level privacy; exact event acknowledgement; outage storage/b
 
 These tests establish local/simulated behavior only. Final gate results must bind
 to the combined commit, runtime versions and production defaults. Focused child
-results do not replace integration validation.
+results do not replace integration validation. The Rust tests named below were part of
+this record; the Rust collector was retired in November 2026.
 
 - AZ-01/03/04: `AzureLogsIngestionOutputTests` and both runtimes' delivery-worker
   suites cover reordered concurrent responses, exact acknowledgement ownership,

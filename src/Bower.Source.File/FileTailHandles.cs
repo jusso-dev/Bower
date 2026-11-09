@@ -29,7 +29,7 @@ public sealed class FileTailHandle : IDisposable
 
     /// <summary>
     /// Tests only: the <c>device:inode</c> of a path, replacing the platform's (the shared
-    /// vectors model file identities so every platform agrees with the Rust port's real ones).
+    /// vectors model file identities so every platform agrees).
     /// </summary>
     [ThreadStatic]
     internal static Func<string, string?>? FileIds;
@@ -336,7 +336,7 @@ internal static partial class LinuxTailFile
             ? Id(named)
             : null;
 
-    /// <summary>glibc <c>makedev</c>, so the device number equals Rust's <c>st_dev</c>.</summary>
+    /// <summary>glibc <c>makedev</c>, so the device number equals <c>st_dev</c>.</summary>
     internal static string Id(Statx stat)
     {
         ulong major = stat.DeviceMajor;

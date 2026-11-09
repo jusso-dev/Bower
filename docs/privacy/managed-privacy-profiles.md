@@ -94,9 +94,6 @@ BOWER_PRIVACY_HMAC_KEY_ID=k1
 | `BOWER_MANAGED_PRIVACY_TRUSTED_KEYS` | — | Required in management mode. Public keys trusted to sign deployments |
 | `BOWER_MANAGED_PRIVACY_DIRECTORY` | `managed-privacy` next to the queue database | Verified cache (`profile.json`). Keep it on persistent storage |
 
-Both the .NET and Rust collectors support management mode with identical settings,
-cache format and signature checks.
-
 ### What the collector does
 
 The `managed-privacy-profile` background job runs every minute:
@@ -158,8 +155,7 @@ Get-BowerPrivacyProfileAssignment
   management endpoint could make a collector fall back to the built-in default
   privacy profile, never to content of their choosing. HTTPS is required for
   non-loopback management endpoints.
-- After writing the cache, the Rust collector also flushes the directory entry to
-  disk; the .NET collector does not. If a power loss undoes the rename, the
-  collector restarts with the previous version and stages the new one again on the
-  next sync.
+- After writing the cache, the collector does not flush the directory entry to
+  disk. If a power loss undoes the rename, the collector restarts with the previous
+  version and stages the new one again on the next sync.
 - Profiles carry no secrets. HMAC keys stay on the hosts.

@@ -2,7 +2,7 @@
 
 Narrow Windows Event Log intake: a short channel and event ID allow-list per signed
 pack parser. Not bulk collection; the Azure Monitor Agent stays the tool for that.
-C#-only: the Rust collector refuses `BOWER_WINDOWS_EVENTLOG_CONFIG` (see `rust/AGENTS.md`).
+Windows only: on Linux and macOS the collector refuses `BOWER_WINDOWS_EVENTLOG_CONFIG`.
 
 - Default deny: an event reaches the queue only through an active signed pack parser
   whose match filter selects it, then redaction and policy. Never add a collect-all or

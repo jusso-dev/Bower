@@ -353,7 +353,7 @@ public static class SyslogSourceConfigurationLoader
         return listener with { Senders = senders, Routes = routes };
     }
 
-    /// <summary>Canonical IP text only (no shorthand IPv4, no IPv6 scope), as the Rust port parses.</summary>
+    /// <summary>Canonical IP text only (no shorthand IPv4, no IPv6 scope).</summary>
     internal static bool TryParseAddress(string? text, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out IPAddress? address)
     {
         address = null;

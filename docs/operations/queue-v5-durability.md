@@ -1,7 +1,7 @@
 # Queue v5 durability and SQL cursor v2
 
 This change addresses DUR-02 through DUR-07 and OPS-01. It changes persisted queue
-state and settlement APIs in both C# and Rust. No Sentinel query or live SQL Server
+state and settlement APIs. No Sentinel query or live SQL Server
 validation is implied by the local fixtures.
 
 ## Identity and replay
@@ -23,9 +23,9 @@ Collector-owned `collector`, `security`, `timeObserved` and top-level
 detection metadata without making a source replay conflict; retained evidence is
 not rewritten. Other source attributes remain part of strict content comparison.
 When `eventOriginalId` is present, reconstructed `eventId` is excluded from content
-comparison. Changed source content raises `EventIdentityConflictException` in C# /
-`StoreError::Invalid("event-identity-conflict")` in Rust. The processor returns a
-quarantine result with that code, never duplicate success. Original data remains.
+comparison. Changed source content raises `EventIdentityConflictException`. The
+processor returns a quarantine result with that code, never duplicate success.
+Original data remains.
 This comparison operates on redacted content; removed original secrets are never
 stored or compared.
 
@@ -94,8 +94,8 @@ at schema-history insertion on populated old databases and verify restart, data
 preservation and old-writer refusal. They also exercise failed settlement rollback.
 These are SQLite interruption simulations, not power-loss certification.
 
-C# and Rust v5 share the schema, identity hashes, ledger hashes, timestamp format
-and token contract. Either can open the other's committed v5 database. Concurrent
+The C# collector also opens and drains a committed v5 database written by the retired
+Rust collector (`tests/fixtures/persistence-vectors/rust-queue-v5.db`). Concurrent
 v5 workers must use the same queue limits and source identity configuration. Older
 writers and future unknown schema versions are unsupported and refused. There is
 no in-place rollback to v4; use the preserved backup and reconcile all events
@@ -103,17 +103,16 @@ accepted since that backup before resuming old software.
 
 ## Lease ownership
 
-Each lease returns `LeaseToken` / `lease_token`: `enqueue_sequence:lease_generation`.
+Each lease returns `LeaseToken`: `enqueue_sequence:lease_generation`.
 Generation increases on every acquisition and is not reset by dead-letter replay.
 A post-retention enqueue gets a new sequence. Settlement predicates require both
 uploading state and the exact token supplied with the acquired lease.
 
-Single-record settlement now requires a token before the C# cancellation argument
-(last argument in Rust). Delivered batches take an event-ID/token map. Failure
-settlements carry the token themselves. Missing or stale claims cannot mutate
-state; batch APIs return those IDs, single APIs reject the transition. Workers
-must use claims from their original batch, never read current claims at settlement
-time.
+Single-record settlement now requires a token before the cancellation argument.
+Delivered batches take an event-ID/token map. Failure settlements carry the token
+themselves. Missing or stale claims cannot mutate state; batch APIs return those IDs,
+single APIs reject the transition. Workers must use claims from their original batch,
+never read current claims at settlement time.
 
 ### C# delivery deadlines and restart recovery
 
@@ -122,10 +121,10 @@ time.
 between the output cancellation deadline and lease expiry for queue settlement.
 Invalid combinations fail collector startup, including when delivery is disabled.
 Nondefault delivery profiles append both values to the reported configuration hash;
-the default profile preserves existing configuration hashes shared with Rust.
+the default profile preserves existing configuration hashes.
 Configuration identity does not identify software behavior: record the binary
 version and artifact hash separately. No database migration or lease-token change
-is involved. These options apply to the C# collector only.
+is involved.
 
 The output receives a token linked to the deadline and host shutdown. A deadline
 cancellation becomes `destination-output-timeout`: the batch stays durable, the
@@ -211,7 +210,7 @@ Settlement enlarges rows and splits packed pages; without that room a backlog th
 filled the pages could never be acknowledged (seen on AWS, see
 [storage pressure](../production-readiness/03-storage-pressure.md)). A queued row
 takes about 2.2 times its payload, so the page limit binds before `M`. Builds before
-this change (C#, and Rust before the port) keep the single `M + 4 MiB` page ceiling and
+this change keep the single `M + 4 MiB` page ceiling and
 refuse a database grown past it; see the
 [rollback procedure](../production-readiness/04-upgrade-backup-recovery.md#rollback-after-settlement-growth).
 
@@ -230,6 +229,29 @@ collector's free-space watermarks (`BOWER_STORAGE_*`) cover the volume itself. S
 small shared-memory file and transient memory are additional overhead. All writers
 must use the supported APIs and matching limits; raw administrative SQL is outside
 this enforcement boundary.
+
+## Unclean shutdown and temporary files
+
+Every queue connection runs with `PRAGMA synchronous = FULL` in WAL mode (C# and Rust), so a
+committed transaction, and therefore every 202, survives a process kill; the cost is one
+flush per commit, which is why intake throughput follows the disk's flush latency. A power
+cut is covered by SQLite's WAL recovery only to the extent the disk honours flushes; this is
+not power-loss certified (#136 tracks the lab test).
+
+The C# collector writes `collector.running` beside the queue at start and removes it when
+the host stops cleanly. If the file is still there at the next start, the previous run was
+killed, crashed or lost power: the collector verifies the queue ledger before serving, logs
+warning 1600 (error 1601 if the ledger is broken; run `bower queue verify`) and reports the
+result in `/v1/status` as `recovery` (`uncleanShutdown`, `previousStartedAt`,
+`ledgerIntact`, `ledgerIssues`, `temporaryFilesRemoved`, `checkedAt`). It never deletes or
+rewrites queue rows because of it.
+
+At start and hourly, the collector removes its own abandoned atomic-write temporaries
+(`.NAME.<32 hex>.tmp`, from the collector id, management credential, command ledger and
+privacy profile cache writers) older than one hour, from the queue directory and its
+`managed-privacy`, `management-credential` and `management-commands` directories only, not
+recursively, at most 1,000 per run. The AMA spool and the archive already clean their own
+temporaries when they open. No other file is touched.
 
 ## SQL Server timestamp cursor v3 and allocation bounds
 
@@ -290,5 +312,4 @@ Tests cover the actual EF-generated SQL, in-memory keyset pages, persisted resta
 full forward backlogs with late commits, interleaved tied-timestamp replay, crashes
 before checkpoint commit, stale commits, legacy migration, malformed bounds and
 rejection markers. A live SQL Server
-allocation/plan test remains required in the integration environment. No Rust SQL
-adapter exists in the supported port; SQL changes apply to the C# adapter only.
+allocation/plan test remains required in the integration environment.

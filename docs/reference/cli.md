@@ -54,6 +54,9 @@ Commands:
   bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
                        [--event-type TYPE]... [--collector-id ID] [--dry-run]
   bower sources check --expectations FILE [--database FILE]
+  bower wec subscription generate --config FILE --subscription ID [--mode MinLatency|Normal|MinBandwidth|Custom]
+        [--max-items N --max-latency-seconds N] [--heartbeat-seconds N] [--read-existing] [--subscription-id NAME]
+        [--allowed-domain-computers SDDL] [--issuer-ca THUMBPRINT]... [--log-file CHANNEL] [--out FILE]
   bower tap [--collector URL] [--stage redacted|decided|queued] [--source APP] [--event-type TYPE]
             [--limit N] [--duration SECONDS] [--sample N]   (post-redaction JSON lines on stdout)
   bower top [--collector URL] [--interval SECONDS] [--once] [--iterations N]
@@ -79,6 +82,7 @@ Commands:
 | `bower policy` | [Suppression, population diff and archive](../operations/suppression-archive-and-source-silence.md) |
 | `bower archive` | [Suppression, population diff and archive](../operations/suppression-archive-and-source-silence.md) |
 | `bower sources` | [Source silence](../operations/suppression-archive-and-source-silence.md) |
+| `bower wec` | [Windows Event Forwarding](../deployment/windows-event-forwarding.md) |
 | `bower tap` | [Tap and top](../operations/tap-and-top.md) |
 | `bower top` | [Tap and top](../operations/tap-and-top.md) |
 | `bower version` | [Release versioning](../operations/release-versioning.md) |

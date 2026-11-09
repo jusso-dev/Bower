@@ -1,0 +1,5 @@
+# Optional framework examples. bower_events.py itself needs only the standard library.
+flask==3.1.3
+fastapi==0.162.2
+uvicorn==0.54.0
+django==6.1.3

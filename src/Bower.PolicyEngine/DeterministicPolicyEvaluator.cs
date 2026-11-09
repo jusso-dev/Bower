@@ -91,6 +91,15 @@ public sealed class DeterministicPolicyEvaluator : ITelemetryPolicyEvaluator
             reasons.Add($"Value score {score} meets minimum {policy.Decision.MinimumValueScore}");
         }
 
+        // Aggregate is accept with an allowance of zero: the event is counted in the
+        // window's durable summary and never stored itself.
+        bool aggregate = action == DecisionAction.Aggregate;
+        if (aggregate)
+        {
+            action = DecisionAction.Accept;
+            reasons.Add("Aggregate: counted in a telemetry_aggregation_summary, not stored");
+        }
+
         SuppressionDirective? suppression =
             action is DecisionAction.Accept or DecisionAction.RedactAndAccept
             && policy.Suppression is { } rule

@@ -249,6 +249,12 @@
           "YamlDotNet": "[18.1.0, )"
         }
       },
+      "bower.source.windowseventlog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
+      },
       "Azure.Identity": {
         "type": "CentralTransitive",
         "requested": "[1.21.0, )",

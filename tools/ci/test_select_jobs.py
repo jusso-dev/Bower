@@ -56,9 +56,9 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertEqual({"dotnet", "windows", "e2e"}, self.enabled([path]))
 
-    def test_shared_assets_test_both_implementations(self):
+    def test_shared_assets_test_the_collector_and_tooling(self):
         result = self.enabled(["packs/windows-security-logon/parsers/security-4625.json"])
-        self.assertTrue({"dotnet", "rust", "powershell", "e2e"} <= result)
+        self.assertTrue({"dotnet", "powershell", "e2e"} <= result)
 
     def test_default_policy_changes_validate_installers(self):
         self.assertTrue({"platforms", "packaging"} <= self.enabled(["policies/default/policy.json"]))
@@ -71,12 +71,12 @@ class SelectionTests(unittest.TestCase):
 
     def test_relay_and_enrolment_keep_container_integration(self):
         for path in ("src/Bower.Collector/Relay/Listener.cs", "src/Bower.Forwarding/Client.cs",
-                     "rust/crates/bower-collector/src/relay/output.rs", "tests/e2e/enrolment.sh"):
+                     "tests/e2e/enrolment.sh"):
             with self.subTest(path=path):
                 self.assertIn("containers", self.enabled([path]))
 
     def test_docker_changes_test_cross_architecture_builds(self):
-        for path in ("deploy/docker/Dockerfile", "rust/Dockerfile", ".dockerignore", "docker-compose.yml"):
+        for path in ("deploy/docker/Dockerfile", ".dockerignore", "docker-compose.yml"):
             self.assertIn("containers", self.enabled([path]))
 
     def test_aws_lab_checks_do_not_build_platforms(self):
@@ -84,7 +84,6 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual({"infrastructure", "dotnet"}, self.enabled(["lab/aws/packs/windows-lab/pack.yaml"]))
 
     def test_independent_languages_stay_independent(self):
-        self.assertEqual({"rust"}, self.enabled(["rust/crates/bower-policy/src/lib.rs"]))
         self.assertEqual({"infrastructure"}, self.enabled(["deploy/aws/main.yaml"]))
         self.assertEqual({"powershell"}, self.enabled(["powershell/build.ps1"]))
 
@@ -103,7 +102,7 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual(set(JOBS), self.enabled(["README.md"], full=True))
 
     def test_multiple_subsystems_are_unioned(self):
-        self.assertEqual({"rust", "ui", "e2e"}, self.enabled(["rust/Cargo.lock", "ui/package.json"]))
+        self.assertEqual({"powershell", "ui", "e2e"}, self.enabled(["powershell/build.ps1", "ui/package.json"]))
 
     def test_git_diff_handles_renames_deletions_and_multicommit_push(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -151,7 +150,7 @@ class MergeGateTests(unittest.TestCase):
         workflow = Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml"
         script = workflow.read_text(encoding="utf-8").split("python3 - <<'PYTHON'\n", 1)[1]
         script = textwrap.dedent(script.split("          PYTHON", 1)[0])
-        jobs = ("changes", "version", "workflow-lint", "build-test", "linux-arm64", "rust", "infrastructure",
+        jobs = ("changes", "version", "workflow-lint", "build-test", "linux-arm64", "infrastructure",
                 "powershell", "ui", "e2e", "windows-event-log", "docker", "docker-arm64",
                 "publish", "package-linux", "package-windows", "install-linux", "install-windows")
         results = {job: {"result": "success"} for job in jobs}
@@ -182,7 +181,7 @@ class MergeGateTests(unittest.TestCase):
         self.assertNotEqual(0, self.gate({"install-windows": "skipped"}, {"packaging": "true"}))
         self.assertNotEqual(0, self.gate({"docker-arm64": "skipped"}, {"containers": "true"}))
         self.assertNotEqual(0, self.gate({"linux-arm64": "skipped"}, {"dotnet": "true"}))
-        self.assertNotEqual(0, self.gate(selected={"rust": ""}))
+        self.assertNotEqual(0, self.gate(selected={"dotnet": ""}))
 
 
 if __name__ == "__main__":

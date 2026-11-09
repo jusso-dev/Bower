@@ -10,7 +10,6 @@ namespace Bower.UnitTests;
 /// Structured number detectors (TFN, card, IBAN and the like) never claim a span wholly inside
 /// a canonical UUID or dashless GUID token, so random producer event ids are not redacted (and
 /// then quarantined as <c>event-id-redacted</c>), while real identifiers in text still are.
-/// The Rust port pins the same cases (rust/crates/bower-redaction/tests/canonical_identifier.rs).
 /// </summary>
 public sealed class CanonicalIdentifierTokenTests
 {

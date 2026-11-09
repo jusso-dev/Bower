@@ -141,7 +141,7 @@ case-sensitive.
 
 ### Regular expressions
 
-Bower's own linear-time engine, identical in both runtimes. Supported: literals;
+Bower's own linear-time engine. Supported: literals;
 `.` (any scalar except newline); classes `[...]`, `[^...]` with ranges; `\d \w \s`
 and `\D \W \S` (ASCII definitions); escapes `\t \n \r` and `\` before any of
 `\ . * + ? ( ) [ ] { } | ^ $ - /`; `^` and `$` (start and end of the whole value);
@@ -225,6 +225,5 @@ Run-time failures quarantine the record: the collector returns HTTP 400 with dec
 
 Output is canonical JSON: no whitespace, record key order, integers in decimal, opaque
 numbers as written, only `"`, `\` and control characters escaped. The same record,
-program and evaluation time produce the same bytes and step count in the C# and Rust
-runtimes; `rust/crates/bower-pipeline/tests/fixtures/transform-vectors.json` is run by
-both test suites.
+program and evaluation time produce the same bytes and step count;
+`tests/fixtures/pipeline-vectors/transform-vectors.json` pins them.

@@ -8,7 +8,7 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Custom detectors (custom redaction rules) and secret field names in privacy profiles.
-/// The Rust port mirrors these in rust/crates/bower-redaction/tests/custom_redaction.rs and
+/// See also
 /// proves byte parity with the generated vectors.
 /// </summary>
 public sealed class CustomRedactionTests

@@ -45,6 +45,7 @@ static async Task<int> RunAsync(string[] args)
             ["archive", "verify", .. string[] rest] => await ArchiveCommands.VerifyAsync(rest),
             ["archive", "replay", .. string[] rest] => await ArchiveCommands.ReplayAsync(rest),
             ["sources", "check", .. string[] rest] => await SourceCommands.CheckAsync(rest),
+            ["wec", "subscription", "generate", .. string[] rest] => WecCommands.GenerateSubscription(rest),
             ["tap", .. string[] rest] => await TapAndTopCommands.TapAsync(rest),
             ["top", .. string[] rest] => await TapAndTopCommands.TopAsync(rest),
             [] or ["--help"] or ["help"] => WriteHelp(),

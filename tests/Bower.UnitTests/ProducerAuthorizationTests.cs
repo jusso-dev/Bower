@@ -100,8 +100,6 @@ public sealed class ProducerAuthorizationTests
         FormatException error = Assert.Throws<FormatException>(() => new ProducerAuthorization(path));
         Assert.Equal("Invalid producer scopes file.", error.Message);
     }
-
-    // Same vectors as the Rust collector's inline_scopes_are_bounded_and_fail_closed.
     [Theory]
     [InlineData("bad-marker")]
     [InlineData("{}")]

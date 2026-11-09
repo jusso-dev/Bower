@@ -10,7 +10,7 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Pins suppression key resolution, key hashes, window boundaries and summary events for the
-/// Rust port (<c>rust/crates/bower-core/tests/fixtures/suppression-vectors.json</c>). Set
+/// pinned vectors (<c>tests/fixtures/core-vectors/suppression-vectors.json</c>). Set
 /// <c>BOWER_SUPPRESSION_VECTOR_OUTPUT</c> to a file path to regenerate after an intended change.
 /// </summary>
 public sealed class SuppressionParityVectorTests

@@ -12,9 +12,8 @@ event log service ──generated query──▶ subscription ──▶ parse XM
                       providers             backpressure
 ```
 
-Only the C# collector has this source, on Windows. The Rust collector does not target
-Windows: it refuses to start with `BOWER_WINDOWS_EVENTLOG_CONFIG` set, and so does the
-C# collector on Linux or macOS.
+This source is available on Windows only. The collector refuses to start with
+`BOWER_WINDOWS_EVENTLOG_CONFIG` set on Linux or macOS.
 
 ## What is accepted
 
@@ -312,7 +311,9 @@ Sizing a WEC that runs the collector:
 - Message strings are rendered from publisher metadata on the collecting host; a
   missing or changed message file changes or removes `message`.
 - The collector reads local channels only. Forwarded events (Windows Event Forwarding)
-  can be read from the `ForwardedEvents` channel like any other.
+  can be read from the `ForwardedEvents` channel like any other; see
+  [Windows Event Forwarding](windows-event-forwarding.md) for the WEC host setup and
+  `bower wec subscription generate`.
 
 ## Not verified here
 

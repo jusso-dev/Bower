@@ -42,7 +42,7 @@ Authorization: Bearer bwc1.<base64url canonical payload>.<base64url P1363 signat
 payload = {"collectorId","credentialId","expiresAt","issuedAt","kind":"bower.collector-assertion/v1","nonce"}
 ```
 
-The payload is canonical JSON, so the C# and Rust collectors sign identical bytes.
+The payload is canonical JSON, so the signed bytes are deterministic.
 Management accepts only those exact bytes, a lifetime of at most 10 minutes (collectors
 sign 5), 5 minutes of clock skew, and a signature by the stored key of an active,
 unexpired credential that belongs to the named collector. The signed `kind` keeps an
@@ -111,8 +111,7 @@ cannot register, heartbeat, fetch a profile for, or rotate any other collector.
 ## Collector state
 
 `<queue directory>/management-credential/credential.json`, owner-only (0600 in a 0700
-directory on Unix; rely on the directory ACL on Windows). The C# and Rust collectors read
-each other's file:
+directory on Unix; rely on the directory ACL on Windows):
 
 ```json
 {"schemaVersion":1,"collectorId":"edge-01","credentialId":"…","privateKeyPem":"…",
@@ -139,9 +138,8 @@ stay on disk. It is not part of the configuration hash.
 - Collector, end to end against the in-process management API: enrol, report, rotate by
   command and on schedule, revoke, re-enrol, refused tokens not retried, owner-only file
   without the token.
-- Parity: the canonical payload text and the enrolment-mode configuration hash are pinned
-  in both runtimes, a Rust-signed assertion verifies in the C# management API, the Rust
-  collector reads the C# credential file, and the Rust tests cover the same collector
-  behaviour against a fake management API.
-- Compose: the CI `docker` job enrols the C# and Rust collector images against the
-  management image with a real token, then approves them.
+- Compatibility: the canonical payload text and the enrolment-mode configuration hash are
+  pinned, and an assertion signed by the retired Rust collector still verifies in the
+  management API (`RustAssertionVector`), so collectors upgraded from it keep working.
+- Compose: the CI `docker` job enrols the collector image against the
+  management image with a real token, then approves it.

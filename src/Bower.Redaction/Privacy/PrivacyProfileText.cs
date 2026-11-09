@@ -3,7 +3,7 @@ using System.Globalization;
 namespace Bower.Redaction.Privacy;
 
 /// <summary>
-/// Characters a privacy profile may not contain, checked identically by the C# and Rust
+/// Characters a privacy profile may not contain, checked identically by every
 /// loaders so both accept and reject exactly the same documents: C0 controls other than
 /// tab, line feed and carriage return; DEL and C1 controls (including NEL); the line and
 /// paragraph separators; UTF-16 surrogates on their own; and YAML escapes of surrogates

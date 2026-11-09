@@ -11,7 +11,7 @@ namespace Bower.UnitTests;
 public sealed partial class ComplianceCitationTests
 {
     private static readonly string[] ScannedRoots =
-        ["docs", "packs", "policies", "rules", "deploy", "examples", "schemas", "src", "tools", "powershell", "ui", "rust/crates", "README.md", "PRODUCT.md", "SECURITY.md"];
+        ["docs", "packs", "policies", "rules", "deploy", "examples", "schemas", "src", "tools", "powershell", "ui", "README.md", "PRODUCT.md", "SECURITY.md"];
 
     private static readonly string[] ScannedExtensions =
         [".md", ".yaml", ".yml", ".json", ".jsonl", ".kql", ".bicep", ".cs", ".rs", ".py", ".ts", ".tsx", ".js", ".go", ".java", ".rb", ".php", ".ps1", ".psm1", ".toml"];

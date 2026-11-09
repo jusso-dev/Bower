@@ -74,7 +74,7 @@ What already existed on `main` (commit `9d1bbcd`) and what this work adds.
 | Signal | Where | Content | Used by |
 |---|---|---|---|
 | `GET /health` | Collector, no token | `healthy` or `degraded` (dead letters or an overdue expected source). HTTP 200 either way; reads the queue (SQLite, 5 s busy timeout) | Readiness probe, host check |
-| **New: `GET /health/live`** | Collector, no token | `alive` while the process serves requests; touches no storage, metadata-free (C# and Rust) | Liveness probe |
+| **New: `GET /health/live`** | Collector, no token | `alive` while the process serves requests; touches no storage, metadata-free | Liveness probe |
 | `GET /v1/status` | Collector, ingest token | Queue counts, `oldestUndelivered`, `undeliveredBytes`; `intake` (attempts, capacity refusals, last refusal); `pipeline`; `sources` (silence state per expected source); `syslog` per listener (connections, TLS failures, frames, drops, timeouts); `windowsEventLog` per subscription (state, reads, errors, gaps, bookmark); jobs; adaptive delivery concurrency. Syslog TLS reload and revocation counters and certificate dates from [credential rotation](05-credential-rotation-and-security-failures.md). **New:** `queuePages` (page size, page limit, in-use and free-list bytes, used percent, read from SQLite) and `deliveryActivity` (last acknowledgement, last failure code and time) | Host check, runbooks |
 | Source silence | `BOWER_SOURCE_EXPECTATIONS` ([details](../operations/suppression-archive-and-source-silence.md#source-silence)) | Per application/environment allowance, durable across restarts | `/health`, status, heartbeat, health record |
 | Heartbeat v2 | Collector → management every 60 s ([schema](../architecture/heartbeat-v2.md)) | Delivery status, undelivered count, oldest age, dead letters, sources, jobs, ledger head | Fleet and home views, fleet check |
@@ -143,8 +143,8 @@ health worker only reads metadata and enqueues its own record.
   9,999,999. Lifetime totals stay in `/v1/status`.
 - **Cost.** About 5 KB billed per record (measured): 7 MB/day per collector at 60 s,
   1.4 MB/day at the recommended 300 s.
-- **Rust.** C#-only for now. `bower-collector` (Rust) refuses the setting at start-up
-  rather than pretend to send records.
+- **Rust.** C#-only. The Rust `bower-collector` (retired in November 2026) refused the
+  setting at start-up rather than pretend to send records.
 
 | Field (`Attributes.…`) | Meaning |
 |---|---|
@@ -209,7 +209,7 @@ thresholds; production defaults are in the threshold column.
 The current queue-storage query reports `StorageMetricsIncomplete` when either page
 or logical-capacity percentage is missing, invalid or negative, or the collector cannot
 measure its queue volume (`volumeState` `unknown`). A collector that reports no volume
-fields (older versions, the Rust collector) shows `VolumeCoverage` `not-reported`. The
+fields (older versions, the retired Rust collector) shows `VolumeCoverage` `not-reported`. The
 collector queues its own health record from a reserve even while new events are refused
 for pages or free space, so A4 sees a full or critical queue. Queue-backlog reports
 `BacklogMetricsIncomplete` when backlog count or ingestion lag is unavailable, or
@@ -300,7 +300,7 @@ file is optional. **Troubleshooting:**
 | Symptom | Cause | Fix |
 |---|---|---|
 | Collector exits: "no loaded policy accepts collector_health" | Policy file missing or not in `BOWER_POLICY_DIRECTORY` | Copy the file; check the directory setting |
-| Rust collector exits: "supported only by the C# collector" | Rust runtime | Use the C# collector or set the interval to `0` |
+| Rust collector exits: "supported only by the C# collector" | Rust runtime (retired in November 2026) | Move to the C# collector |
 | Event 1331 "not queued" | A managed privacy profile or validation now refuses the record | Check `bower policy test` with a record; check the profile |
 | Event 1330 "refused" | Queue at capacity | Runbook R5 |
 | Rows exist but `Attributes` values are strings like `""` | Value masked by privacy (should not happen below eight digits) | Report it; the record clamps numbers to seven digits |
@@ -1060,7 +1060,8 @@ fields, not that a collector reports those values in each fault.
   the subscription's own state. Per-device (per firewall or per WEF source) silence needs
   one syslog listener per device or a pack field that maps the device; this work does not
   add one.
-- Health records are C#-only; the Rust collector refuses the setting.
+- Health records are C#-only; the Rust collector (retired in November 2026) refused the
+  setting.
 - The management path was tested with development authentication on loopback, not Entra.
 - Dead-letter replay was exercised with poison events only (which correctly re-dead-letter);
   Bower does not dead-letter destination outages, so there was no transient dead letter to
@@ -1112,8 +1113,8 @@ live Azure validation before it can be used as an ingestion-absence signal.
 **Release blocker — health record authenticity:** The C# collector reserves
 `collector_health` for its internal worker; ordinary producer and pack input is
 quarantined with `reserved-event-type`. Relay trusts the authenticated downstream
-collector and its key to enforce the same reservation. Rust parity, adversarial
-cross-ingress and relay validation, and destination validation remain required.
+collector and its key to enforce the same reservation. Adversarial cross-ingress and
+relay validation, and destination validation remain required.
 Previously queued or already ingested forgeries are not removed, and direct DCR
 writers can forge records: restrict those writers and assess existing data. Until
 these trust assumptions are validated, do not treat a health record as proof of

@@ -1,0 +1,92 @@
+{
+  "comment": "Inputs every language helper must turn into the same envelope (contract/expected.jsonl). Secrets, CRLF and query strings here are deliberate: the helpers must strip them before sending.",
+  "app": {"name": "contoso-portal", "environment": "production", "version": "2.4.1"},
+  "now": "2026-11-09T01:02:03.456Z",
+  "cases": [
+    {
+      "name": "login success",
+      "eventId": "contract-001",
+      "spec": {
+        "eventCategory": "authentication", "eventType": "authentication_success", "eventAction": "authentication.login", "eventResult": "success",
+        "actor": {"userId": "user-1001", "username": "alice@example.com", "type": "human"},
+        "sourceIp": "203.0.113.24", "userAgent": "Mozilla/5.0 (X11; Linux x86_64)", "route": "/api/login", "tenantId": "tenant-0001",
+        "request": {"correlationId": "req-001", "traceId": "4bf92f3577b34da6a3ce929d0e0e4736", "method": "POST", "path": "/api/login", "statusCode": 200},
+        "labels": {"authMethod": "password+totp"}
+      }
+    },
+    {
+      "name": "login failure with a CRLF username and a password in attributes",
+      "eventId": "contract-002",
+      "spec": {
+        "eventCategory": "authentication", "eventType": "authentication_failure", "eventAction": "authentication.attempt", "eventResult": "failure", "eventSeverity": "low",
+        "reason": "InvalidCredentials",
+        "actor": {"username": "bob\r\n2026-11-09 INFO admin login ok"},
+        "sourceIp": "198.51.100.7", "route": "/api/login",
+        "request": {"correlationId": "req-002", "method": "POST", "path": "/api/login?next=%2Fadmin&token=abc123", "statusCode": 401},
+        "attributes": {"password": "hunter2", "headers": {"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.e30.sig"}, "attempt": 3}
+      }
+    },
+    {
+      "name": "MFA failure never carries the code",
+      "eventId": "contract-003",
+      "spec": {
+        "eventCategory": "authentication", "eventType": "mfa_failure", "eventAction": "mfa.verify", "eventResult": "failure", "eventSeverity": "low",
+        "reason": "InvalidCode", "actor": {"userId": "user-1001"}, "sourceIp": "203.0.113.24", "route": "/api/mfa",
+        "request": {"correlationId": "req-003"}, "labels": {"mfaFactor": "totp"}, "attributes": {"otpCode": "493021"}
+      }
+    },
+    {
+      "name": "object-level authorisation failure",
+      "eventId": "contract-004",
+      "spec": {
+        "eventCategory": "authorisation", "eventType": "authorisation_failure", "eventAction": "authz.object", "eventResult": "denied", "eventSeverity": "medium",
+        "actor": {"userId": "user-1001", "role": "customer"}, "target": {"type": "invoice", "id": "inv-88412"},
+        "sourceIp": "203.0.113.24", "route": "/api/invoices/{id}",
+        "request": {"correlationId": "req-004", "method": "GET", "path": "/api/invoices/inv-88412", "statusCode": 403},
+        "labels": {"requiredPermission": "invoice.read"}
+      }
+    },
+    {
+      "name": "security setting changed: only the field name travels",
+      "eventId": "contract-005",
+      "spec": {
+        "eventCategory": "administrative-activity", "eventType": "configuration_changed", "eventAction": "config.update", "eventResult": "success", "eventSeverity": "medium",
+        "actor": {"userId": "admin-7", "role": "tenant-admin"}, "target": {"type": "setting", "id": "auth.mfa.required"},
+        "request": {"correlationId": "req-005"}, "change": {"field": "auth.mfa.required", "previousValue": "true", "newValue": "false"}
+      }
+    },
+    {
+      "name": "unhandled error without stack trace",
+      "eventId": "contract-006",
+      "spec": {
+        "eventCategory": "application-security", "eventType": "application_error", "eventAction": "error.unhandled", "eventResult": "failure", "eventSeverity": "medium",
+        "reason": "UnhandledException", "route": "/api/payments",
+        "request": {"correlationId": "req-006", "statusCode": 500},
+        "labels": {"errorType": "TypeError"}, "attributes": {"stackTrace": "at charge (key=sk_live_51Hx)", "exceptionMessage": "boom"}
+      }
+    },
+    {
+      "name": "logout",
+      "eventId": "contract-007",
+      "spec": {
+        "eventCategory": "authentication", "eventType": "session_terminated", "eventAction": "session.logout", "eventResult": "success",
+        "actor": {"userId": "user-1001"}, "request": {"correlationId": "req-007", "sessionId": "sess-7f3a"}
+      }
+    },
+    {
+      "name": "rate limit hit",
+      "eventId": "contract-008",
+      "spec": {
+        "eventCategory": "api-security", "eventType": "anti_automation_triggered", "eventAction": "ratelimit.exceeded", "eventResult": "denied", "eventSeverity": "low",
+        "reason": "LoginRateLimit", "sourceIp": "198.51.100.7", "route": "/api/login",
+        "request": {"correlationId": "req-008", "statusCode": 429}
+      }
+    }
+  ],
+  "proxyCases": [
+    {"remote": "10.0.0.5", "forwardedFor": "203.0.113.24, 10.0.0.9", "trusted": ["10.0.0.0/8"], "expect": "203.0.113.24"},
+    {"remote": "203.0.113.99", "forwardedFor": "1.2.3.4", "trusted": ["10.0.0.0/8"], "expect": "203.0.113.99"},
+    {"remote": "10.0.0.5", "forwardedFor": "garbage, 10.0.0.9", "trusted": ["10.0.0.0/8"], "expect": "10.0.0.5"},
+    {"remote": "10.0.0.5", "forwardedFor": null, "trusted": ["10.0.0.0/8"], "expect": "10.0.0.5"}
+  ]
+}

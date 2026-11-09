@@ -762,7 +762,7 @@ public sealed partial class PrivacyEngine : IEventRedactor
 }
 
 /// <summary>
-/// Deterministic per-call bound on custom detector work (identical in the Rust engine):
+/// Deterministic per-call bound on custom detector work:
 /// values longer than <see cref="CustomPatternDetector.MaximumScannedLength"/> and more than
 /// <see cref="CustomPatternDetector.MaximumMatchesPerEvent"/> custom matches per event fail
 /// the redaction (quarantine) instead of running unbounded.

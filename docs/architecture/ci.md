@@ -11,8 +11,7 @@ container and installer checks.
 | Documentation | Workflow lint; documentation build, links, browser/accessibility tests in the separate Documentation workflow |
 | Console | Lint, audit, unit/build checks and browser tests against the management API |
 | C# source/tests | Release build, unit tests, signed pack tests, formatting, Windows event-log tests and management browser tests |
-| Rust | Formatting, Clippy, workspace tests and signed pack tests using the already-built debug profile |
-| Packs, schemas, policies | C#, Rust, PowerShell and browser checks; default-policy changes also validate installers |
+| Packs, schemas, policies | C#, PowerShell and browser checks; default-policy changes also validate installers |
 | PowerShell | PSScriptAnalyzer and Pester |
 | Infrastructure | CloudFormation lint and Terraform validation; Azure templates also run C# contract tests |
 | Containers, relay or enrolment integration | Container builds, enrolment/relay smoke tests and ARM64 AOT container builds |
@@ -33,13 +32,13 @@ both old and new paths. Unknown files run the full suite; Git errors fail CI.
 `tools/ci/test_select_jobs.py` protects these rules. Add selection tests when adding
 a new product directory or workflow.
 
-Only superseded PR runs are cancelled. NuGet and Cargo download caches reduce
+Only superseded PR runs are cancelled. NuGet download caches reduce
 network work, browser tests use the managed API host instead of publishing AOT,
 and independent jobs start together rather than waiting for other builds.
 
 ## Container publication
 
-The Images workflow publishes all six images for `linux/amd64` and `linux/arm64`
+The Images workflow publishes all five images for `linux/amd64` and `linux/arm64`
 on a release tag or explicit manual dispatch. Merging to `main` does **not**
 publish images. To refresh `edge`, dispatch Images on `main` after its CI passes:
 
