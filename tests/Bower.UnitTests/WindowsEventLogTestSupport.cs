@@ -216,7 +216,25 @@ internal sealed class SqliteTemporaryDirectory : IDisposable
 
     public void Dispose()
     {
-        SqliteConnection.ClearAllPools();
-        inner.Dispose();
+        // Clearing the pools closes idle connections, but Windows can release the file handle
+        // a moment later (seen in CI: "being used by another process"). Retry briefly; the
+        // test's assertions have already run, so cleanup must not turn a pass into a failure.
+        for (int attempt = 1; ; attempt++)
+        {
+            SqliteConnection.ClearAllPools();
+            try
+            {
+                inner.Dispose();
+                return;
+            }
+            catch (IOException) when (attempt < 20)
+            {
+                Thread.Sleep(50 * attempt);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 20)
+            {
+                Thread.Sleep(50 * attempt);
+            }
+        }
     }
 }
