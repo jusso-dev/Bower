@@ -142,6 +142,7 @@ nav:
       - Roles and identity: security/management-identity-and-rbac.md
       - Producer scopes: security/producer-scopes.md
       - ISM alignment: security/ism-alignment.md
+      - Verified ASVS and ISM IDs: security/verified-standards.md
       - Event catalogue: security/default-event-catalogue.md
       - Pack catalogue: security/pack-runtime-catalogue.md
       - Engineering reviews:
