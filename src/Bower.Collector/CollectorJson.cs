@@ -96,6 +96,10 @@ internal sealed record StatusResponse(
     /// <summary>Queue volume watermarks, queue files and page use. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public QueueStorageStatus? Storage { get; init; }
+
+    /// <summary>Unclean-shutdown check and temporary-file cleanup at the last start. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CrashRecoveryStatus? Recovery { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
