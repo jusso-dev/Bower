@@ -1,0 +1,24 @@
+# ASVS 5.0 V7.2.4, V7.4.1, V7.4.2, V7.4.3, V7.4.5: session rotation and termination.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-PACK-ASVS-SESSION
+  name: Session lifecycle
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-11-01
+match:
+  eventCategories: [authentication]
+  eventTypes: [session_terminated, session_rotated]
+  eventActions: [session.logout, session.timeout, session.admin_terminate, session.revoke_others, session.revoke_all, session.rotate]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventResult, application.name, request.correlationId]
+  atLeastOne: [actor.userId, actor.username, target.id]
+  recommendedFields: [request.sessionId, attributes.sessionsTerminated, source.ipAddress, labels.userAgent]
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+routing:
+  profile: authentication
+  destination: security-events

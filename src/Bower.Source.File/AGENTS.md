@@ -2,9 +2,9 @@
 
 Security-selected local file tail (collector `BOWER_FILE_CONFIG`): a short list of named
 files whose lines go through a signed pack parser. Not log shipping: there is no wildcard,
-directory, glob or default route, and Bower is not a log forwarder for the estate. The
-Rust port (`rust/crates/bower-source-file`) must keep the same record shape, event ids,
-cursor format, limits, defaults, failure codes and configuration messages.
+directory, glob or default route, and Bower is not a log forwarder for the estate. Record
+shape, event ids, cursor format, limits, defaults, failure codes and configuration
+messages are a contract: change them only with a migration note.
 
 - Default deny: a line reaches the queue only through its input's route to an active
   signed pack parser whose match filter selects it, then redaction and policy. Lines the
@@ -24,7 +24,7 @@ cursor format, limits, defaults, failure codes and configuration messages.
   The known limit, documented and never claimed otherwise: a same-first-line generation at
   the old inode (rewritten in place, or the number reused) or without inode numbers (C#
   outside Linux), at least as long as the offset, continues and can skip records without a
-  gap. Both runtimes write and read `fileId` identically.
+  gap. `fileId` is written and read identically on every platform.
 - Bound everything: `maxLineBytes` (at most 30 KiB so the record fits the 32 KiB pack
   record limit), lines and bytes per poll, json-lines depth 8, configuration 256 KiB.
   Oversized lines are skipped without being buffered.
@@ -56,14 +56,14 @@ cursor format, limits, defaults, failure codes and configuration messages.
 - Never log or expose line content, records or file contents. Counters, paths and failure
   codes only.
 - Changes need malformed-input, oversized-line, rotation, path-guard, cursor
-  crash/recovery, backpressure and cancellation tests, mirrored in Rust
-  (`rust/crates/bower-source-file/tests/fixtures/file-tail-vectors.json` is shared;
+  crash/recovery, backpressure and cancellation tests
+  (`tests/fixtures/file-tail-vectors/file-tail-vectors.json` pins behaviour;
   regenerate with `BOWER_FILE_TAIL_VECTOR_OUTPUT`, then review the diff).
 - `FileTailFiles.Plan` is the shared tailer (identity, provisional cursors, truncation,
   durable rename and copytruncate draining, grace window, abandoned generations, start
   position) with a decoder and a `FileTailPolicy`. Every policy names the length it decides
   with (`DecisionLength`): the file source uses the length taken at open
-  (`FileTailLength.Opened`, one snapshot with identity and write time, as in Rust); Docker
+  (`FileTailLength.Opened`, one snapshot with identity and write time); Docker
   measures again (`Measured`). The Docker source uses it with its own policy and decoder, so
   a change here must keep `DockerSourceTests`, `DockerSidecarWorkerTests`,
   `DockerCursorCompatibilityTests`, `DockerReaderDifferentialTests` and

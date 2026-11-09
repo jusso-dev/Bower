@@ -1,0 +1,6 @@
+<!-- Optional example, not in Bower.sln: its packages are not Bower dependencies. -->
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

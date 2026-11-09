@@ -19,21 +19,21 @@ services:
     cap_drop:
       - ALL
 
-  collector-cs:
+  collector-a:
     image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
     profiles: [collectors]
     network_mode: service:bower-management
     read_only: true
     environment: &collector
       BOWER_LISTEN_URL: http://127.0.0.1:4319
-      BOWER_COLLECTOR_ID: edge-cs
+      BOWER_COLLECTOR_ID: edge-a
       BOWER_ENVIRONMENT: e2e
       BOWER_OUTPUT: none
       BOWER_MANAGEMENT_ENDPOINT: http://127.0.0.1:4320/
       BOWER_MANAGEMENT_AUTH: enrolment
       BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE: /run/bower/enrolment-token
     volumes:
-      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-cs:/run/bower:ro
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-a:/run/bower:ro
     tmpfs:
       - /tmp:size=16m,mode=1770
     security_opt:
@@ -41,17 +41,17 @@ services:
     cap_drop:
       - ALL
 
-  collector-rs:
-    image: ${BOWER_RUST_COLLECTOR_IMAGE:-bower-collector-rs:ci}
+  collector-b:
+    image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
     profiles: [collectors]
     network_mode: service:bower-management
     read_only: true
     environment:
       <<: *collector
       BOWER_LISTEN_URL: http://127.0.0.1:4321
-      BOWER_COLLECTOR_ID: edge-rs
+      BOWER_COLLECTOR_ID: edge-b
     volumes:
-      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-rs:/run/bower:ro
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-b:/run/bower:ro
     tmpfs:
       - /tmp:size=16m,mode=1770
     security_opt:

@@ -23,7 +23,7 @@
     <BowerVersion Condition="'$(BowerVersion)' == ''">$(BowerVersionCore)-dev.0</BowerVersion>
     <BowerBuildNumber Condition="'$(BowerBuildNumber)' == ''">0</BowerBuildNumber>
     <Version>$(BowerVersion)</Version>
-    <!-- Kept at 1.0.0.0: YAML error messages carry the assembly identity, and the C# and Rust
+    <!-- Kept at 1.0.0.0: YAML error messages carry the assembly identity, and the
          policy parity vectors pin that text. The release version is in the two below. -->
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
     <FileVersion>$(BowerVersionCore).$(BowerBuildNumber)</FileVersion>

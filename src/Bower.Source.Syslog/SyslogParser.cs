@@ -25,7 +25,7 @@ public sealed record SyslogMessage(
     IReadOnlyList<SyslogStructuredElement> StructuredData,
     string? Message);
 
-/// <summary>Stable failure codes (shared with the Rust port). Metadata only.</summary>
+/// <summary>Stable failure codes (stable). Metadata only.</summary>
 public static class SyslogFailures
 {
     public const string Empty = "syslog-empty";

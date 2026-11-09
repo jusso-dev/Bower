@@ -3,7 +3,7 @@ using System.Text;
 namespace Bower.Redaction.Privacy;
 
 /// <summary>A custom detector pattern translated to the canonical form that is compiled.</summary>
-/// <param name="CanonicalPattern">Pattern text compiled by both the C# and Rust engines.</param>
+/// <param name="CanonicalPattern">Pattern text that is compiled.</param>
 /// <param name="Complexity">Expansion estimate, saturated just above <see cref="CustomPatternTranslator.MaximumComplexity"/>.</param>
 /// <param name="MatchesEmpty">True when the pattern can produce a zero-length match.</param>
 public sealed record CustomPatternTranslation(string CanonicalPattern, int Complexity, bool MatchesEmpty);
@@ -42,7 +42,7 @@ public sealed class CustomPatternSyntaxException : Exception
 }
 
 /// <summary>
-/// Fixed rejection reasons for custom detector patterns. The Rust port uses the same
+/// Fixed rejection reasons for custom detector patterns. They are a stable contract and
 /// list, so profile errors are identical in both engines.
 /// </summary>
 public static class CustomPatternReasons
@@ -107,10 +107,10 @@ public static class CustomPatternReasons
 /// <summary>
 /// Validates a custom detector pattern against the restricted syntax and emits the
 /// canonical pattern that is actually compiled. The canonical form is identical in the
-/// C# and Rust engines: ASCII-only shorthand classes, <c>.</c> as <c>[^\n]</c>, anchors as
+/// engine: ASCII-only shorthand classes, <c>.</c> as <c>[^\n]</c>, anchors as
 /// <c>\A</c>/<c>\z</c>, non-capturing groups, explicit escapes, case-insensitivity expanded
 /// into classes, and character ranges never covering UTF-16 surrogates. No engine
-/// option changes its meaning, so .NET (UTF-16 units) and Rust (scalars over a
+/// option changes its meaning, so UTF-16 units and scalars (over a
 /// surrogate-preserving haystack) find the same spans.
 /// </summary>
 public static class CustomPatternTranslator

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Relay mode end to end in compose (#110). Needs the CI images bower-management:ci,
-# bower-collector:ci and bower-collector-rs:ci, plus jq and openssl on the host.
+# bower-collector:ci, plus jq and openssl on the host.
 #
-# Three tiers: management (loopback only), two relays (C# and Rust) that share its network
+# Three tiers: management (loopback only), two relays that share its network
 # namespace, and two downstream collectors with no route to management. Each downstream
 # enrols, heartbeats and delivers through the other runtime's relay. The test proves:
 # enrolment and Active status through the tunnel, delivery of every event exactly once to
@@ -101,7 +101,7 @@ openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -subj "/CN=bower-
 printf 'subjectAltName=DNS:bower-management\nextendedKeyUsage=serverAuth\nbasicConstraints=CA:FALSE\n' >"$work/relay.ext"
 openssl x509 -req -in "$work/relay.csr" -CA "$work/relay-ca.pem" -CAkey "$work/ca.key" -CAcreateserial \
   -days 2 -extfile "$work/relay.ext" -out "$work/relay.crt" 2>/dev/null
-for edge in edge-cs edge-rs; do
+for edge in edge-a edge-b; do
   mkdir -p "$work/$edge"
   openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 2 -subj "/CN=$edge" \
     -keyout "$work/$edge/client.key" -out "$work/$edge/client.crt" -addext extendedKeyUsage=clientAuth 2>/dev/null
@@ -112,13 +112,13 @@ for edge in edge-cs edge-rs; do
     source: {ipAddress: "192.0.2.10"}}]' >"$work/$edge/producer-scopes.json"
 done
 pin() { openssl x509 -in "$work/$1/client.crt" -noout -fingerprint -sha256 | cut -d= -f2; }
-for relay in relay-cs relay-rs; do
+for relay in relay-a relay-b; do
   mkdir -p "$work/$relay"
   cp "$work/relay.crt" "$work/relay.key" "$work/$relay/"
 done
-# Crossed runtimes: the Rust downstream uses the C# relay and the C# downstream the Rust relay.
-jq -n --arg pin "$(pin edge-rs)" '{downstreams: [{collectorId: "edge-rs", certificateSha256: $pin}]}' >"$work/relay-cs/downstreams.json"
-jq -n --arg pin "$(pin edge-cs)" '{downstreams: [{collectorId: "edge-cs", certificateSha256: $pin}]}' >"$work/relay-rs/downstreams.json"
+# Crossed pairs: downstream b uses relay a and downstream a uses relay b.
+jq -n --arg pin "$(pin edge-b)" '{downstreams: [{collectorId: "edge-b", certificateSha256: $pin}]}' >"$work/relay-a/downstreams.json"
+jq -n --arg pin "$(pin edge-a)" '{downstreams: [{collectorId: "edge-a", certificateSha256: $pin}]}' >"$work/relay-b/downstreams.json"
 grep -h -v -e '^-----' -e '^$' "$work"/*.key "$work"/edge-*/client.key >>"$work/secrets"
 
 "${compose[@]}" up -d bower-management
@@ -127,7 +127,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-for id in relay-cs relay-rs edge-cs edge-rs; do
+for id in relay-a relay-b edge-a edge-b; do
   token="$(post /api/enrolment-tokens \
     "{\"environment\":\"e2e\",\"collectorId\":\"$id\",\"reason\":\"CI relay e2e\",\"expiresInHours\":1}" \
     | jq -r .token)"
@@ -137,38 +137,38 @@ done
 chmod 755 "$work"/relay-* "$work"/edge-*
 chmod 644 "$work"/relay-*/* "$work"/edge-*/*
 
-"${compose[@]}" up -d relay-cs relay-rs
-for id in relay-cs relay-rs; do
+"${compose[@]}" up -d relay-a relay-b
+for id in relay-a relay-b; do
   wait_for "$id" Pending
   post "/api/approvals/$id/approve" '{"reason":"CI relay e2e approval"}' >/dev/null
 done
 
 # The downstreams have no route to management: enrolment and heartbeats cross the relays.
-"${compose[@]}" up -d edge-cs edge-rs
-for id in edge-cs edge-rs; do
+"${compose[@]}" up -d edge-a edge-b
+for id in edge-a edge-b; do
   wait_for "$id" Pending
   post "/api/approvals/$id/approve" '{"reason":"CI relay e2e approval"}' >/dev/null
 done
-for id in relay-cs relay-rs edge-cs edge-rs; do
+for id in relay-a relay-b edge-a edge-b; do
   wait_for "$id" Active
 done
 
-send_batch edge-cs 1 5
-send_batch edge-rs 1 5
-wait_spooled relay-rs edge-cs 5
-wait_spooled relay-cs edge-rs 5
+send_batch edge-a 1 5
+send_batch edge-b 1 5
+wait_spooled relay-b edge-a 5
+wait_spooled relay-a edge-b 5
 
 # Relays down: the downstreams keep accepting and hold the events in their own queues.
-"${compose[@]}" stop relay-cs relay-rs
-send_batch edge-cs 6 10
-send_batch edge-rs 6 10
-"${compose[@]}" start relay-cs relay-rs
-wait_spooled relay-rs edge-cs 10
-wait_spooled relay-cs edge-rs 10
+"${compose[@]}" stop relay-a relay-b
+send_batch edge-a 6 10
+send_batch edge-b 6 10
+"${compose[@]}" start relay-a relay-b
+wait_spooled relay-b edge-a 10
+wait_spooled relay-a edge-b 10
 sleep 3
 
 # Exactly once at the destination, still attributed to the downstream that redacted them.
-for pair in relay-rs:edge-cs relay-cs:edge-rs; do
+for pair in relay-b:edge-a relay-a:edge-b; do
   relay="${pair%%:*}"
   edge="${pair##*:}"
   ids="$(spooled "$relay")"
@@ -179,9 +179,9 @@ done
 
 # Relay status counts the downstream's events; the downstream delivered all of them.
 relay_status() { api -f "http://127.0.0.1:$1/v1/status"; }
-test "$(relay_status 4319 | jq '.relay.downstreams[] | select(.collectorId == "edge-rs") | .accepted')" -ge 5
-test "$(relay_status 4329 | jq '.relay.downstreams[] | select(.collectorId == "edge-cs") | .accepted')" -ge 5
-for edge in edge-cs edge-rs; do
+test "$(relay_status 4319 | jq '.relay.downstreams[] | select(.collectorId == "edge-b") | .accepted')" -ge 5
+test "$(relay_status 4329 | jq '.relay.downstreams[] | select(.collectorId == "edge-a") | .accepted')" -ge 5
+for edge in edge-a edge-b; do
   queue="$(docker run --rm --network "container:bower-relay-e2e-$edge" curlimages/curl:8.11.1 -sf http://127.0.0.1:4319/v1/status | jq .queue)"
   test "$(jq '.delivered' <<<"$queue")" = 10
   test "$(jq '.queued + .retrying + .uploading + .deadLettered' <<<"$queue")" = 0
@@ -195,4 +195,4 @@ if "${compose[@]}" logs --no-color 2>&1 | grep -q "PRIVATE KEY"; then
   echo "Private key material appeared in a container log." >&2
   exit 1
 fi
-echo "Relay e2e passed: C# and Rust downstreams enrolled and delivered exactly once through the other runtime's relay."
+echo "Relay e2e passed: both downstreams enrolled and delivered exactly once through the other relay."

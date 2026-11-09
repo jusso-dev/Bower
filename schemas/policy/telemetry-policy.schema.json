@@ -69,10 +69,10 @@
       }
     },
     "suppression": {
-      "description": "Admit at most allowPerWindow accepted events per key in each epoch-aligned window; count the rest and report them in one telemetry_aggregation_summary event per window. Not allowed with neverSample, non-accepting actions or the summary event type. A policy set that suppresses must also accept telemetry_aggregation_summary.",
+      "description": "Admit at most allowPerWindow accepted events per key in each epoch-aligned window; count the rest and report them in one telemetry_aggregation_summary event per window. With decision action aggregate, allowPerWindow is 0 or omitted and every matching event is only counted. Not allowed with neverSample, non-accepting actions or the summary event type. A policy set that suppresses or aggregates must also accept telemetry_aggregation_summary.",
       "type": "object",
       "additionalProperties": false,
-      "required": ["keyFields", "windowSeconds", "allowPerWindow"],
+      "required": ["keyFields", "windowSeconds"],
       "properties": {
         "keyFields": {
           "type": "array",
@@ -92,7 +92,7 @@
           }
         },
         "windowSeconds": {"type": "integer", "minimum": 1, "maximum": 86400},
-        "allowPerWindow": {"type": "integer", "minimum": 1, "maximum": 100000}
+        "allowPerWindow": {"type": "integer", "minimum": 0, "maximum": 100000, "description": "1-100000 for accept and redact-and-accept (required there); 0 or omitted for aggregate."}
       }
     }
   }

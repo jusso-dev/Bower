@@ -8,9 +8,9 @@ Deterministic, explainable event selection. Configuration never executes code.
   null sections, lists, items and blank field paths fail the load, so a policy
   means the same on every machine and culture.
 - `PolicyParityVectorTests` pins loader and evaluator outcomes in
-  `rust/crates/bower-policy/tests/fixtures`. After an intended behaviour change,
-  run it with `BOWER_POLICY_VECTOR_OUTPUT=<dir>`, copy the outcomes into the
-  fixtures and change the Rust port to match.
+  `tests/fixtures/policy-vectors`. After an intended behaviour change,
+  run it with `BOWER_POLICY_VECTOR_OUTPUT=<dir>`, review and copy the
+  outcomes into the fixtures.
 - Unknown event types are default-deny (`BWR-POL-DEFAULT-DENY`).
 - Policy hashes must stay stable for unchanged content.
 - Policy content changes need a version bump, stable hash, population diff and tests.

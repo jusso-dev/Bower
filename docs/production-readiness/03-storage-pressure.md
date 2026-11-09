@@ -153,11 +153,11 @@ On AWS, a 19-minute queue-full run logged 45 lines (7.4 KB) in total.
 | Bounded storage logs; delivery-loop failure logs throttled | A full disk must not also fill the journal |
 | Kubernetes manifest sets `BOWER_QUEUE_MAX_BYTES` (5 GiB), a 16Gi claim and ephemeral-storage | The 10 GiB default, and settlement growth, could exceed the old 10Gi claim |
 
-The Rust collector (`bower-collector-rs`) now shares the page model: the same 85%
-intake limit and 1.75× settlement ceiling, so either runtime opens and drains a queue
-the other grew while settling. It has no watermarks, pressure retention, incremental
-vacuum or `storage` status; see [known limits](#known-limits). The Sentinel schema, DCR
-and table are unchanged.
+The Rust collector (`bower-collector-rs`, retired in November 2026) shared the page
+model: the same 85% intake limit and 1.75× settlement ceiling, so either runtime opened
+and drained a queue the other grew while settling. It had no watermarks, pressure
+retention, incremental vacuum or `storage` status; see [known limits](#known-limits).
+The Sentinel schema, DCR and table are unchanged.
 
 ---
 
@@ -828,7 +828,8 @@ fields.
   [rollback procedure](04-upgrade-backup-recovery.md#rollback-after-settlement-growth))
   returns it but does not switch the file to incremental auto-vacuum; use additional disk
   capacity until a migration is qualified.
-- **Rust collector:** the intake limit and settlement ceiling are ported (tests open a
+- **Rust collector (retired in November 2026; recorded as tested):** the intake limit
+  and settlement ceiling are ported (tests open a
   queue grown past the intake ceiling, refuse intake at the limit while a backlog still
   leases and acknowledges, and refuse a file past the settlement ceiling). Watermarks,
   pressure retention, the large-event reclaim, incremental vacuum and the `storage`

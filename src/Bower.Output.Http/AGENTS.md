@@ -1,9 +1,8 @@
 # HTTP output instructions
 
 `BOWER_OUTPUT=http`: bounded HTTPS delivery of queued, already-redacted Bower events to
-Splunk HTTP Event Collector (`splunk-hec`) or a generic NDJSON endpoint (`ndjson`). Rust
-port: `rust/crates/bower-output-http`; request and response vectors in
-`tests/fixtures/http-output` are shared and must pass in both runtimes.
+Splunk HTTP Event Collector (`splunk-hec`) or a generic NDJSON endpoint (`ndjson`).
+Request and response vectors in `tests/fixtures/http-output` pin the wire format.
 
 - Delivery means "accepted by the endpoint" (2xx; HEC also `code` 0, or the near-capacity
   codes 24/25, which are recorded only as `:near-capacity:hec-<n>` on the acknowledgement;
@@ -34,7 +33,5 @@ port: `rust/crates/bower-output-http`; request and response vectors in
   response-only) or a hop-by-hop/framing/proxy header; adding it must succeed or fail closed.
 - `http://` only to loopback IP literals, never through a proxy. CA bundles hold only
   self-signed roots.
-- Rust only: on shutdown the worker aborts the output task and discards a partial
-  result, so batches already accepted in that delivery are resent after lease expiry.
 - Bound everything: batch bytes and events, 64 KiB response reads, request timeout,
   Retry-After capped at one hour.

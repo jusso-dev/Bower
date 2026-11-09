@@ -13,7 +13,7 @@ using Bower.Persistence;
 
 namespace Bower.UnitTests;
 
-/// <summary>CLI behaviour that the Rust port mirrors (see rust/crates/bower-cli).</summary>
+/// <summary>CLI argument and output behaviour.</summary>
 public sealed class CliCommandTests
 {
     [Theory]

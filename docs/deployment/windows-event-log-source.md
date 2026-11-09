@@ -12,9 +12,8 @@ event log service ──generated query──▶ subscription ──▶ parse XM
                       providers             backpressure
 ```
 
-Only the C# collector has this source, on Windows. The Rust collector does not target
-Windows: it refuses to start with `BOWER_WINDOWS_EVENTLOG_CONFIG` set, and so does the
-C# collector on Linux or macOS.
+This source is available on Windows only. The collector refuses to start with
+`BOWER_WINDOWS_EVENTLOG_CONFIG` set on Linux or macOS.
 
 ## What is accepted
 

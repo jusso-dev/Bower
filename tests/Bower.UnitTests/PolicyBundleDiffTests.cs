@@ -5,8 +5,8 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// <c>bower policy diff</c> bundle comparison (issue 73). The pinned outputs in
-/// <c>rust/crates/bower-cli/tests/fixtures/bundle-diff</c> are what this runtime prints; the
-/// Rust port must print the same bytes for the same fixtures at the same <c>--at</c>.
+/// <c>tests/fixtures/bundle-diff</c> are what the CLI prints
+/// for those fixtures at that <c>--at</c>.
 /// </summary>
 public sealed class PolicyBundleDiffTests
 {

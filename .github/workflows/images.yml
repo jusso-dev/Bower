@@ -66,9 +66,6 @@ jobs:
           - image: bower-cloud
             dockerfile: deploy/docker/Dockerfile.cloud
             description: Bower cloud agent - forwards AWS SQS and Google Pub/Sub security telemetry
-          - image: bower-collector-rs
-            dockerfile: rust/Dockerfile
-            description: Bower collector (Rust) - same contract as bower-collector, static musl binary
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

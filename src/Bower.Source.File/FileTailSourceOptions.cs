@@ -253,7 +253,7 @@ public static class FileTailSourceConfigurationLoader
             || string.Equals(left + ".1", right, StringComparison.Ordinal);
     }
 
-    /// <summary>ASCII-only case folding, identical in both runtimes.</summary>
+    /// <summary>ASCII-only case folding.</summary>
     private static string Fold(string value) =>
         string.Create(value.Length, value, static (span, source) =>
         {

@@ -18,7 +18,7 @@ public enum CollectorIdSource
 /// breaks replay deduplication and destination identity. Now the first start writes the
 /// machine name it would have used to <c>collector-id</c> beside the queue database (the
 /// data volume), and later starts read it back, so existing installs keep their current id
-/// and recreated containers keep theirs. The Rust collector reads and writes the same file.
+/// and recreated containers keep theirs.
 /// </summary>
 public static class CollectorIdentityFile
 {

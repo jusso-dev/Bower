@@ -31,7 +31,7 @@ public sealed class PipelineTelemetry(TimeProvider clock)
     /// <summary>
     /// Storage refusal reason: the queue volume is below the critical free-space watermark.
     /// Reported in <see cref="StorageRefusalSnapshot"/>; <see cref="IntakeSnapshot"/> counts it
-    /// as <see cref="QueueCapacityReason"/>, its shape being shared with the Rust collector.
+    /// as <see cref="QueueCapacityReason"/>.
     /// </summary>
     public const string StorageCriticalReason = "storage-critical";
 

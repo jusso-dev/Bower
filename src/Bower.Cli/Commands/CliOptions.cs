@@ -11,8 +11,7 @@ internal static partial class CliOptions
     /// A time option (<c>--at</c>, <c>--from</c>, <c>--to</c>) as UTC; null when absent. Only
     /// <see cref="TimestampShape"/> is accepted: an explicit <c>Z</c> or offset (at most
     /// 14:00), at most 7 fractional digits, no date-only or time-only values, so no input is
-    /// rounded or completed with today's date. The Rust CLI (<c>support::timestamp</c>)
-    /// applies the same rule.
+    /// rounded or completed with today's date.     /// Pinned by CliCommandTests.
     /// </summary>
     public static DateTimeOffset? Timestamp(string? value, string name)
     {

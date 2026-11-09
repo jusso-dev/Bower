@@ -69,7 +69,7 @@ public static class GeneratedEventIds
 
     /// <summary>
     /// The id an in-process source wrote for its record, or null. <c>SyslogRecord.Build</c>
-    /// and <c>WindowsEventRecord.Build</c> (and the Rust syslog source) write it first,
+    /// and <c>WindowsEventRecord.Build</c> write it first,
     /// without whitespace, so only that exact prefix counts. Call only for records Bower's
     /// own sources built: a producer-supplied record is source data, never a generated id.
     /// </summary>
