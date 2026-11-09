@@ -17,7 +17,9 @@ Examples: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway),
 [`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) (plain-text auth.log lines from
 the [file tail source](file-tail-source.md), uses transforms) and
 [`packs/windows-security-logon`](../../packs/windows-security-logon) (Security event 4625
-from the [Windows Event Log source](windows-event-log-source.md), uses transforms).
+from the [Windows Event Log source](windows-event-log-source.md), uses transforms). [`packs/owasp-asvs-app-logging`](../../packs/owasp-asvs-app-logging) selects
+semantic application events with no parser (see the
+[ASVS logging pack](../security/asvs-logging-pack.md)).
 
 ## Build, sign, verify
 

@@ -1,0 +1,27 @@
+// Bower ASVS pack: an application stopped sending security events.
+// Applications that sent ASVS pack or default application events in the baseline period
+// and none in the last `silence`. Complements the collector's own source expectations
+// (deploy/sentinel/monitoring/queries/source-overdue.kql), which need BOWER_SOURCE_EXPECTATIONS:
+// this rule needs no configuration but only sees applications with recent history.
+// ASVS 5.0 V16.4.3; ISM-1405, ISM-1906. One alert per application, environment and silence
+// start, so a long outage alerts once.
+let silence = 60m;
+let baseline = 7d;
+let minimumBaselineEvents = 20;
+let ruleKey = "bower-asvs-log-silence:default";
+let alerted = SecurityAlert
+    | where ProviderName == "ASI Scheduled Alerts"
+    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
+    | where BowerDetectionKey startswith strcat(ruleKey, "|")
+    | distinct BowerDetectionKey;
+BowerSecurity_CL
+| where TimeGenerated > ago(baseline)
+| where EventType !in ("collector_health", "collector_canary", "telemetry_aggregation_summary")
+| summarize LastSeen = max(TimeGenerated), BaselineEvents = count(), Collectors = make_set(CollectorId, 10)
+    by ApplicationName, ApplicationEnvironment
+| where BaselineEvents >= minimumBaselineEvents
+| where LastSeen < ago(silence)
+| extend BowerDetectionKey = strcat(ruleKey, "|", ApplicationName, "|", ApplicationEnvironment, "|", tostring(LastSeen))
+| where BowerDetectionKey !in (alerted)
+| project BowerDetectionKey, ApplicationName, ApplicationEnvironment, LastSeen,
+    SilentMinutes = datetime_diff("minute", now(), LastSeen), BaselineEvents, Collectors, EvaluatedAt = now()

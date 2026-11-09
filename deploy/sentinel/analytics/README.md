@@ -11,6 +11,7 @@ content that counts each event once and alerts once:
 | `rules/firewall-deny.kql` | Repeated firewall denials from one address |
 | `rules/beyond-tolerance.kql` | Informational: events later than the rules evaluate |
 | `main.bicep` | Deploys the function and the three rules, **disabled by default** |
+| `rules/asvs/*.kql`, `asvs.bicep` | Starter rules for the [ASVS logging pack](../../../docs/security/asvs-logging-pack.md#sentinel-analytics): spraying, privilege change, after-hours admin (time zone parameter, default Australia/Sydney), mass export and per-app log silence; **disabled by default**, deploy after `main.bicep` |
 | `validation/` | Fault-injection proxy, synthetic event driver, query-cost load generator, verifier and strict cleanup audit for the test procedure (standard-library Python, synthetic data only) |
 
 Deploy (plan first, then apply):

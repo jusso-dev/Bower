@@ -77,7 +77,7 @@
       <Link>deploy/main.bicep</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../deploy/sentinel/analytics/**/*.kql;../../deploy/sentinel/analytics/main.bicep">
+    <Content Include="../../deploy/sentinel/analytics/**/*.kql;../../deploy/sentinel/analytics/main.bicep;../../deploy/sentinel/analytics/asvs.bicep">
       <Link>deploy/sentinel/analytics/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
