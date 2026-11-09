@@ -24,7 +24,7 @@ WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 builder.Host.UseSerilog((context, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .Enrich.FromLogContext()
-    .Filter.ByExcluding(log => log.Properties.Keys.Any(BowerEvents.IsSecret))
+    .Enrich.With(new DropSecretProperties())
     .WriteTo.Console(new RenderedCompactJsonFormatter()));
 
 // V15.3.4, V4.1.3: believe X-Forwarded-For only from the listed proxies. Clearing both lists
@@ -154,3 +154,15 @@ app.MapGet("/admin/users", (HttpContext context) =>
 app.Run();
 
 internal sealed record LoginRequest(string Username, string Password);
+
+// Removes secret-named properties and keeps the rest of the event. Enrichers run before sinks.
+internal sealed class DropSecretProperties : Serilog.Core.ILogEventEnricher
+{
+    public void Enrich(Serilog.Events.LogEvent logEvent, Serilog.Core.ILogEventPropertyFactory propertyFactory)
+    {
+        foreach (string name in logEvent.Properties.Keys.Where(BowerEvents.IsSecret).ToList())
+        {
+            logEvent.RemovePropertyIfPresent(name);
+        }
+    }
+}

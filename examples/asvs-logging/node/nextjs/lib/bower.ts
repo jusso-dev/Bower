@@ -12,9 +12,8 @@ const trusted = (process.env.TRUSTED_PROXIES ?? '').split(',').map((s) => s.trim
 type Spec = Record<string, unknown> & { eventType: string; eventCategory: string; eventAction: string; eventResult: string };
 
 /**
- * Emit a Bower security event with request context. The peer address comes from the platform:
- * x-real-ip set by your own proxy or platform (never trust a client-supplied value unless the
- * peer is a trusted proxy), and proxy.ts sets x-request-id.
+ * Emit a Bower security event with request context. proxy.ts sets x-request-id and
+ * x-bower-peer, the peer address read from BOWER_PEER_HEADER (empty unless configured).
  */
 export async function security(spec: Spec & { route: string }) {
   const h = await headers();

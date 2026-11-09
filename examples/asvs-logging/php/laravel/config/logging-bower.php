@@ -9,13 +9,9 @@ return [
             'handler' => Monolog\Handler\StreamHandler::class,
             'with' => ['stream' => 'php://stderr'],
             'formatter' => Monolog\Formatter\JsonFormatter::class,
-            'processors' => [
-                // Strip secret-named context keys before they reach any handler (V16.2.5).
-                static function (Monolog\LogRecord $record): Monolog\LogRecord {
-                    $context = array_filter($record->context, static fn ($key) => !Bower\BowerEvents::isSecret((string) $key), ARRAY_FILTER_USE_KEY);
-                    return $record->with(context: $context);
-                },
-            ],
+            // Strip secret-named context keys before they reach any handler (V16.2.5). A class,
+            // not a closure, so `php artisan config:cache` can serialise this file.
+            'tap' => [App\Logging\DropSecretContext::class],
         ],
     ],
 ];

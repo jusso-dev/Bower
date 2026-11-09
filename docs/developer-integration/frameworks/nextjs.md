@@ -24,11 +24,12 @@ Example: [`examples/asvs-logging/node/nextjs`](../../../examples/asvs-logging/no
 before Next.js 16) gives each request an ID, reusing the `traceparent` trace ID when there is
 one, and passes it on in `x-request-id`.
 
-Next.js has no reliable peer address in route handlers. The proxy copies the address your
-own reverse proxy or platform set (`x-real-ip` in the example) into `x-bower-peer`, and
-**overwrites** any `x-bower-peer` the client sent. Configure your load balancer to set
-`x-real-ip` itself and to drop client copies of it. `security()` then applies
-`TRUSTED_PROXIES` to `X-Forwarded-For` as usual.
+Next.js has no reliable peer address in route handlers. The proxy copies the header named in
+`BOWER_PEER_HEADER` (for example `x-real-ip`) into `x-bower-peer`, and **overwrites** any
+`x-bower-peer` the client sent. Set `BOWER_PEER_HEADER` only when your load balancer or
+platform always sets that header itself and drops client copies of it. Unset, nothing is
+trusted and events carry no source IP. `security()` then applies `TRUSTED_PROXIES` to
+`X-Forwarded-For` as usual.
 
 ## Route handlers
 

@@ -11,14 +11,15 @@ later, `ext-curl`). Read the [shared guidance](../asvs-logging-frameworks.md) fi
 | [`laravel/app/BowerSecurity.php`](../../../examples/asvs-logging/php/laravel/app/BowerSecurity.php) | `BowerSecurity::emit($request, $spec)`: adds context and sends after the response (`app()->terminating`) |
 | [`laravel/app/Listeners/BowerAuthListener.php`](../../../examples/asvs-logging/php/laravel/app/Listeners/BowerAuthListener.php) | Laravel `Login`, `Failed`, `Lockout`, `Logout` and `PasswordReset` events |
 | [`laravel/bootstrap/app.php`](../../../examples/asvs-logging/php/laravel/bootstrap/app.php) | Exception renderers for authorisation, validation (field names only) and rate limits, plus a last-resort reporter |
-| [`laravel/config/logging-bower.php`](../../../examples/asvs-logging/php/laravel/config/logging-bower.php) | A JSON Monolog channel that drops secret-named context keys |
+| [`laravel/config/logging-bower.php`](../../../examples/asvs-logging/php/laravel/config/logging-bower.php) | A JSON Monolog channel that drops secret-named context keys through the `tap` class [`laravel/app/Logging/DropSecretContext.php`](../../../examples/asvs-logging/php/laravel/app/Logging/DropSecretContext.php) |
+| [`laravel/config/bower.php`](../../../examples/asvs-logging/php/laravel/config/bower.php) | `bower.trusted_proxies` from `TRUSTED_PROXIES`, so the list survives `php artisan config:cache` |
 
 Register the listener with `Event::subscribe(BowerAuthListener::class)` in
 `AppServiceProvider::boot()`.
 
 ## Client IP
 
-The middleware reads `REMOTE_ADDR` and applies `TRUSTED_PROXIES` itself, so a wide
+The middleware reads `REMOTE_ADDR` and applies `bower.trusted_proxies` (from `TRUSTED_PROXIES`) itself, so a wide
 `TrustProxies` setting can't change which address Bower records. Keep `TrustProxies` limited to
 the same networks for everything else.
 

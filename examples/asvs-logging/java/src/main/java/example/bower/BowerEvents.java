@@ -171,7 +171,11 @@ public final class BowerEvents {
 
     private static InetAddress parse(String address) {
         // Literal addresses only: never resolve names.
-        if (address == null || address.isEmpty() || !address.matches("[0-9A-Fa-f:.]+")) {
+        // Dotted-quad IPv4, or a value with a colon (Java treats it as an IPv6 literal and never
+        // looks it up). Hex-only names such as "cafe" would otherwise go to DNS.
+        if (address == null || address.isEmpty()
+                || !(address.matches("\\d{1,3}(\\.\\d{1,3}){3}")
+                    || (address.contains(":") && address.matches("[0-9A-Fa-f:.]+")))) {
             return null;
         }
         try {

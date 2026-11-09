@@ -44,8 +44,13 @@ func envOr(name, fallback string) string {
 func parsePrefixes(list string) []netip.Prefix {
 	var out []netip.Prefix
 	for _, item := range strings.Split(list, ",") {
-		if p, err := netip.ParsePrefix(strings.TrimSpace(item)); err == nil {
+		item = strings.TrimSpace(item)
+		if p, err := netip.ParsePrefix(item); err == nil {
 			out = append(out, p)
+		} else if a, err := netip.ParseAddr(item); err == nil {
+			// A bare address is a single host, as in the other examples.
+			a = a.Unmap()
+			out = append(out, netip.PrefixFrom(a, a.BitLen()))
 		}
 	}
 	return out

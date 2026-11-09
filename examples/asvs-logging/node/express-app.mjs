@@ -35,7 +35,13 @@ function security(req, spec) {
   });
 }
 
-const safeEqual = (a, b) => a.length === b.length && timingSafeEqual(Buffer.from(a), Buffer.from(b));
+// Compare byte lengths: non-ASCII input has more UTF-8 bytes than UTF-16 code units, and a
+// length mismatch would make timingSafeEqual throw.
+const safeEqual = (a, b) => {
+  const x = Buffer.from(String(a));
+  const y = Buffer.from(String(b));
+  return x.length === y.length && timingSafeEqual(x, y);
+};
 
 app.post('/login', (req, res) => {
   const { username = '', password = '' } = req.body ?? {};

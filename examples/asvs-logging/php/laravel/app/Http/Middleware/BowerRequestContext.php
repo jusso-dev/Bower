@@ -21,7 +21,7 @@ final class BowerRequestContext
     {
         $traceparent = (string) $request->header('traceparent', '');
         $requestId = strlen($traceparent) === 55 ? substr($traceparent, 3, 32) : (string) Str::uuid();
-        $trusted = array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', '')))));
+        $trusted = array_values(array_filter(array_map('trim', explode(',', (string) config('bower.trusted_proxies', '')))));
         $request->attributes->set('bower.request_id', $requestId);
         $request->attributes->set('bower.client_ip', BowerEvents::clientIp(
             (string) $request->server('REMOTE_ADDR', ''),
