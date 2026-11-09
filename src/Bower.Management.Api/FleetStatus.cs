@@ -159,6 +159,9 @@ public static class FleetStatus
             "not-sending" => new(
                 FleetStates.CannotDeliver, HomeStates.Red, "Has not been able to send events for more than 15 minutes.",
                 new(connection, null)),
+            "queue-full" => new(
+                FleetStates.CannotDeliver, HomeStates.Amber, "Its queue is full, so it is refusing new events.",
+                new($"Free disk space on the machine, or let it catch up: {Lower(connection)}", null)),
             "send-trouble" => new(
                 FleetStates.CannotDeliver, HomeStates.Amber, "Has had trouble sending events.",
                 new($"Bower keeps trying. If it lasts more than 15 minutes: {Lower(connection)}", null)),
@@ -183,6 +186,9 @@ public static class FleetStatus
             "privacy-not-applied" => new(
                 FleetStates.NeedsCheck, HomeStates.Amber, "Has not applied its assigned privacy profile yet.",
                 new("Open Privacy profiles to check the rollout.", PrivacyProfiles)),
+            "job-failed" => new(
+                FleetStates.NeedsCheck, HomeStates.Amber, "The last run of one of its maintenance jobs failed.",
+                new("Open the collector's details to see which job. It runs again on its schedule.", null)),
             _ => throw new InvalidOperationException($"Home condition '{condition}' has no fleet state.")
         };
     }

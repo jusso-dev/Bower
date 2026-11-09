@@ -1,4 +1,5 @@
 using Bower.Evidence;
+using Bower.Jobs;
 using Bower.Management.Api.Jobs;
 
 namespace Bower.Management.Api;
@@ -43,9 +44,13 @@ public static class HomeStatus
         new("stale", HomeStates.Amber, "not checked in for a few minutes",
             new("This usually clears by itself. If it lasts, check the machine.", Collectors),
             (item, now) => Running(item) && CollectorConnectivity.Evaluate(item, now) == CollectorConnectivity.Stale),
+        // Before the generic send trouble: a full queue needs a different fix.
+        new("queue-full", HomeStates.Amber, "a full queue and is refusing new events",
+            new("Free disk space on the machine, or let it catch up once its connection to Azure works.", Collectors),
+            (item, now) => Fresh(item, now) && Is(item.DeliveryStatus, "backpressure")),
         new("send-trouble", HomeStates.Amber, "had trouble sending events",
             new("Bower keeps trying. If it lasts more than 15 minutes, check the machine's connection to Azure.", Collectors),
-            (item, now) => Fresh(item, now) && !DeliveryOperational(item.DeliveryStatus)),
+            (item, now) => Fresh(item, now) && !DeliveryOperational(item.DeliveryStatus) && !Is(item.DeliveryStatus, "backpressure")),
         new("pending", HomeStates.Amber, "asked to join",
             new("Review the request on the Approvals page.", "/approvals"),
             (item, _) => item.Status == CollectorStatus.Pending),
@@ -66,7 +71,11 @@ public static class HomeStatus
             (item, now) => Fresh(item, now) && item.PolicyInSync == false),
         new("privacy-not-applied", HomeStates.Amber, "not applied its assigned privacy profile yet",
             new("Open Privacy profiles to check the rollout.", "/privacy-profiles"),
-            (item, now) => Fresh(item, now) && item.PrivacyProfileInSync == false)
+            (item, now) => Fresh(item, now) && item.PrivacyProfileInSync == false),
+        new("job-failed", HomeStates.Amber, "a maintenance job whose last run failed",
+            new("Open the collector's details to see which job; it runs again on its schedule.", Collectors),
+            (item, now) => Fresh(item, now) && item.Jobs is { } jobs
+                && jobs.Any(job => string.Equals(job.LastState, BackgroundJobStates.Failed, StringComparison.Ordinal)))
     ];
 
     private static readonly HomeFix SetupFix = new("Send a test event from the Setup page.", "/setup");
