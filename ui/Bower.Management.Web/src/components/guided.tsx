@@ -72,14 +72,16 @@ export function Stepper({
               type="button"
               className="stepper__item"
               aria-current={step.id === current ? "step" : undefined}
-              aria-label={`Step ${index + 1}: ${step.title}, ${stateLabels[step.state]}`}
               onClick={() => onSelect(step.id)}
             >
+              {/* The name is the visible text, so voice control users can say what they see
+                  (WCAG 2.5.3): "Step 1: Sign in Done". */}
               <span className="stepper__number" aria-hidden="true">
                 {index + 1}
               </span>
               <span className="stepper__text">
-                <span className="stepper__title">{step.title}</span>
+                <span className="visually-hidden">{`Step ${index + 1}:`}</span>{" "}
+                <span className="stepper__title">{step.title}</span>{" "}
                 <PlainStatus state={step.state} />
               </span>
             </button>

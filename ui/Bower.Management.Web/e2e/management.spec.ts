@@ -143,11 +143,11 @@ test.describe("setup wizard", () => {
     await expect(steps.getByRole("listitem")).toHaveCount(7);
     // Development sign-in is never reported as production-ready, so step 2 needs attention.
     await expect(
-      steps.getByRole("button", { name: "Step 2: Connect Entra apps, Needs attention" })
+      steps.getByRole("button", { name: "Step 2: Connect Entra apps Needs attention" })
     ).toBeVisible();
 
     // The seeded approvals complete the collector step; setup itself approves nothing.
-    await steps.getByRole("button", { name: "Step 4: Approve the first collector, Done" }).click();
+    await steps.getByRole("button", { name: "Step 4: Approve the first collector Done" }).click();
     await expect(page.getByRole("heading", { name: "Approve the first collector" })).toBeFocused();
     const approvedCollectors = page.getByText(/2 collectors approved:/);
     await expect(approvedCollectors).toContainText("claims-api-03");
@@ -160,7 +160,7 @@ test.describe("setup wizard", () => {
     await expect(page.getByRole("alert")).toContainText("Enter the workspace ID as a GUID");
     await page.getByLabel("Workspace ID").fill("6f1c2b9e-3d4a-4e5f-8a7b-9c0d1e2f3a4b");
     await page.getByRole("button", { name: "Save destination" }).click();
-    await expect(steps.getByRole("button", { name: "Step 3: Choose where events go, Done" }))
+    await expect(steps.getByRole("button", { name: "Step 3: Choose where events go Done" }))
       .toBeVisible();
 
     await page.getByRole("button", { name: "Next step" }).click();
@@ -168,7 +168,7 @@ test.describe("setup wizard", () => {
     await expect(page.getByRole("heading", { name: "Choose what the test proves" })).toBeFocused();
     await page.getByLabel(/Generic test event/).check();
     await page.getByRole("button", { name: "Save choice" }).click();
-    await expect(steps.getByRole("button", { name: "Step 5: Choose what the test proves, Done" }))
+    await expect(steps.getByRole("button", { name: "Step 5: Choose what the test proves Done" }))
       .toBeVisible();
 
     await steps.getByRole("button", { name: /^Step 6: Send a test event/ }).click();
@@ -181,7 +181,7 @@ test.describe("setup wizard", () => {
       await expect(page.getByTestId("setup-announcer")).toContainText("Test event finished", {
         timeout: 30_000
       });
-      await expect(steps.getByRole("button", { name: "Step 6: Send a test event, Done" }))
+      await expect(steps.getByRole("button", { name: "Step 6: Send a test event Done" }))
         .toBeVisible();
       await steps.getByRole("button", { name: /^Step 7: See proof it arrived/ }).click();
       const proof = page.getByRole("region", { name: "See proof it arrived" });
@@ -196,7 +196,7 @@ test.describe("setup wizard", () => {
 
     // Progress survives a reload: it is stored by the API, not the browser.
     await page.reload();
-    await expect(steps.getByRole("button", { name: "Step 3: Choose where events go, Done" }))
+    await expect(steps.getByRole("button", { name: "Step 3: Choose where events go Done" }))
       .toBeVisible();
     await expect(page.getByText("Verified in Sentinel")).toHaveCount(0);
     await expectNoHorizontalOverflow(page);
