@@ -9,8 +9,8 @@ using Bower.Pipeline.Transforms;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// Transform language conformance vectors shared with the Rust port
-/// (<c>rust/crates/bower-pipeline/tests/fixtures/transform-vectors.json</c>): validation issues,
+/// Transform language conformance vectors
+/// (<c>tests/fixtures/pipeline-vectors/transform-vectors.json</c>): validation issues,
 /// canonical output bytes, step counts and runtime error codes must match exactly. Inputs are
 /// hand-written; set <c>BOWER_TRANSFORM_VECTOR_OUTPUT</c> to a file path to regenerate the
 /// expectations after an intended change, then review the diff.
@@ -87,10 +87,10 @@ public sealed class TransformConformanceTests
     /// Malformed and adversarial statements from a fixed linear congruential generator:
     /// grammar-shaped statements, some with a random fragment spliced in, and fragment soup.
     /// Validation must never throw, execution may only fail with a transform code, and the
-    /// FNV-1a digest of every outcome must equal the Rust port's (<c>transform_vectors.rs</c>).
+    /// FNV-1a digest of every outcome must equal the pinned value.
     /// </summary>
     [Fact]
-    public void DeterministicFuzz_NeverThrowsAndMatchesRust()
+    public void DeterministicFuzz_NeverThrowsAndMatchesThePinnedDigest()
     {
         CustomLogField[] fields = [new("user", CustomLogValueType.Text, null, null, true)];
         Dictionary<string, IReadOnlyDictionary<string, string>> tables = new()
@@ -134,7 +134,7 @@ public sealed class TransformConformanceTests
     private const int FuzzValidCount = 1287;
     private const ulong FuzzDigest = 4304864850446909586;
 
-    /// <summary>Same generator as <c>FuzzGenerator</c> in the Rust port; keep the call order identical.</summary>
+    /// <summary>Deterministic generator; keep the call order identical or the digest changes.</summary>
     private sealed class FuzzGenerator(ulong seed)
     {
         private static readonly string[] Fragments =

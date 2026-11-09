@@ -1,10 +1,10 @@
 namespace Bower.UnitTests;
 
 /// <summary>
-/// A management assertion signed by the Rust collector (`bower-collector` test
+/// A management assertion signed by the retired Rust collector (`bower-collector` test
 /// `enrolment::tests::emit_cross_runtime_vector`, run with `--ignored --nocapture`), issued
-/// at 2026-10-27T00:00:00Z for five minutes. The key is a throwaway test key. Rust signs,
-/// C# management verifies.
+/// at 2026-10-27T00:00:00Z for five minutes. The key is a throwaway test key. Kept so
+/// collectors enrolled by that build still verify after they move to the C# collector.
 /// </summary>
 internal static class RustAssertionVector
 {

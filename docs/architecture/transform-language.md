@@ -10,32 +10,32 @@ bounded JSON record to an allowlisted semantic event. Anything beyond picking to
 string fields needed a new parser kind or a code change. Appliance and host logs need
 light reshaping: split a field, coerce a type, pick a nested value, map an enum, pull an
 account and address out of a message line. The threat model requires that configuration
-never executes code, and both data planes (C# specification and Rust port) must produce
-byte-identical events.
+never executes code, and the same input must always produce byte-identical events. (When
+this was decided Bower also had a Rust port of the data plane; it was retired in November
+2026.)
 
 Later work builds on this surface: pack-test assertions on transform output (#88),
 reduce and aggregation (#95) and the no-code editor (#100).
 
 ## Options
 
-**(a) Embed an existing third-party remap language through its Rust crate.** Mature,
+**(a) Embed an existing third-party remap language through its native library.** Mature,
 type-checked and loop-free. Rejected:
 
-- C# is the specification and must run the same program. Embedding means either a
-  native library in every .NET host (FFI, a second toolchain, Native AOT packaging per
-  platform, a crash domain outside the managed runtime) or a second implementation of
-  someone else's language that we cannot keep byte-identical.
+- Embedding means either a native library in every .NET host (FFI, a second toolchain,
+  Native AOT packaging per platform, a crash domain outside the managed runtime) or a
+  second implementation of someone else's language that we cannot keep byte-identical.
 - Its function library is large and grows with upstream releases (network lookups,
   environment access, encoding helpers). We would need an allow-list wrapper, version
   pinning and audit of every release; a single upstream change to number formatting,
-  regex semantics or timestamp parsing would break cross-runtime determinism.
+  regex semantics or timestamp parsing would break determinism.
 - Its regex functions use a general engine whose step costs we cannot count or bound
   identically in .NET.
 
-**(b) A small Bower language implemented in `Bower.Pipeline` and ported to
-`bower-pipeline`.** Chosen. The whole language is a few hundred lines per runtime, has
-no dependencies, and every behaviour (lexing, Unicode handling, regex priorities, number
-and time formatting, step costs) is specified by Bower and pinned by shared vectors.
+**(b) A small Bower language implemented in `Bower.Pipeline`.** Chosen. The whole
+language is a few hundred lines, has no dependencies, and every behaviour (lexing,
+Unicode handling, regex priorities, number and time formatting, step costs) is specified
+by Bower and pinned by conformance vectors.
 
 ## Decision
 
@@ -51,8 +51,8 @@ and time formatting, step costs) is specified by Bower and pinned by shared vect
   environment, randomness or clock. The only time input is the explicit evaluation time
   the caller passes (`now()` and the RFC 3164 year).
 - Bower ships its own linear-time regex engine (Pike VM over Unicode scalars,
-  leftmost-first priorities, no backtracking, backreferences, lookaround or flags), the
-  same algorithm in both runtimes, so captures and step counts match.
+  leftmost-first priorities, no backtracking, backreferences, lookaround or flags), so
+  captures and step counts are deterministic.
 - Execution is bounded: static limits on statements, nodes, depth, regex size and tables;
   a per-record step budget (1,000,000) and string, array, record and output size limits.
   Overruns fail closed with stable codes.
@@ -61,7 +61,7 @@ and time formatting, step costs) is specified by Bower and pinned by shared vect
   Transforms run only inside the collector process on the record it just parsed. Their
   output reaches persistence only as the mapped, allowlisted envelope, after redaction.
 - Validation runs wherever a parser is validated: `CustomLogParser.ValidateConfiguration`
-  (pack build, pack load, management preview) and `validate_configuration` in Rust, so
+  (pack build, pack load, management preview), so
   `bower pack build` cannot sign an invalid program and a collector cannot load one.
   `PipelineValidator` documents are graph-only and carry no parser programs, so they need
   no transform check.
@@ -76,8 +76,8 @@ and time formatting, step costs) is specified by Bower and pinned by shared vect
   `security`, `security.*`, `bower*` and credential-like names; the semantic mapping still
   reads only allowlisted targets, and policy still decides.
 - No arbitrary code in configuration: only the 20 allow-listed functions exist.
-- Determinism: identical input, program and evaluation time give byte-identical output in
-  both runtimes; `rust/crates/bower-pipeline/tests/fixtures/transform-vectors.json`
+- Determinism: identical input, program and evaluation time give byte-identical output;
+  `tests/fixtures/pipeline-vectors/transform-vectors.json`
   pins validation issues, output bytes, step counts and error codes.
 
 ## Failure modes
@@ -94,19 +94,19 @@ and time formatting, step costs) is specified by Bower and pinned by shared vect
 ## Bounds
 
 See [limits](../developer-integration/transform-language.md#limits). All length limits
-count UTF-16 code units, as the rest of Bower does, in both runtimes.
+count UTF-16 code units, as the rest of Bower does.
 
 ## Test plan
 
-- Shared conformance vectors (C# `TransformConformanceTests`, Rust `transform_vectors`):
+- Conformance vectors (`TransformConformanceTests`):
   every operation, Unicode and escaping edge cases, regex priorities, lazy and empty
   loops, a pathological regex, timestamp formats including year inference and leap
   days, coercions, limits at and over each bound, malformed input, every static error.
-- Pack integration in both runtimes (`TransformPackTests`, `transform_pack_tests`):
+- Pack integration (`TransformPackTests`):
   the example pack builds and its samples pass (including a transform quarantine), the
-  mapped envelope is byte-identical across runtimes and runs, attacks on the security
+  mapped envelope is byte-identical across runs, attacks on the security
   decision and sensitive fields fail the build, errors carry no values.
-- Collector tests in both runtimes: a budget overrun returns `quarantine` with the code,
+- Collector tests: a budget overrun returns `quarantine` with the code,
   persists nothing and counts stage `transform`; a valid record is accepted with the
   username pseudonymised and the raw message absent from the queue.
 

@@ -29,7 +29,7 @@ public sealed class QueueArchive
     public const string ManifestKind = "BowerArchiveSegment";
 
     /// <summary>
-    /// Lock file every archive writer (C# and Rust) holds exclusively for a whole run: an OS
+    /// Lock file every archive writer holds exclusively for a whole run: an OS
     /// file lock (<c>flock</c> on Unix, a share-mode lock on Windows). It is never deleted.
     /// </summary>
     public const string WriterLockFile = "archive.lock";

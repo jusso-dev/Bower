@@ -347,7 +347,7 @@ internal sealed class SyslogTlsMaterial
     public SslServerAuthenticationOptions CreateOptions(SyslogTlsSession session, TimeProvider clock) => new()
     {
         ServerCertificateContext = serverContext,
-        // Same protocol floor as the Rust port (rustls: TLS 1.2 and 1.3).
+        // Protocol floor: TLS 1.2 and 1.3.
         EnabledSslProtocols = SslProtocols.Tls12 | SslProtocols.Tls13,
         ClientCertificateRequired = clientPolicy is not null,
         CertificateRevocationCheckMode = X509RevocationMode.NoCheck,
@@ -422,7 +422,7 @@ internal sealed class SyslogTlsMaterial
     }
 
     /// <summary>
-    /// End-entity revocation (identical in the Rust port). With lists configured, the lists
+    /// End-entity revocation. With lists configured, the lists
     /// that apply are those naming the leaf's issuer, whose scope covers the leaf and whose
     /// signature verifies with the key of the CA that actually issued the leaf; lists with
     /// the same issuer name but another key (a re-keyed CA during overlap) are ignored. The

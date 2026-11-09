@@ -160,28 +160,6 @@ flowchart LR
 
 Full design: [architecture](docs/architecture/overview.md).
 
-### Rust data plane
-
-[`rust/`](rust/) holds a Rust implementation of the data plane alongside the C#
-one: `bower-collector` and the `bower` CLI, plus their libraries (contracts,
-policy, redaction, persistence, core, integrity, packs, DCR, evidence, outputs).
-The C# code is the specification. Both implementations share `policies/`,
-`schemas/`, `packs/` and configuration (`BOWER_*` variables), produce the same
-payload bytes, fingerprints, policy hashes and ledger hashes, verify each other's
-pack and evidence signatures, and can open each other's SQLite queue. Parity is
-enforced by tests built from C#-generated vectors. `bower-lambda` reuses these
-crates as an AWS Lambda host. Agents, the management API, the console and the
-Azure Functions collector remain C# only.
-
-```bash
-cd rust
-cargo test --workspace
-cargo build --release -p bower-collector -p bower-cli   # target/release/{bower-collector,bower}
-docker build -f rust/Dockerfile -t bower-collector-rs .  # from the repository root
-```
-
-See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
-
 ## Supported foundation
 
 | Capability | Status |
@@ -215,7 +193,6 @@ See [`rust/AGENTS.md`](rust/AGENTS.md) for parity rules.
 | Queue integrity | Hash-chained ledger witnessed by management; dead-letter holding area with replay |
 | Privacy profiles | YAML detector actions, custom detectors (custom redaction rules), secret field names, field rules, HMAC pseudonymisation with key ids, truncation, field-length cap; local file, signed pack or management console |
 | Azure Functions collector | Native C# isolated worker (Flex Consumption): Entra-authenticated `/v1/events`, managed identity to Logs Ingestion; no durable queue; tenant test required |
-| AWS Lambda host | Rust `bower-lambda`: IAM Function URL or Invoke, execution role writes to CloudTrail Lake; no durable queue; AWS test required |
 | PowerShell modules | `Bower.Events`, `Bower.Management`, `Bower.Deployment` (plan-first), `Bower.Privacy` for PowerShell 7.4+ |
 
 ## Getting started
@@ -442,25 +419,18 @@ Layout, Intune, ConfigMgr and Group Policy guidance, uninstall and signing:
 
 ## Serverless hosting
 
-Where a VM or container is not wanted, two native hosts run the same validation,
-default-deny policy and privacy profile (custom detectors included) as the
-collector. Neither has the collector's durable queue, ledger or management
-heartbeat: they answer success only after the destination accepted the event, so
-producers retry on failure (at-least-once).
+Where a VM or container is not wanted, the Azure Functions collector runs the same
+validation, default-deny policy and privacy profile (custom detectors included) as the
+collector. It has no durable queue, ledger or management heartbeat: it answers success
+only after the destination accepted the event, so producers retry on failure
+(at-least-once).
 
 | Host | Ingest auth | Destination auth | Guide |
 |---|---|---|---|
 | **Azure Functions collector** (C#, isolated worker, Flex Consumption) | Entra token with the `Bower.Producer` app role, plus producer scopes | Managed identity (system-assigned by default) with Monitoring Metrics Publisher on the DCR only; no keys or connection strings | [Azure Functions](docs/deployment/azure-function.md) · [`deploy/azure-function`](deploy/azure-function/main.bicep) |
-| **AWS Lambda host** (Rust `bower-lambda`, arm64) | IAM: Function URL with `AuthType: AWS_IAM` or `lambda:InvokeFunction`, caller ARN mapped to producer scopes | Execution role only: `logs:PutLogEvents` on one CloudWatch Logs group, or `cloudtrail-data:PutAuditEvents` on one CloudTrail Lake channel | [AWS Lambda](docs/deployment/aws-lambda.md) · [`deploy/aws`](deploy/aws/bower-aws-lambda.yaml) |
 
-> [!NOTE]
-> AWS closed CloudTrail Lake to new customers on 31 May 2026. The Lambda host writes
-> to CloudWatch Logs by default; choose `cloudtrail-lake` only for accounts already
-> using CloudTrail Lake.
-
-Both are plan-first: `az deployment group what-if` and CloudFormation change sets
-(or `Deploy-BowerAzureFunction` / `Deploy-BowerAwsLambda` in PowerShell).
-Neither has been exercised against a live tenant or account yet.
+It is plan-first: `az deployment group what-if` (or `Deploy-BowerAzureFunction` in
+PowerShell). It has not been exercised against a live tenant yet.
 
 ## Collector configuration
 
@@ -511,7 +481,7 @@ Neither has been exercised against a live tenant or account yet.
 | `BOWER_SYSLOG_CONFIG` | — | JSON file of syslog listeners (RFC 5424/3164 over TCP, TLS or UDP), sender allow-lists and routes to signed pack parsers. Loopback unless TLS. [Details](docs/deployment/syslog-source.md) |
 | `BOWER_TAP_ENABLED` / `BOWER_TAP_PRODUCERS` | `true` / — | Serve the post-redaction `bower tap` stream; tokens-file producers allowed to tap besides the shared token. [Details](docs/operations/tap-and-top.md) |
 | `BOWER_TAP_MAX_SESSIONS` / `_EVENTS_PER_SECOND` / `_DURATION_SECONDS` / `_EVENTS` / `_EVENT_BYTES` | `2` / `20` / `300` / `1000` / `16384` | Tap caps: concurrent sessions, frames per second per session, longest session, frames per session, largest event shown. [Details](docs/operations/tap-and-top.md#limits) |
-| `BOWER_WINDOWS_EVENTLOG_CONFIG` | — | JSON file of Windows Event Log subscriptions: channel, event ID allow-list and signed pack parser each. C# collector on Windows only; elsewhere, and in the Rust collector, start-up fails. [Details](docs/deployment/windows-event-log-source.md) |
+| `BOWER_WINDOWS_EVENTLOG_CONFIG` | — | JSON file of Windows Event Log subscriptions: channel, event ID allow-list and signed pack parser each. Windows only; elsewhere, start-up fails. [Details](docs/deployment/windows-event-log-source.md) |
 
 ## Background jobs
 
@@ -558,7 +528,7 @@ Design, observability and how to add a job:
 | Forward AWS / GCP security signal | `deploy/aws` CloudFormation, `deploy/gcp` Terraform, `bower-cloud` agent | [AWS](docs/deployment/aws.md) · [Google Cloud](docs/deployment/gcp.md) |
 | Validate a pipeline document | `bower pipeline validate --file pipeline.yaml` · `bower pipeline template aws-security` | Exit 2 when invalid |
 
-CLI arguments (C# and Rust `bower` alike): every `--option` takes the next argument as
+CLI arguments: every `--option` takes the next argument as
 its value, the first occurrence wins, and unknown options are ignored **together with
 their value**. A positional argument (pack, bundle or pipeline file, template id) is
 the first argument that is neither an option nor an option's value, so
@@ -840,9 +810,9 @@ PowerShell 7.4+ modules (Windows, Linux, macOS) wrap the collector, management A
 
 | Module | Commands |
 |---|---|
-| `Bower.Events` | `New-`, `Test-`, `Send-BowerSecurityEvent` (collector, Azure Functions collector, SigV4 Lambda Function URL) |
+| `Bower.Events` | `New-`, `Test-`, `Send-BowerSecurityEvent` (collector, Azure Functions collector) |
 | `Bower.Management` | Connect, collectors (approve, deny, suspend, resume, revoke), audit, jobs, privacy profile versions (preview, submit, approve, deny, assign, clear) |
-| `Bower.Deployment` | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsLambda`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
+| `Bower.Deployment` | `New-BowerEntraApplication`, `Deploy-BowerSentinelResource`, `Deploy-BowerAzureFunction`, `Deploy-BowerAwsSecurity`, `Deploy-BowerGcpSecurity` |
 | `Bower.Privacy` | `Test-BowerPrivacyProfile`, `New-BowerCustomDetector`, `ConvertTo-BowerSecretFieldName` |
 | `Bower.Policy` | `New-BowerPolicy`, `Test-BowerPolicy`, `Test-BowerPolicyEvent` (offline, through the `bower` CLI) |
 

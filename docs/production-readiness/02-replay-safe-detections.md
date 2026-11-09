@@ -147,7 +147,8 @@ The fix keeps the trusted, collector-stamped identity and changes the procedure:
    CLI counts it as `collector-mismatch`, continues with the rest and exits 2. An archive
    that spans a collector-id change is replayed one slice at a time:
    `--collector-id <id>` selects that collector's events, each through a replay
-   collector with that id (C# and Rust collectors and CLIs).
+   collector with that id (the Rust collector and CLI, retired in November 2026, did
+   the same).
 3. The parser never reads labels. A label can only make a collector **refuse** an event;
    it cannot change any identity. Collectors do not strip `bowerReplay*` labels at
    intake, because archive replay itself arrives through the producer intake; a producer
@@ -705,7 +706,6 @@ which the first start fills with the machine name:
 | AWS EC2 | OS host name (`ip-10-0-1-23...`, cut at the first dot), which changes when an instance is replaced | Per instance | Set `BOWER_COLLECTOR_ID` to a role name (for example from a launch template tag), not the instance ID. |
 | Azure VM | OS computer name | While the VM keeps its name | Set `BOWER_COLLECTOR_ID`; for scale sets use a stable per-instance name. |
 | Azure Functions collector | `azure-function:<site>` (Bicep sets the app name) | Yes, shared by all instances | Nothing. |
-| AWS Lambda (Rust) | Function name; CloudFormation generates it and it changes if the function is replaced | Until replacement | Set `BOWER_COLLECTOR_ID`. |
 | Relay | Keeps the downstream collector's ID | Yes | Rename downstream collectors only together with their relay pin. |
 | On-premises | Host name | While unchanged | Set `BOWER_COLLECTOR_ID`. |
 
@@ -720,9 +720,9 @@ which the first start fills with the machine name:
 | Kubernetes | read the pinned env value or `kubectl exec deploy/bower-collector -- cat /var/lib/bower/collector-id`; run the replay as a one-off pod with the same env value and an empty volume. |
 | AWS EC2 / Azure VM / on-premises | as Linux or Windows above; replacement hosts must be given the old id, not a new host name. |
 
-C# uses `Environment.MachineName`; the Rust collector reads the host name and cuts it
-at the first dot. On Windows the two can differ in case, so never switch runtimes on
-one host without setting `BOWER_COLLECTOR_ID`.
+C# uses `Environment.MachineName`; the retired Rust collector read the host name and cut
+it at the first dot. On Windows the two can differ in case, so set `BOWER_COLLECTOR_ID`
+before moving a host from the Rust collector to the C# collector.
 
 **Verify the configured value.** `/v1/status` does not report the ID; check the setting
 the service starts with, then confirm it in Sentinel.
@@ -760,8 +760,8 @@ reproduced in the tests: a lowercase hex digest such as
 pattern and passed mod-97 about once per thousand IDs (20 of 20,000 sampled), and the
 mask kept only `winevt-dd…f4`. Distinct events could then share an identity. The
 conservative `fin.iban` checksum detector remains unchanged, including its possible
-false positives for digest-shaped data. Both the C# and Rust collectors apply this
-narrowly scoped change:
+false positives for digest-shaped data. The C# collector applies this narrowly scoped
+change (the Rust collector did too before its retirement in November 2026):
 
 **Record ids that Bower's own syslog and Windows Event Log sources compute skip value
    detectors**, so a custom detector (for example one an operator adds for 32-character
@@ -772,7 +772,7 @@ Every other field, including `request.correlationId`, nested
 copies of the ID and the rest of the record, is scanned as before; explicit
 privacy-profile field rules and length limits still apply to the ID. An ID or number
 sent by a producer (`/v1/events`, `/v1/packs/.../events`, agents, the SDK, Azure
-Functions, Lambda) is source data and is still scanned. Numeric fields in internally
+Functions) is source data and is still scanned. Numeric fields in internally
 generated health records are also scanned and may be masked by a checksum detector;
 the health-record representation requires further qualification. `CollectorId`, `PolicyHash`, the
 configuration hash and `collector.receivedAt` are stamped after redaction, so detectors

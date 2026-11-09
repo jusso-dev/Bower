@@ -10,7 +10,7 @@ namespace Bower.Redaction.Detectors;
 /// <c>wholeWord</c> is part of the compiled pattern (a non-word character or the start or
 /// end of the text on both ends), and a
 /// match whose start or end falls inside a UTF-16 surrogate pair is widened to the whole
-/// pair. The Rust engine produces exactly the same spans.
+/// pair.
 /// </summary>
 public sealed class CustomPatternDetector : ISensitiveDetector
 {
@@ -111,7 +111,7 @@ public sealed class CustomPatternDetector : ISensitiveDetector
     /// True when this detector alone finds at least one match (profile tests). The
     /// non-backtracking engine builds its automaton lazily and keeps what it built when a
     /// match times out, so a cold first match is retried: the outcome then depends on the
-    /// pattern and sample only, never on machine speed (the Rust engine has no timeout).
+    /// pattern and sample only, never on machine speed.
     /// Running every sample at load also warms the automaton used at runtime.
     /// </summary>
     /// <exception cref="RegexMatchTimeoutException">Still timing out after warm-up retries.</exception>

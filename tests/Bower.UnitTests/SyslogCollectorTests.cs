@@ -145,7 +145,6 @@ public sealed class SyslogCollectorTests
     public void GeneratedRecordId_IsOnlyTheSourcesLeadingWellFormedId(string record, string? expected) =>
         Assert.Equal(expected, GeneratedEventIds.FromSourceRecord(record));
 
-    // Shared with the Rust port (bower-collector tests/syslog_source.rs).
     private const string HexDigestDetector = """
         customDetectors:
           - id: custom.hex-digest
@@ -457,12 +456,11 @@ public sealed class SyslogCollectorTests
         Assert.Equal("/etc/bower/syslog.json", with.SyslogConfigPath);
         Assert.NotEqual(without.ConfigurationHash(), with.ConfigurationHash());
         Assert.Equal(without.ConfigurationHash(), (with with { SyslogConfigPath = null }).ConfigurationHash());
-        // Pinned in the Rust port too (bower-collector tests/syslog_source.rs).
         Assert.Equal("sha256:217176a1055394e50f32c294b934ba760dfeac3097cf12b15ac208bf05208ad1", with.ConfigurationHash());
     }
 
     [Fact]
-    public void ListenerStatus_SerializesWithTheNamesTheRustPortWrites()
+    public void ListenerStatus_SerializesWithThePinnedNames()
     {
         SyslogListenerStatus status = new("edge", "tcp", "127.0.0.1:5514", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, null);
         Assert.Equal(

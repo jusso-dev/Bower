@@ -28,8 +28,7 @@ The producer is the ID in `BOWER_INGEST_TOKENS_FILE`; a shared token uses
 accept the same JSON in `BOWER_PRODUCER_SCOPES_JSON` for hosts without a mounted
 file. The file and inline setting are mutually exclusive. The
 [Azure Functions collector](../deployment/azure-function.md) uses the same
-format and semantics. The AWS Lambda collector currently requires the file and
-refuses the inline setting. For Azure Functions, the
+format and semantics. For Azure Functions, the
 producer is the caller's Entra `oid` (service principal object ID, lower-case GUID),
 or its `azp` client ID with `BOWER_PRODUCER_CLAIM=azp`. Each array entry is one
 complete tuple: application name, environment, tenant ID, instance, source
@@ -66,7 +65,7 @@ receive 403 by default. Existing deployment examples require this configuration
 or the explicit single-domain setting; older manifests do not imply permission.
 The HTTP collector configuration hash includes the scope path and trust mode, or
 the inline scope content when configured; it does not attest mounted file contents.
-Scope changes require controlled restart in both runtimes.
+Scope changes require controlled restart.
 
 No event schema or database migration is required. Existing queued payloads are
 not rewritten: pre-upgrade events may still contain secrets or unauthorized
@@ -97,5 +96,5 @@ detectors. These structural guards cannot be disabled by detector Allow settings
 Metadata records only `field-name-secret` actions, never removed values.
 
 Tests exercise serialized accepted events, live SQLite/WAL, AMA spool files and
-captured/decompressed Azure requests in both runtimes. Azure responses are
+captured/decompressed Azure requests. Azure responses are
 simulated; these tests establish no Sentinel query or production delivery claim.

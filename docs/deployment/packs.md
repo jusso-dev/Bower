@@ -101,7 +101,7 @@ zero-based index. Indexes count parsers in manifest (ordinal path) order, at bui
 load. `--report FILE` writes a JSON report (`--report-format json`, the default) or JUnit
 XML (`junit`) with each sample's name, decisions and problems; it never contains raw
 values. CI builds every pack under `packs/` with an ephemeral key, runs `pack test` with a
-JUnit report in both the C# and Rust CLIs, and uploads the reports.
+JUnit report, and uploads the reports.
 
 `diff` is the policy population diff: event types added or removed, required fields,
 actions and score thresholds, and policies changed without a version bump (exit 1).
@@ -243,8 +243,7 @@ bounds can still be evaluated. Reserved `bowerDetections` attributes in any casi
 are stripped before these checks and regenerated only from local rule matches;
 the generated evidence does not count against the source attribute limit.
 
-The C# engine throws `InvalidDataException` for these failures; the Rust engine's
-`evaluate` and `evaluate_json` return `Err(DetectionError::InvalidData)`. Callers
+The engine throws `InvalidDataException` for these failures. Callers
 must handle evaluation failure separately from a successful result with no alerts.
 
 Unmodified scalar strings use whole-value, case-insensitive equality. Explicit

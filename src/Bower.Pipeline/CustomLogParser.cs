@@ -938,7 +938,7 @@ public static partial class CustomLogParser
     /// (<see cref="MaximumSampleBytes"/>, <see cref="MaximumLineBytes"/>, 2048-character
     /// patterns), so no match timeout is used. A wall-clock timeout made the result depend
     /// on machine load: the engine builds its automaton lazily, so a cold first match on a
-    /// busy host timed out and valid input failed preview. The Rust engine has no timeout
+    /// busy host timed out and valid input failed preview. Bounded by work, not time
     /// either. The timeout is explicit so a host-wide default cannot reintroduce one.
     /// </summary>
     private static Regex CreateSafeRegex(string pattern) =>

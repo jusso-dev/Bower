@@ -293,7 +293,6 @@ public sealed class HeartbeatV2ManagementTests
             "2026-10-26T00:00:00.0000000Z", "2026-10-26T00:15:00.0000000Z");
 
         Assert.Equal(management, collector);
-        // The Rust collector pins the same vector (tests/management_commands.rs).
         Assert.Equal(
             "{\"collectorId\":\"edge-01\",\"command\":\"run-canary\",\"commandId\":\"11111111111111111111111111111111\"," +
             "\"expiresAt\":\"2026-10-26T00:15:00.0000000Z\",\"issuedAt\":\"2026-10-26T00:00:00.0000000Z\"," +

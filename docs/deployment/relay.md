@@ -244,16 +244,5 @@ ExpressRoute path, and for checking it with `bower doctor`.
   management cannot offer the tunnel yet.
 - Pins and certificates are read at start-up; changes need a restart. There is no
   revocation list beyond removing the pin.
-- Rust collector differences from the C# specification (pinned in
-  `rust/crates/bower-collector/tests/relay.rs`):
-  - `BOWER_MANAGEMENT_VIA_RELAY` runs the tunnel client through a Unix domain socket in an
-    owner-only `management-relay` directory next to the queue, so it is Unix-only; on other
-    platforms the Rust collector refuses to start with it. Relaying events works everywhere.
-  - A host name in `BOWER_RELAY_LISTEN_URL` binds `0.0.0.0` (IPv4) rather than dual stack.
-    Use an explicit address (`[::]` for IPv6) when it matters.
-  - Relay response fields are matched case-sensitively (C# reads them case-insensitively).
-    Bower relays always send camelCase, so this only affects non-Bower relays.
-  - On shutdown the relay listener stops at once instead of waiting for in-flight batches;
-    an interrupted batch was never acknowledged, so the downstream resends it.
 - The relay trusts the downstream's redaction and policy decision; it checks the envelope
   carries one but cannot prove the downstream's privacy profile was correct.

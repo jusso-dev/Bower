@@ -116,7 +116,7 @@ public static class PackRuntime
     /// <summary>
     /// Runs the parser's transform program, if any, and returns the output record. Input the
     /// transform cannot represent is a malformed record (<c>pack-record-invalid</c>), as it is
-    /// in the Rust runtime; every other transform failure propagates its code.
+    /// consistently; every other transform failure propagates its code.
     /// </summary>
     private static JsonDocument? Transform(
         CustomLogParserConfiguration parser,

@@ -14,9 +14,8 @@ redaction rules:
 
 Custom detectors are the custom redaction rules: this guide calls them *custom
 detectors* from here on. They are deterministic, cannot execute code, and run in
-every Bower host the same way: .NET and Rust collectors, the Azure Functions
-collector, the AWS Lambda host, `bower privacy validate` and the management console
-preview.
+every Bower host the same way: the collector, the Azure Functions collector,
+`bower privacy validate` and the management console preview.
 
 ## 1. Write the rule
 
@@ -92,8 +91,7 @@ detector id `field-name-secret`, removed by default.
 ## Pattern syntax
 
 Patterns use a restricted, portable regular expression syntax. Bower translates it
-into one canonical pattern that the .NET and Rust engines evaluate identically, in
-linear time (no backtracking).
+into one canonical pattern that the engine evaluates in linear time (no backtracking).
 
 | You can write | Meaning |
 |---|---|
@@ -181,11 +179,10 @@ Pick one source per host. Only one privacy profile can be active.
 
 | Host | How |
 |---|---|
-| Collector (.NET or Rust), local file | `BOWER_PRIVACY_PROFILE=/etc/bower/privacy.yaml`, restart |
+| Collector, local file | `BOWER_PRIVACY_PROFILE=/etc/bower/privacy.yaml`, restart |
 | Collector, management console | `BOWER_PRIVACY_PROFILE_SOURCE=management` ([managed privacy profiles](managed-privacy-profiles.md)) |
 | Signed pack | `privacyProfile: privacy.yaml` in `pack.yaml` ([packs](../deployment/packs.md)) |
 | Azure Functions collector | Package the file and set `privacyProfilePath` ([Azure Functions](../deployment/azure-function.md)) |
-| AWS Lambda host | Package the file and set `BOWER_PRIVACY_PROFILE` ([AWS Lambda](../deployment/aws-lambda.md)) |
 
 Profiles that use `hmac`, in any rule, need `BOWER_PRIVACY_HMAC_KEY_FILE` (32+
 bytes, base64) and `BOWER_PRIVACY_HMAC_KEY_ID` on the host. Without the key the host

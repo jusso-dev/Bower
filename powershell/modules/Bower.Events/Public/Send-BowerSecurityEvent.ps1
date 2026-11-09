@@ -1,7 +1,7 @@
 function Send-BowerSecurityEvent {
     <#
     .SYNOPSIS
-    Sends security events to a Bower collector, the Bower Azure Function or the Bower Lambda.
+    Sends security events to a Bower collector or the Bower Azure Function.
 
     .DESCRIPTION
     Validates each event against the envelope schema, then POSTs it to the target's
@@ -26,9 +26,7 @@ function Send-BowerSecurityEvent {
     - AzureFunction: the Bower Azure Function collector (same /v1/events contract) with an
       Entra access token from -AccessToken, -TokenProvider, or Az.Accounts
       (Get-AzAccessToken -ResourceUrl <Audience>).
-    - Lambda: the Bower CloudTrail Lake Lambda Function URL (AuthType AWS_IAM). Requests are
-      SigV4-signed with credentials from AWS.Tools.Common (-AwsProfileName or the SDK
-      default chain). Requires https.
+
 
     Tokens are handled as SecureString and never written to output, verbose or debug
     streams. TLS certificate validation is never disabled.
@@ -37,7 +35,7 @@ function Send-BowerSecurityEvent {
     Events from New-BowerSecurityEvent, hashtables, PSCustomObjects or JSON strings.
 
     .PARAMETER Target
-    Collector, AzureFunction or Lambda.
+    Collector or AzureFunction.
 
     .PARAMETER Uri
     Base or full endpoint URI. /v1/events is appended when missing. Query strings are
@@ -58,12 +56,6 @@ function Send-BowerSecurityEvent {
 
     .PARAMETER TenantId
     Entra tenant for Az.Accounts token acquisition.
-
-    .PARAMETER AwsProfileName
-    AWS credential profile for the Lambda target.
-
-    .PARAMETER AwsRegion
-    AWS region for SigV4. Inferred from *.lambda-url.<region>.on.aws hosts when omitted.
 
     .PARAMETER BatchSize
     Events per batch (1-500, default 100).
@@ -100,10 +92,6 @@ function Send-BowerSecurityEvent {
 
     Sends to the Azure Function collector with a token acquired through Az.Accounts.
 
-    .EXAMPLE
-    $events | Send-BowerSecurityEvent -Target Lambda -Uri https://abc123.lambda-url.ap-southeast-2.on.aws -AwsProfileName bower
-
-    Sends SigV4-signed requests to the CloudTrail Lake Lambda Function URL.
 
     .EXAMPLE
     $events | Send-BowerSecurityEvent -WhatIf
@@ -120,7 +108,7 @@ function Send-BowerSecurityEvent {
         [AllowNull()]
         [object] $InputObject,
 
-        [ValidateSet('Collector', 'AzureFunction', 'Lambda')]
+        [ValidateSet('Collector', 'AzureFunction')]
         [string] $Target = 'Collector',
 
         [uri] $Uri,
@@ -136,12 +124,6 @@ function Send-BowerSecurityEvent {
 
         [ValidateNotNullOrEmpty()]
         [string] $TenantId,
-
-        [ValidateNotNullOrEmpty()]
-        [string] $AwsProfileName,
-
-        [ValidatePattern('^[a-z]{2}(-[a-z]+)+-\d+$')]
-        [string] $AwsRegion,
 
         [ValidateRange(1, 500)]
         [int] $BatchSize = 100,
@@ -167,9 +149,8 @@ function Send-BowerSecurityEvent {
         $allowed = @{
             Collector     = @('Token', 'TokenProvider')
             AzureFunction = @('AccessToken', 'TokenProvider', 'Audience', 'TenantId')
-            Lambda        = @('AwsProfileName', 'AwsRegion')
         }
-        $credentialParameters = 'Token', 'AccessToken', 'TokenProvider', 'Audience', 'TenantId', 'AwsProfileName', 'AwsRegion'
+        $credentialParameters = 'Token', 'AccessToken', 'TokenProvider', 'Audience', 'TenantId'
         foreach ($name in $credentialParameters) {
             if ($PSBoundParameters.ContainsKey($name) -and $allowed[$Target] -notcontains $name) {
                 Write-TerminatingError ([System.ArgumentException]::new("-$name cannot be used with -Target $Target.")) 'BowerEventParameterConflict' InvalidArgument
@@ -186,9 +167,6 @@ function Send-BowerSecurityEvent {
         try {
             $endpoint = Resolve-BowerEventEndpoint -Uri $Uri
             Assert-BowerTransportUri -Uri $endpoint
-            if ($Target -eq 'Lambda' -and $endpoint.Scheme -ne 'https') {
-                throw [System.ArgumentException]::new('Lambda Function URLs require https.')
-            }
         }
         catch {
             Write-TerminatingError $_.Exception 'BowerEventUriInvalid' InvalidArgument
@@ -213,20 +191,9 @@ function Send-BowerSecurityEvent {
             Audience                 = $Audience
             TenantId                 = $TenantId
             Auth                     = $null
-            AwsProfileName           = $AwsProfileName
-            Region                   = $null
-            AwsCredential            = $null
             MaximumRetryCount        = $MaximumRetryCount
             MaximumRetryDelaySeconds = $MaximumRetryDelaySeconds
             TimeoutSec               = $TimeoutSec
-        }
-        if ($Target -eq 'Lambda') {
-            try {
-                $context.Region = Get-BowerLambdaRegion -Uri $endpoint -Region $AwsRegion
-            }
-            catch {
-                Write-TerminatingError $_.Exception 'BowerEventRegionRequired' InvalidArgument
-            }
         }
 
         $display = $endpoint.GetLeftPart([System.UriPartial]::Path)
@@ -250,9 +217,6 @@ function Send-BowerSecurityEvent {
             }
 
             try {
-                if ($Target -eq 'Lambda' -and $null -eq $context.AwsCredential) {
-                    $context.AwsCredential = Get-BowerAwsCredential -ProfileName $context.AwsProfileName
-                }
                 foreach ($item in $items) {
                     $result = Send-BowerEventItem -Item $item -Context $context
                     if (-not $result.Accepted) {

@@ -7,7 +7,7 @@ public enum FileTailLength
     /// The length taken when the generation was opened, the same snapshot as its identity and
     /// write time (the file tail source): the grace window compares one consistent observation,
     /// the scan stops at the same length, a truncation seen at open stays seen even if the
-    /// file regrows during the read, and the Rust port decides the same way.
+    /// file regrows during the read.
     /// </summary>
     Opened,
 

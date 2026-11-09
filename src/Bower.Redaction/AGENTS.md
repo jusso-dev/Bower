@@ -19,20 +19,19 @@ arbitrary code from configuration.
   for the root `eventId`/`eventOriginalId` only; never extend it to producer-supplied values
   or other fields. (2) `CanonicalIdentifierTokens`: structured number detectors drop matches
   wholly inside a bounded canonical UUID or 32-hex token. Never add secret, identity or
-  custom detectors to it, or widen the token shape, without adversarial tests. Mirror any
-  change in `rust/crates/bower-redaction` and both test suites, and regenerate the vectors.
+  custom detectors to it, or widen the token shape, without adversarial tests. Regenerate the
+  vectors after any change.
 - Add unit tests for every new detector (positive + negative / invalid checksum).
 - Add or update micro-benchmarks when changing hot paths.
 - Custom detectors (`customDetectors:`) compile only the canonical pattern emitted by
   `CustomPatternTranslator`; never pass user patterns to `Regex` directly. The syntax
-  rules, rejection reasons, limits and canonical output are a contract with the Rust
-  port (`rust/crates/bower-redaction/src/custom_pattern.rs`): change both and
-  regenerate the parity vectors.
+  rules, rejection reasons, limits and canonical output are a published contract
+  (privacy profiles depend on them): change them only deliberately, with vectors.
 - Custom detectors and secret field names live on `PrivacyPolicy`; default engine
   construction (`PrivacyEngine(policy)`, `JsonEventRedactor(policy)`) picks them up.
 - Custom detector work is bounded deterministically (`CustomPatternDetector.MaximumScannedLength`,
-  `MaximumMatchesPerEvent`; exceeding either quarantines). Never rely on regex timeouts for
-  parity: they depend on machine load. Non-redacting custom detectors must never claim spans.
+  `MaximumMatchesPerEvent`; exceeding either quarantines). Never rely on regex timeouts:
+  they depend on machine load. Non-redacting custom detectors must never claim spans.
 - Built-in detector regexes have no match timeout (a wall-clock timeout quarantines valid
   values under load). Keep new built-in patterns linear in the backtracking engine instead;
   `BuiltInDetectorPatterns_HaveNoWallClockTimeout` enforces this.

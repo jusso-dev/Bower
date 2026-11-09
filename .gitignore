@@ -15,8 +15,8 @@ evidence/
 *.db
 *.db-shm
 *.db-wal
-# C#-written SQLite fixtures for the Rust compatibility tests (compat.rs).
-!rust/crates/bower-persistence/tests/fixtures/*.db
+# SQLite queue fixtures for the C# compatibility tests.
+!tests/fixtures/persistence-vectors/*.db
 spool/
 
 # Static documentation build and browser reports
@@ -26,3 +26,5 @@ spool/
 /tools/docs/playwright-report/
 /.venv-docs/
 /tools/docs/**/__pycache__/
+__pycache__/
+*.py[cod]

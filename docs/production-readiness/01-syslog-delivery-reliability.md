@@ -653,9 +653,9 @@ collectors (3 SIGKILLs, a 12-second refusal, 3 graceful stops: 0 missing, 0 dupl
 - **Duplicates.** Delivery to Sentinel stays at-least-once; deduplicate by `EventId`.
 - **Identity.** Without a message timestamp the id includes the receive time, so a RELP
   resend of such a message becomes a duplicate event; send timestamps (R3).
-- **Rust collector.** The Rust port implements the same RELP listener with the same vectors
+- **Rust collector.** The Rust port implemented the same RELP listener with the same vectors
   and tests and passed the local librelp interop runs; the live campaign ran the C#
-  collector only.
+  collector only. The Rust collector was retired in November 2026.
 - **No production claim.** This qualifies the RELP path for the tested topology, sender
   versions and scenarios. It is not a production-readiness claim for the whole programme:
   signing is deferred and the 24-hour soak has not run.
@@ -812,7 +812,8 @@ Other facts established while root-causing:
 
 ## 4. What changed in Bower
 
-Both runtimes (C# collector and the Rust port) change the same way unless noted.
+Both runtimes at the time (C# collector and the Rust port, retired in November 2026)
+changed the same way unless noted.
 
 | Change | Before | After | Why |
 |---|---|---|---|
@@ -940,8 +941,8 @@ openssl s_client -connect COLLECTOR:6514 -tls1_3 -cert sender.pem -key sender-ke
 
 **Rollback:** `rm /etc/systemd/system/bower.service.d/openssl.conf && systemctl daemon-reload && systemctl restart bower`.
 
-The Rust collector sends no tickets and needs none of this. On Windows (SChannel)
-this is not tested; use 5.4 for rsyslog senders there.
+The Rust collector (retired in November 2026) sent no tickets and needed none of this.
+On Windows (SChannel) this is not tested; use 5.4 for rsyslog senders there.
 
 ### 5.4 Or pin TLS 1.2 on rsyslog senders
 
@@ -1461,14 +1462,14 @@ snapshots; deterministic local tests cover a late registration and a cancelled
 listener. Live qualification remains outstanding. Its 20-second `StopTimeout` bounds
 only graceful drain: the final wait requires listener and sink cancellation to be
 cooperative and can last indefinitely. Resources remain alive until those tasks end.
-In Rust, aborting async connection tasks does not stop an already-running
-`spawn_blocking` sink: it may complete after the source returns, and runtime
+In Rust (retired in November 2026), aborting async connection tasks did not stop an
+already-running `spawn_blocking` sink: it may complete after the source returns, and runtime
 shutdown can wait for it. Test the actual sink and host grace period; neither
 implementation gives a hard end-to-end shutdown deadline.
 
-`peerResets` is best-effort: C# and Rust can see different error forms through
-TLS or the operating system. Rust does not count a reset before the first TLS byte.
-A scripted Rust regression covers a connection reset while reading an incomplete
+`peerResets` is best-effort: C# and Rust saw different error forms through
+TLS or the operating system. Rust did not count a reset before the first TLS byte.
+A scripted Rust regression covered a connection reset while reading an incomplete
 frame, but actual sender and platform behavior still needs validation. A zero
 counter does not prove no reset occurred.
 Revocation is rechecked before each sink attempt, but cannot undo a sink submission

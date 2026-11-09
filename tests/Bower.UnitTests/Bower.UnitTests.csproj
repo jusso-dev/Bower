@@ -54,18 +54,18 @@
       <Link>examples/policies/collector-health/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- S3 output layout vectors shared with rust/crates/bower-output-s3. -->
+    <!-- S3 output layout vectors (tests/fixtures). -->
     <Content Include="../fixtures/s3-output/*.json">
       <Link>s3-output/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Collector settings vectors shared with rust/crates/bower-collector. -->
+    <!-- Collector settings vectors (tests/fixtures). -->
     <Content Include="../fixtures/collector-settings/*.json">
       <Link>collector-settings/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- C# outcomes pinned for the Rust port (rust/crates/bower-policy). -->
-    <Content Include="../../rust/crates/bower-policy/tests/fixtures/**/*">
+    <!-- Policy evaluation vectors (tests/fixtures). -->
+    <Content Include="../fixtures/policy-vectors/**/*">
       <Link>policy-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -85,54 +85,54 @@
       <Link>deploy/sentinel/analytics/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- C# suppression outcomes pinned for the Rust port (rust/crates/bower-core). -->
-    <Content Include="../../rust/crates/bower-core/tests/fixtures/suppression-vectors.json">
+    <!-- Suppression vectors (tests/fixtures). -->
+    <Content Include="../fixtures/core-vectors/suppression-vectors.json">
       <Link>core-vectors/suppression-vectors.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../rust/crates/bower-persistence/tests/fixtures/**/*">
+    <Content Include="../fixtures/persistence-vectors/**/*">
       <Link>persistence-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../rust/crates/bower-detection/tests/fixtures/**/*">
+    <Content Include="../fixtures/detection-vectors/**/*">
       <Link>detection-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- C#-signed pack fixtures and bundle-diff outputs shared with the Rust port (rust/crates/bower-cli). -->
-    <Content Include="../../rust/crates/bower-packs/tests/fixtures/*.bowerpack;../../rust/crates/bower-packs/tests/fixtures/*.pem">
+    <!-- C#-signed pack fixtures and bundle-diff outputs (tests/fixtures). -->
+    <Content Include="../fixtures/pack-fixtures/*">
       <Link>pack-fixtures/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../rust/crates/bower-cli/tests/fixtures/bundle-diff/*">
+    <Content Include="../fixtures/bundle-diff/*">
       <Link>bundle-diff/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- bower top render fixtures shared with the Rust port (rust/crates/bower-cli). -->
-    <Content Include="../../rust/crates/bower-cli/tests/fixtures/top/*">
+    <!-- bower top render fixtures (tests/fixtures). -->
+    <Content Include="../fixtures/top-fixtures/*">
       <Link>top-fixtures/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Pipeline node kind vectors shared with the Rust port (rust/crates/bower-pipeline). -->
-    <Content Include="../../rust/crates/bower-pipeline/tests/fixtures/node-kinds.txt">
+    <!-- Pipeline node kind vectors (tests/fixtures). -->
+    <Content Include="../fixtures/pipeline-vectors/node-kinds.txt">
       <Link>pipeline-vectors/node-kinds.txt</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../rust/crates/bower-packs/tests/fixtures/csharp-vectors/transform-journald-ssh.json">
+    <Content Include="../fixtures/pack-vectors/transform-journald-ssh.json">
       <Link>pack-vectors/transform-journald-ssh.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Transform language conformance vectors shared with the Rust port (rust/crates/bower-pipeline). -->
-    <Content Include="../../rust/crates/bower-pipeline/tests/fixtures/transform-vectors.json">
+    <!-- Transform language conformance vectors (tests/fixtures). -->
+    <Content Include="../fixtures/pipeline-vectors/transform-vectors.json">
       <Link>pipeline-vectors/transform-vectors.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- Syslog parser vectors and TEST-ONLY TLS keys shared with the Rust port (rust/crates/bower-source-syslog). -->
-    <Content Include="../../rust/crates/bower-source-syslog/tests/fixtures/**/*">
+    <!-- Syslog parser vectors and TEST-ONLY TLS keys (tests/fixtures). -->
+    <Content Include="../fixtures/syslog-vectors/**/*">
       <Link>syslog-vectors/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- File tail vectors shared with the Rust port (rust/crates/bower-source-file). -->
-    <Content Include="../../rust/crates/bower-source-file/tests/fixtures/file-tail-vectors.json">
+    <!-- File tail vectors (tests/fixtures). -->
+    <Content Include="../fixtures/file-tail-vectors/file-tail-vectors.json">
       <Link>file-tail-vectors/file-tail-vectors.json</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
@@ -141,7 +141,7 @@
       <Link>windows-eventlog/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <!-- HTTP output request and response vectors shared with the Rust port (rust/crates/bower-output-http). -->
+    <!-- HTTP output request and response vectors (tests/fixtures). -->
     <Content Include="../fixtures/http-output/*.json">
       <Link>http-output-vectors/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
