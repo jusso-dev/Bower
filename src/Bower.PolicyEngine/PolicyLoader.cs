@@ -143,6 +143,11 @@ public static class PolicyLoader
         {
             ValidateSuppression(policy, suppression);
         }
+        else if (TryParseAction(policy.Decision.Action, out DecisionAction configured) && configured == DecisionAction.Aggregate)
+        {
+            throw new InvalidDataException(
+                "An aggregate policy needs a suppression section: its keyFields and windowSeconds define the counts.");
+        }
     }
 
     public const int MaximumSuppressionKeyFields = 5;
@@ -155,9 +160,9 @@ public static class PolicyLoader
         }
 
         if (!TryParseAction(policy.Decision.Action, out DecisionAction action)
-            || action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
+            || action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept or DecisionAction.Aggregate))
         {
-            throw new InvalidDataException("Suppression applies only to accept or redact-and-accept policies.");
+            throw new InvalidDataException("Suppression applies only to accept, redact-and-accept or aggregate policies.");
         }
 
         if (policy.Match.EventTypes.Contains(SecurityEventTypes.TelemetryAggregationSummary))
@@ -178,7 +183,16 @@ public static class PolicyLoader
             throw new InvalidDataException("Policy suppression windowSeconds must be between 1 and 86400.");
         }
 
-        if (suppression.AllowPerWindow is < 1 or > 100_000)
+        // Aggregate stores no individual event: every match is counted. allowPerWindow is
+        // meaningless there, so it must be 0 or omitted (0).
+        if (action == DecisionAction.Aggregate)
+        {
+            if (suppression.AllowPerWindow != 0)
+            {
+                throw new InvalidDataException("An aggregate policy stores no individual events: omit allowPerWindow or set it to 0.");
+            }
+        }
+        else if (suppression.AllowPerWindow is < 1 or > 100_000)
         {
             throw new InvalidDataException("Policy suppression allowPerWindow must be between 1 and 100000.");
         }

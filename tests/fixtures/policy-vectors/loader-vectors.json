@@ -102,7 +102,7 @@
  {
   "name": "b18-action.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: aggregate\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "OK sha256:1f6c65a60c57e90e844de406d17474c270c245cfa573bd23498bdeaa19d5c9a1"
+  "csharp": "ERR An aggregate policy needs a suppression section: its keyFields and windowSeconds define the counts."
  },
  {
   "name": "b19-action.yaml",
@@ -1076,7 +1076,7 @@
  {
   "name": "s03-suppression-reject-action.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: reject\n  minimumValueScore: 1\n  neverSample: false\nsuppression:\n  keyFields:\n    - actor.username\n    - source.ipAddress\n  windowSeconds: 60\n  allowPerWindow: 5\n",
-  "csharp": "ERR Suppression applies only to accept or redact-and-accept policies."
+  "csharp": "ERR Suppression applies only to accept, redact-and-accept or aggregate policies."
  },
  {
   "name": "s04-suppression-unknown-key.yaml",
