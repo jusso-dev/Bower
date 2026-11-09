@@ -178,7 +178,7 @@ public sealed class AzureLogsIngestionOutputTests
             return record.ToJsonString();
         })) + "]";
         Assert.Equal(expected, Assert.Single(handler.Requests).Body);
-        // Measured C# body (rust/crates/bower-output-azure/tests/fixtures, "escapes").
+        // Measured C# body.
         Assert.StartsWith(
             """[{"eventId":"esc","timeGenerated":"2026-10-08T00:00:00Z","s":"\u003Ca\u003E\u0026\u0027\u002B\u00E9\uD83D\uDE00/\u0001","n":1.0E+2,"big":123456789012345678901234567890,"neg":-0,"o":{"z":1,"a":[true,null]}},""",
             expected,

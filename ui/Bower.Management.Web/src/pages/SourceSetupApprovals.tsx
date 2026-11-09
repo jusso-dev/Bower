@@ -114,7 +114,7 @@ function SourceSetupApproval({
                 <SourcePlanView plan={detail.plan} headingLevel={4} />
               </details>
               <p className="form-help">
-                <Link to={`/sources?request=${detail.id}`}>Open the request</Link>
+                <Link className="inline-action" to={`/sources?request=${detail.id}`}>Open the request</Link>
               </p>
             </div>
             {!canApprove ? (

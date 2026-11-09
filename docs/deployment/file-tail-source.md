@@ -11,9 +11,8 @@ named file ──▶ path guards ──▶ complete lines ──▶ record ─�
               roots, no links   bounded, rotation    flat JSON   transforms + match    (default deny)       (cursor moves here)
 ```
 
-Both collectors (C# and Rust) implement it with the same configuration rules, record
-shape, event ids, cursor format, limits and failure codes. They share test vectors
-(`rust/crates/bower-source-file/tests/fixtures/file-tail-vectors.json`).
+Its configuration rules, record shape, event ids, cursor format, limits and failure codes
+are pinned by test vectors (`tests/fixtures/file-tail-vectors/file-tail-vectors.json`).
 
 ## What is accepted
 
@@ -73,7 +72,7 @@ start-up and refuses a signed `reload`.
 | `rotationGracePolls` | `5` | 1–60 polls `path.1` must stay unchanged (size and write time) before the cursor moves to the new file. See [rotation](#cursors-rotation-and-backpressure). |
 | `rotationDrainMaxPolls` | `300` | `rotationGracePolls` + 2 to 3600 (settling a rename takes `rotationGracePolls` + 1 end-of-file polls, so a lower cap would end every rename drain first and count a static `path.1`'s unterminated last line as a gap). The most counted polls a rename or copytruncate drain may take; then the cursor moves to the new file anyway. A poll counts only once it reaches the end of `path.1` or gets past the length `path.1` had when the drain began, so a backlog of any size is read in full. A writer (or an attacker who can write `path.1`) can delay the switch by at most the time to read that backlog plus this many polls. |
 | `inputs[].id` | required | 1–63 lowercase letters, digits or hyphens, unique. Names the cursor (`file:<id>`) and the event's source adapter (`file:<id>:<pack>:<parser>`). |
-| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. An input whose directory did not exist at load keeps that written path as its load-time resolution, so if the directory later appears behind a link that makes it meet another input, both inputs can be refused rather than only one (this fails closed). Canonical paths follow `realpath` in both collectors: a `..` after a linked directory goes to that link's real parent. |
+| `inputs[].path` | required | Absolute, normalised (no `.`, `..`, repeated or trailing separators), no wildcard characters (`* ? [ ] { }`) or control characters, strictly below an allowed root, and read by only one input. Paths that differ only in ASCII case count as the same file, and one input's path may not be another's `path.1`. These rules are applied to canonical paths too (directories resolved through links, so `/var/run/x.log` and `/run/x.log` are the same file), at load and at every read; a directory that does not exist yet is compared as written. An input whose directory did not exist at load keeps that written path as its load-time resolution, so if the directory later appears behind a link that makes it meet another input, both inputs can be refused rather than only one (this fails closed). Canonical paths follow `realpath`: a `..` after a linked directory goes to that link's real parent. |
 | `inputs[].route` | required | `{ "pack": "<id>", "parser": <index> }`: an active parser of a loaded signed pack. Checked at start-up and before a signed reload. |
 | `inputs[].format` | `text` | `text` or `json-lines`. |
 | `inputs[].startAt` | `end` | `end`: the first start reads only lines written after it. `beginning`: the first start reads the whole file. Either way a restart resumes from the stored cursor. |
@@ -94,19 +93,18 @@ after reading:
   followed exactly once and its target must pass the same checks (below an allowed root,
   no linked directories, not itself a link);
 - the path is not a directory. A file shorter than 64 bytes is never opened, so a FIFO or
-  device (reported as empty) is never read. The Rust collector also refuses any
-  non-regular file outright (state `file-path-refused`).
+  device (reported as empty) is never read.
 
 `path.1` gets exactly the same checks (it is never allowed to be a link), before and after
 the read; a refused `path.1` fails the poll rather than being skipped.
 
-The open itself is checked too. On Linux (both collectors) and on every Unix (Rust), the
+The open itself is checked too. On Linux the
 file is opened with `O_NOFOLLOW | O_NONBLOCK`, and the handle must be a regular file with
 the same device and inode as the path at that moment, so a link or another file swapped in
-after the checks is refused. The C# collector knows the flag values for x86-64 and arm64
+after the checks is refused. The collector knows the flag values for x86-64 and arm64
 only (they differ: `O_NOFOLLOW` is 0x20000 on x86-64 and 0x8000 on arm64); on other Linux
 architectures it opens without them and relies on the device and inode check alone.
-Elsewhere the C# collector can only re-check that the path is not a link after opening. Each file is opened once per read: its identity, length and
+Elsewhere the collector can only re-check that the path is not a link after opening. Each file is opened once per read: its identity, length and
 lines all come from that one handle, so bytes of one generation can never move another
 generation's cursor.
 
@@ -257,7 +255,7 @@ before the offset are skipped without a gap.
   (the same event id with other content) is quarantined by the queue
   (`event-identity-conflict`), counted under `rejected`, and the cursor moves on; it never
   blocks the input.
-- **Busy queue database.** In both collectors a busy or locked queue database (for example
+- **Busy queue database.** A busy or locked queue database (for example
   during a retention batch) is backpressure: the poll is retried after one second and the
   cursor is unchanged.
 - **Oversized lines** are skipped without being buffered, even across polls, and
@@ -269,7 +267,7 @@ before the offset are skipped without a gap.
   drained, however the current file changes meanwhile. If `path.1` disappears or is rotated
   again before it is drained, that is counted in `rotationGaps` and the current file is
   read from its start.
-- **Rename or copytruncate.** On Linux (and every Unix in Rust) device and inode numbers
+- **Rename or copytruncate.** On Linux device and inode numbers
   tell them apart: copytruncate keeps the original file at the path (truncated) and makes
   `path.1` a copy; rename moves the original to `path.1` and puts another file at the path.
   Without them, a current file shorter than the cursor with the same identity (and a
@@ -318,7 +316,7 @@ before the offset are skipped without a gap.
   `rotate 0`), or truncated in place, Bower reads the current file from its start and counts a
   `rotationGaps` entry. That includes a new generation with the same first line (a constant
   header) that is already longer than the cursor, when it has a new device and inode and
-  device and inode numbers are known (Linux in C#, every Unix in Rust). Lines written to the
+  device and inode numbers are known (Linux). Lines written to the
   old file after the last read were not seen. Use `nodateext` and `delaycompress` for tailed files and keep the poll interval well
   below the rotation interval.
 - What cannot be detected: a new generation with the same first line and at least as long as
@@ -342,8 +340,8 @@ current schema; never reset silently), `file-cursor-conflict`,
 `file-submit-failed` and `file-source-failed`. A failing input backs off from the poll
 interval up to 60 seconds and keeps retrying.
 
-A refused or inaccessible input is logged once when it enters that state (event 1121 in the
-C# collector), with its id and a reason code only: `path`, `rotated-path`,
+A refused or inaccessible input is logged once when it enters that state (event 1121),
+with its id and a reason code only: `path`, `rotated-path`,
 `overlaps-another-input`, `handle` or `inaccessible` (state `file-path-inaccessible`).
 
 Cursors from another build are never interpreted. The cursor schema is 2; a stored cursor
@@ -366,11 +364,10 @@ pack's `applicationName`/`environment` in `BOWER_SOURCE_EXPECTATIONS` to degrade
   still observe the generation they were written to (best effort; see **Gap counting is
   best effort**).
 - Path checks run before and after each read, and the open is verified against the path
-  (Linux, and every Unix for Rust). A directory on the path swapped for a link and back
+  (Linux). A directory on the path swapped for a link and back
   between those steps by someone who can write the root is not detected; neither is a
-  link swapped in on a non-Linux platform by the C# collector between its open and its
-  re-check.
-- The C# collector cannot distinguish a FIFO from an empty regular file; it never opens
+  link swapped in on a non-Linux platform between the open and the re-check.
+- The collector cannot distinguish a FIFO from an empty regular file; it never opens
   one (shorter than the fingerprint), but reports it as `running` rather than refused.
 
 ## Follow-ups

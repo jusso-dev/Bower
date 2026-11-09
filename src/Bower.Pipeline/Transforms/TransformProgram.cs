@@ -2,7 +2,7 @@ using System.Text.Json;
 
 namespace Bower.Pipeline.Transforms;
 
-/// <summary>Static and runtime bounds. Shared with the Rust port (<c>bower_pipeline::transform</c>).</summary>
+/// <summary>Static and runtime bounds.</summary>
 public static class TransformLimits
 {
     public const int MaximumStatements = 64;

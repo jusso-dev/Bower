@@ -3,7 +3,7 @@ BeforeAll {
     Import-BowerTestModule -Name Bower.Policy
 
     # The bower CLI is always mocked here; its real output shape is owned by the CLI
-    # (src/Bower.Cli and rust/crates/bower-cli, kept in parity by their own tests).
+    # (src/Bower.Cli, covered by its own tests).
     Mock -ModuleName Bower.Policy Resolve-BowerCliPath { if ($Path) { $Path } else { "/mock/bin/$Name" } }
     Mock -ModuleName Bower.Policy Invoke-BowerCli { throw "Unmocked bower call: $($ArgumentList -join ' ')" }
 

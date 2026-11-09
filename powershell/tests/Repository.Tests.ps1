@@ -128,7 +128,6 @@ Describe 'State-changing commands' {
         @{ Name = 'New-BowerEntraApplication'; Impact = 'High' }
         @{ Name = 'Deploy-BowerSentinelResource'; Impact = 'High' }
         @{ Name = 'Deploy-BowerAzureFunction'; Impact = 'High' }
-        @{ Name = 'Deploy-BowerAwsLambda'; Impact = 'High' }
         @{ Name = 'New-BowerPolicy'; Impact = 'Medium' }
         @{ Name = 'Deploy-BowerAwsSecurity'; Impact = 'High' }
         @{ Name = 'Deploy-BowerGcpSecurity'; Impact = 'High' }
@@ -151,7 +150,7 @@ Describe 'State-changing commands' {
     }
 
     It 'Deploy commands default to planning (an -Apply switch is required to mutate)' {
-        foreach ($name in 'New-BowerEntraApplication', 'Deploy-BowerSentinelResource', 'Deploy-BowerAzureFunction', 'Deploy-BowerAwsLambda', 'Deploy-BowerAwsSecurity', 'Deploy-BowerGcpSecurity') {
+        foreach ($name in 'New-BowerEntraApplication', 'Deploy-BowerSentinelResource', 'Deploy-BowerAzureFunction', 'Deploy-BowerAwsSecurity', 'Deploy-BowerGcpSecurity') {
             (Get-Command -Name $name).Parameters['Apply'].ParameterType | Should -Be ([switch])
         }
     }

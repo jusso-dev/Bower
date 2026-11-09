@@ -194,7 +194,7 @@ public sealed partial class SqlServerSourceAdapterTests
     [Fact]
     public async Task CursorStore_CreatesMissingTableInExistingDatabaseAndTreatsWriteFailureAsLostRace()
     {
-        // Pinned for the Rust port (bower-persistence cursor.rs): CREATE TABLE IF NOT EXISTS
+        // Pinned DDL: CREATE TABLE IF NOT EXISTS
         // runs on every start, WAL only for a new file, and any failed write returns false.
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();

@@ -36,7 +36,6 @@ public sealed class AdaptiveConcurrencyTests
     [Fact]
     public void Controller_FollowsTheSharedAimdTrace()
     {
-        // Same script and expected trace as rust/crates/bower-output-azure/tests/adaptive_concurrency.rs.
         AdaptiveConcurrencyController controller = new(8);
         List<int> trace = [];
         void Step(ConcurrencySignal signal, int milliseconds = 100)

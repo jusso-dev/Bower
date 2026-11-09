@@ -6,12 +6,11 @@ upload, production replay or historical loss claim is made.
 
 ## Request ownership and failure classification
 
-Both data planes construct their own JSON-array requests, at most 1,048,576
+The collector constructs its own JSON-array requests, at most 1,048,576
 uncompressed UTF-8 bytes including brackets and commas. Default concurrency remains
-four; each result belongs to the IDs in its own request. C# uses the supported
+four; each result belongs to the IDs in its own request. It uses the supported
 `LogsIngestionClient.UploadAsync(RequestContent, ...)` protocol overload, not the
-SDK enumerable batching/callback overload. Rust has its own reordered-response
-regression; it does not inherit the defective callback attribution algorithm.
+SDK enumerable batching/callback overload.
 Acknowledgements contain only `azure-logs-ingestion:accepted:owned-batches` and the
 accepted IDs; arbitrary service request IDs and response bodies are not retained.
 
@@ -63,8 +62,8 @@ No new persisted columns or migration are needed. The integration is six SQL
 lines in each queue implementation: a lease-selection `NOT EXISTS` guard and an
 attempt refund restricted to retryable destination settlements. Persistence/lease
 fencing changes must preserve those operations inside their existing transactions
-and guards. `destination-` is a reserved internal code prefix, case-sensitive in
-both runtimes; adapters must not use it for individual permanent failures.
+and guards. `destination-` is a reserved internal code prefix, case-sensitive;
+adapters must not use it for individual permanent failures.
 
 Upgrade all workers using a queue together. Do not concurrently run an older
 worker: older workers ignore this circuit and can still consume attempt budgets.
@@ -126,8 +125,7 @@ production loss is **not established**. If an affected deployment existed:
 4. Inventory old dead letters with metadata-only commands and select exact reviewed
    IDs under explicit operational authority. Stop queue users for the offline
    maintenance window and preserve the consistent backup before replay. Use the
-   audited wrapper with a trusted, already compiled C# CLI apphost or Rust `bower`
-   executable; do not substitute `dotnet run`, a shell command or an unreviewed
+   audited wrapper with a trusted, already compiled `bower` CLI apphost; do not substitute `dotnet run`, a shell command or an unreviewed
    executable. Pre-provision private local audit storage outside the checkout:
 
    ```sh

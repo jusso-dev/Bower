@@ -6,7 +6,6 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Collector settings vectors in tests/fixtures/collector-settings, shared with
-/// rust/crates/bower-collector/tests/settings_vectors.rs.
 /// </summary>
 public sealed class CollectorSettingsVectorTests
 {

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using Azure.Core;
@@ -245,6 +246,8 @@ public static partial class CollectorApplication
         builder.Services.AddBowerBackgroundJobs($"bower-collector:{settings.CollectorId}");
         builder.Services.AddTransient<QueueRetentionJob>();
         builder.Services.AddTransient<QueueMaintenanceJob>();
+        builder.Services.AddTransient<TemporaryFileSweepJob>();
+        builder.Services.AddSingleton<CrashRecoveryState>();
         builder.Services.AddTransient<SourceActivityJob>();
         if (settings.ArchivePath is not null)
         {
@@ -317,6 +320,7 @@ public static partial class CollectorApplication
 
         IDurableEventStore queue = app.Services.GetRequiredService<IDurableEventStore>();
         await queue.InitializeAsync(cancellationToken);
+        await RecoverFromUncleanShutdownAsync(app, settings, queue, cancellationToken);
         app.Services.GetRequiredService<PipelineTelemetry>().Load(
             await queue.GetSourceActivityAsync(cancellationToken));
         await app.Services.GetRequiredService<SourceHealth>().InitializeAsync(queue, cancellationToken);
@@ -345,6 +349,10 @@ public static partial class CollectorApplication
             (job, token) => job.RunAsync(token),
             Cron.Daily(3),
             QueueMaintenanceJob.RetryAttempts);
+        jobs.AddOrUpdate<TemporaryFileSweepJob>(
+            TemporaryFileSweepJob.Id,
+            (job, token) => job.RunAsync(token),
+            Cron.Hourly());
         if (settings.ManagementEndpoint is not null)
         {
             // Parses the trusted command keys now, so an invalid key is reported at start-up.
@@ -372,6 +380,37 @@ public static partial class CollectorApplication
                 // register first (heartbeat), then fetch the assignment.
                 jobs.Trigger(ManagementHeartbeatJob.Id);
                 jobs.Trigger(ManagedPrivacyProfileJob.Id);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Run marker, ledger check after an unclean shutdown and the first temporary-file sweep
+    /// (#138). The marker is removed when the host stops cleanly.
+    /// </summary>
+    private static async Task RecoverFromUncleanShutdownAsync(
+        WebApplication app, CollectorSettings settings, IDurableEventStore queue, CancellationToken cancellationToken)
+    {
+        TimeProvider clock = app.Services.GetRequiredService<TimeProvider>();
+        string marker = CrashRecovery.MarkerPath(settings.QueuePath);
+        DateTimeOffset? previous = CrashRecovery.BeginRun(marker, clock.GetUtcNow());
+        app.Lifetime.ApplicationStopped.Register(() => CrashRecovery.EndRun(marker));
+        int removed = CrashRecovery.SweepTemporaryFiles(TemporaryFileSweepJob.Directories(settings), clock.GetUtcNow());
+        if (removed > 0)
+        {
+            CrashRecoveryLog.TemporaryFilesRemoved(app.Logger, removed);
+        }
+
+        CrashRecoveryStatus status = await CrashRecovery.RecoverAsync(queue, previous, removed, clock.GetUtcNow(), cancellationToken);
+        app.Services.GetRequiredService<CrashRecoveryState>().Last = status;
+        if (status.UncleanShutdown)
+        {
+            CrashRecoveryLog.Unclean(app.Logger,
+                status.PreviousStartedAt?.ToString("O", CultureInfo.InvariantCulture) ?? "unknown",
+                status.LedgerIntact == true, status.LedgerIssues);
+            if (status.LedgerIntact == false)
+            {
+                CrashRecoveryLog.LedgerBroken(app.Logger, status.LedgerIssues);
             }
         }
     }
@@ -545,7 +584,8 @@ public static partial class CollectorApplication
                         DeliveryActivity = new StatusDeliveryActivityResponse(
                             activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At),
                         Storage = await QueueStorageStatus.TryCaptureAsync(
-                            eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), pages, cancellationToken)
+                            eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), pages, cancellationToken),
+                        Recovery = context.RequestServices.GetRequiredService<CrashRecoveryState>().Last
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })

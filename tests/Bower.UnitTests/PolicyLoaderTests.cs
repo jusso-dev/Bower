@@ -248,7 +248,7 @@ public sealed class PolicyLoaderTests
         Assert.Equal("BWR-POL-DEFAULT-DENY", decision.PolicyId);
     }
 
-    /// <summary><see cref="ValidPolicy"/> hash, as pinned for the Rust port.</summary>
+    /// <summary><see cref="ValidPolicy"/> hash, pinned.</summary>
     private const string ValidPolicyHash =
         "sha256:664c378a9e14a0b601d8ae8c19ca1dcc25ed1e57d04bba94ff38bf671edf7191";
 

@@ -314,7 +314,7 @@ public sealed class DurabilityAdversarialTests
     {
         using TemporaryDirectory directory = new();
         string path = Path.Combine(directory.Path, "queue.db");
-        File.Copy(Path.Combine(RepositoryDirectory(), "rust/crates/bower-persistence/tests/fixtures/csharp-queue.db"), path);
+        File.Copy(Path.Combine(RepositoryDirectory(), "tests/fixtures/persistence-vectors/csharp-queue.db"), path);
         long before = await ScalarAsync(path, "SELECT COUNT(*) FROM queue_events;");
         await ExecuteAsync(path, "CREATE TRIGGER interrupt_v5 BEFORE INSERT ON schema_history WHEN NEW.version = 5 BEGIN SELECT RAISE(ROLLBACK, 'interrupted'); END;");
         SqliteEventStore store = new(path, 10_485_760);
@@ -362,7 +362,7 @@ public sealed class DurabilityAdversarialTests
     {
         using TemporaryDirectory directory = new();
         string path = Path.Combine(directory.Path, "queue.db");
-        File.Copy(Path.Combine(RepositoryDirectory(), "rust/crates/bower-persistence/tests/fixtures/csharp-queue.db"), path);
+        File.Copy(Path.Combine(RepositoryDirectory(), "tests/fixtures/persistence-vectors/csharp-queue.db"), path);
         await ExecuteAsync(path, "DROP TABLE queue_ledger; DROP TABLE queue_ledger_anchor; DELETE FROM schema_history WHERE version >= 3;");
         var envelope = TestEvents.AuthenticationFailure(TestEvents.Now, "e3", "stable-source-id");
         string payload = JsonSerializer.Serialize(envelope, BowerJson.Envelope);
@@ -393,12 +393,13 @@ public sealed class DurabilityAdversarialTests
         }
     }
 
+    /// <summary>Upgrade path off the retired Rust collector: its v5 queue opens and drains here.</summary>
     [Fact]
     public async Task RustV5Database_OpensAndSettlesInCSharp()
     {
         using TemporaryDirectory directory = new();
         string path = Path.Combine(directory.Path, "queue.db");
-        File.Copy(Path.Combine(RepositoryDirectory(), "rust/crates/bower-persistence/tests/fixtures/rust-queue-v5.db"), path);
+        File.Copy(Path.Combine(RepositoryDirectory(), "tests/fixtures/persistence-vectors/rust-queue-v5.db"), path);
         SqliteEventStore store = new(path, 10_485_760);
         await store.InitializeAsync(Cancellation);
         Assert.True((await store.VerifyLedgerAsync(Cancellation)).Intact);
@@ -416,7 +417,7 @@ public sealed class DurabilityAdversarialTests
     {
         using TemporaryDirectory directory = new();
         string path = Path.Combine(directory.Path, "queue.db");
-        File.Copy(Path.Combine(RepositoryDirectory(), "rust/crates/bower-persistence/tests/fixtures/csharp-queue.db"), path);
+        File.Copy(Path.Combine(RepositoryDirectory(), "tests/fixtures/persistence-vectors/csharp-queue.db"), path);
         await ExecuteAsync(path, "UPDATE queue_ledger SET chain_hash='corrupt' WHERE sequence=3;");
         SqliteEventStore store = new(path, 10_485_760);
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.InitializeAsync(Cancellation));
@@ -427,7 +428,7 @@ public sealed class DurabilityAdversarialTests
     private static string RepositoryDirectory()
     {
         DirectoryInfo? directory = new(AppContext.BaseDirectory);
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "rust")))
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Bower.sln")))
         {
             directory = directory.Parent;
         }

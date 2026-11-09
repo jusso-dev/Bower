@@ -137,7 +137,7 @@ public static class FileTailRecord
         return "file-" + Convert.ToHexStringLower(hash.GetHashAndReset())[..32];
     }
 
-    /// <summary>UTC, microsecond precision (truncated), so both runtimes write identical text.</summary>
+    /// <summary>UTC, microsecond precision (truncated), so the text is stable.</summary>
     public static string Format(DateTimeOffset value) =>
         value.UtcDateTime.ToString("yyyy'-'MM'-'dd'T'HH':'mm':'ss'.'ffffff'Z'", CultureInfo.InvariantCulture);
 }

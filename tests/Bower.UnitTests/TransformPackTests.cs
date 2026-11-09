@@ -92,7 +92,7 @@ public sealed class TransformPackTests
         string serialized = JsonSerializer.Serialize(first, BowerJson.Envelope);
         Assert.DoesNotContain("bastion-1", serialized, StringComparison.Ordinal);
         Assert.DoesNotContain("Failed password", serialized, StringComparison.Ordinal);
-        // Byte-identical envelope pinned for the Rust port (bower-packs transform_pack_tests);
+        // Byte-identical envelope pinned;
         // set BOWER_PACK_ENVELOPE_OUTPUT to a file path to regenerate.
         if (Environment.GetEnvironmentVariable("BOWER_PACK_ENVELOPE_OUTPUT") is { Length: > 0 } output)
         {

@@ -128,7 +128,7 @@ public sealed partial class ApiKeyDetector : ISensitiveDetector
 
     // Source-generated (AOT-friendly, no Reflection.Emit at startup). No match timeout:
     // a wall-clock timeout makes the outcome depend on machine load (a valid value
-    // quarantines when the thread is descheduled), unlike the Rust engine. Each pattern
+    // quarantines when the thread is descheduled). Each pattern
     // is linear in the backtracking engine: it starts at a word boundary and every
     // unbounded single-class loop is followed by a boundary or a character the loop
     // cannot consume, so a failed attempt only rescans its own run. Input is bounded by

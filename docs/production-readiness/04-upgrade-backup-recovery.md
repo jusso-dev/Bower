@@ -76,11 +76,11 @@ at rest (see [Backup handling](#backup-handling-and-encryption)).
   expected only for local channels such as `Security`.
 - **Collector id.** When `BOWER_COLLECTOR_ID` is unset, the first start writes the machine
   name it would have used to `collector-id` beside the queue database, and later starts
-  reuse it (C# and Rust read the same file). Existing installs therefore keep their current
-  id, and containers or pods keep theirs after a recreate as long as the volume persists. A
-  configured `BOWER_COLLECTOR_ID` always wins and never rewrites the file. An invalid
-  `collector-id` stops startup instead of being replaced. The startup log records the id
-  and its source (`Configured`, `Persisted` or `Created`).
+  reuse it (the retired Rust collector read the same file). Existing installs therefore
+  keep their current id, and containers or pods keep theirs after a recreate as long as
+  the volume persists. A configured `BOWER_COLLECTOR_ID` always wins and never rewrites
+  the file. An invalid `collector-id` stops startup instead of being replaced. The
+  startup log records the id and its source (`Configured`, `Persisted` or `Created`).
 - **Event identity.** Fingerprints include the collector id. A Windows event id
   combines channel, origin computer, origin record id and creation time, and does not depend
   on the WEC host or Bower subscription id. A syslog id combines listener id, sender address
@@ -916,10 +916,10 @@ Known limits:
   `collector_health`, `bower --version`). Earlier builds report `0.1.0` whatever the
   package version; for those, verify with the package version (`rpm -q`, `DisplayVersion`)
   and the executable SHA-256.
-- **Rust.** The Rust CLI has no `queue backup` / `queue restore`; use the C# CLI (schema 5
-  is shared). The Rust collector does not read `BOWER_SETTINGS_FILE`; on Linux, use systemd
-  `EnvironmentFile`. Both runtimes implement the newer-schema refusal and the persisted
-  `collector-id`.
+- **Rust (retired in November 2026).** The Rust CLI had no `queue backup` /
+  `queue restore`; use the C# CLI (schema 5 is shared). The Rust collector did not read
+  `BOWER_SETTINGS_FILE` (systemd `EnvironmentFile` was used instead). Both runtimes
+  implemented the newer-schema refusal and the persisted `collector-id`.
 - **Rust after #161: earlier refusals.** Upgrading a Rust collector to #161 or later
   brings the 85% intake page limit but not C#'s pressure retention. Acknowledged rows
   kept for duplicate detection hold the remaining room until the hourly age purge, so a

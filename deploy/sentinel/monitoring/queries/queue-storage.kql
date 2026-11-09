@@ -9,7 +9,7 @@
 // acknowledged rows all use pages. In-use pages fall after delivery and retention free them.
 // Collectors that report storage (C#, from workstream 3) queue their health record from a
 // reserve even while new events are refused, so a full or critical queue is visible here;
-// older collectors and the Rust collector cannot, and collector-health-missing covers them.
+// older collectors cannot, and collector-health-missing covers them.
 // A volume whose free space cannot be measured (volumeState "unknown") is incomplete coverage;
 // a collector that does not report volumeState at all is shown as not reported.
 let usedPercent = __STORAGE_PERCENT__;

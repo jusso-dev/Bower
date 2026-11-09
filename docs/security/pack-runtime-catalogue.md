@@ -76,6 +76,15 @@ including a missing type, are no longer selected even if they carry a valid sour
 address. The failure policy and privacy profile are unchanged. Rejection samples cover
 interactive loopback logons and missing logon types.
 
+`owasp-asvs-app-logging` 1.0.0 has no parsers. It selects semantic application events sent
+to `/v1/events` with twelve `BWR-PACK-ASVS-*` 1.0.0 policies (see the
+[ASVS logging pack](asvs-logging-pack.md)), and its privacy profile pseudonymises usernames
+and session ids, removes authentication material and raw input by field name, and replaces
+CR and LF in every value. Local rules `bower-pack-asvs-mfa-factor-removed-001`,
+`bower-pack-asvs-authz-stale-grant-001` and `bower-pack-asvs-backend-tls-failure-001`
+(1.0.0) tag matching events per event. `database_audit` events need a separate signed
+parser for each audit format; none ships yet.
+
 Other parser configurations without a signed runtime mapping are preview-only.
 Cloud packs use their existing semantic agent paths and local detections; no new
 cloud raw parser is activated here. DCR templates remain packaged-only.

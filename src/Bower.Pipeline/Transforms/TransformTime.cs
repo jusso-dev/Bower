@@ -5,7 +5,7 @@ namespace Bower.Pipeline.Transforms;
 
 /// <summary>
 /// Timestamp parsing for <c>parse_timestamp</c>: fixed, named formats with exact grammars and
-/// integer tick arithmetic (100 ns since 0001-01-01T00:00:00Z), so both runtimes agree. No
+/// integer tick arithmetic (100 ns since 0001-01-01T00:00:00Z), so results never depend on the platform. No
 /// culture, time zone database or clock is consulted; RFC 3164 infers its missing year from
 /// the explicit evaluation time only.
 /// </summary>

@@ -17,7 +17,7 @@ namespace Bower.Collector;
 /// Short-lived proof that this collector holds the private key of its management credential:
 /// <c>bwc1.&lt;base64url canonical payload&gt;.&lt;base64url P1363 signature&gt;</c>. The payload
 /// bytes must match the management API's <c>CollectorEnrolment.AssertionBytes</c> and the
-/// Rust collector byte for byte. The signed <c>kind</c> keeps it from verifying as any other
+/// The signed <c>kind</c> keeps it from verifying as any other
 /// Bower document.
 /// </summary>
 public static class ManagementAssertion
@@ -60,7 +60,7 @@ public static class ManagementAssertion
 
 /// <summary>
 /// The collector's key-bound management credential, persisted owner-only in
-/// <c>management-credential/credential.json</c>. Same format in the C# and Rust collectors.
+/// <c>management-credential/credential.json</c>.
 /// Holds the private key (never sent) and hashes of tokens already exchanged or refused, never a token.
 /// </summary>
 public sealed record ManagementCredentialState(
