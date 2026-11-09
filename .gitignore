@@ -26,3 +26,5 @@ spool/
 /tools/docs/playwright-report/
 /.venv-docs/
 /tools/docs/**/__pycache__/
+__pycache__/
+*.py[cod]
