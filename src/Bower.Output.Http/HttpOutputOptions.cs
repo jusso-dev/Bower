@@ -165,7 +165,7 @@ public sealed record HttpOutputOptions
     /// <summary>
     /// Header names that cannot carry the token: hop-by-hop and framing headers, proxy
     /// credentials, content headers (.NET refuses them on request headers) and
-    /// response-only headers. Shared with the Rust port through the vectors.
+    /// response-only headers. Pinned by the vectors.
     /// </summary>
     public static IReadOnlyList<string> ReservedHeaders { get; } =
     [

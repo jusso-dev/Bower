@@ -5,7 +5,7 @@
     Author               = 'Bower contributors'
     CompanyName          = 'Bower'
     Copyright            = '(c) Bower contributors. Licensed under the repository LICENSE.'
-    Description          = 'Build, validate and send Bower security event envelopes to a Bower collector, the Bower Azure Function or the Bower CloudTrail Lake Lambda.'
+    Description          = 'Build, validate and send Bower security event envelopes to a Bower collector or the Bower Azure Function.'
     PowerShellVersion    = '7.4'
     CompatiblePSEditions = @('Core')
     FunctionsToExport    = @(

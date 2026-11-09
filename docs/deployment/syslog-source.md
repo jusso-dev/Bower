@@ -11,8 +11,8 @@ sender ──RELP or TLS (or loopback TCP/UDP)──▶ listener ──▶ parse
                                        limits       RFC 3164
 ```
 
-Both collectors (C# and Rust) implement it with the same parser, limits, failure codes,
-record shape and event ids.
+The parser, limits, failure codes, record shape and event ids are pinned by test vectors
+(`tests/fixtures/syslog-vectors/`).
 
 ## What is accepted
 
@@ -98,8 +98,7 @@ them; a list limited to CA or attribute certificates covers no client. Lists lim
 some reasons, indirect lists, distribution points relative to the issuer, delta lists,
 other critical extensions and signatures other than RSA PKCS#1 v1.5 or ECDSA
 (SHA-256/384/512) are refused at load with a message naming the feature. A client chain
-that can only end at an expired configured CA is refused. C# and Rust behave
-identically.
+that can only end at an expired configured CA is refused.
 
 **Rotation without restart.** A background task reads the certificate, key, CA bundle
 and revocation list once a second and reloads changed material for new handshakes;
@@ -258,9 +257,8 @@ Strict and fail closed, with stable codes:
 - **On stop.** Bower stops accepting and half-closes connections while attempting to
   drain in-flight frames. The default per-connection quiet drain is 5 seconds and
   the graceful drain budget is 20 seconds. Neither guarantees delivery of every
-  frame already sent. In C#, the final wait requires sinks and listeners to honour
-  cancellation and can exceed the budget indefinitely. In Rust, an already-running
-  blocking sink can continue after the source returns and delay runtime shutdown.
+  frame already sent. The final wait requires sinks and listeners to honour
+  cancellation and can exceed the budget indefinitely.
   Size host grace periods for the workload and verify cancellation in the deployment.
 - **On crash.** Plain syslog has no application acknowledgement. Frames already in the
   kernel socket buffer or Bower's read buffer, and a frame waiting for queue space, are
@@ -268,11 +266,10 @@ Strict and fail closed, with stable codes:
   TCP/TLS with a sender-side disk queue reduces exposure but does not prove end-to-end
   lossless delivery. Qualify the actual sender with
   [the delivery-reliability guide](../production-readiness/01-syslog-delivery-reliability.md).
-- **TLS 1.3 session tickets (C# collector).** .NET on OpenSSL sends two TLS 1.3 session
+- **TLS 1.3 session tickets.** .NET on OpenSSL sends two TLS 1.3 session
   tickets after every handshake and offers no setting to stop them. rsyslog never reads
   them, which hides Bower's half-close from rsyslog's pre-send check. Give the service
-  `OPENSSL_CONF` with `NumTickets = 0`, or pin rsyslog to TLS 1.2; see the guide. The Rust
-  collector sends no tickets.
+  `OPENSSL_CONF` with `NumTickets = 0`, or pin rsyslog to TLS 1.2; see the guide.
 
 ## RELP (acknowledged delivery)
 

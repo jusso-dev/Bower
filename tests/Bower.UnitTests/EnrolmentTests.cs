@@ -31,8 +31,8 @@ public sealed class EnrolmentTests
     private static readonly DateTimeOffset Start = new(2026, 10, 27, 0, 0, 0, TimeSpan.Zero);
     private static readonly JsonSerializerOptions Json = ManagementApiTests.ApiJson;
 
-    // A Rust-produced assertion (bower-collector `enrolment::create_assertion`) and its key:
-    // the C# management API must accept what the Rust collector signs.
+    // An assertion signed by the retired Rust collector and its key: collectors
+    // enrolled with that build must still be accepted after they upgrade.
     private const string RustPublicKeyPem = RustAssertionVector.PublicKeyPem;
 
     [Fact]
@@ -550,8 +550,6 @@ public sealed class EnrolmentTests
         });
         Assert.True(fromEnvironment.UsesEnrolment);
         Assert.Equal("/etc/bower/enrolment-token", fromEnvironment.ManagementEnrolmentTokenFile);
-
-        // The Rust collector pins the same hash (tests/enrolment.rs).
         CollectorSettings pinned = new()
         {
             ListenUrl = "http://127.0.0.1:4319",
@@ -580,7 +578,6 @@ public sealed class EnrolmentTests
         string created = ManagementAssertion.Create(CollectorId, keyId, privatePem, Start);
 
         Assert.Equal(collector, management);
-        // The Rust collector pins the same text (enrolment.rs).
         Assert.Equal(
             "{\"collectorId\":\"edge-01\",\"credentialId\":\"0123456789abcdef\",\"expiresAt\":\"2026-10-27T00:05:00.0000000Z\"," +
             "\"issuedAt\":\"2026-10-27T00:00:00.0000000Z\",\"kind\":\"bower.collector-assertion/v1\"," +
@@ -591,7 +588,7 @@ public sealed class EnrolmentTests
         Assert.Equal(CollectorId, read.CollectorId);
         Assert.Equal(Start.AddMinutes(5), read.ExpiresAt);
 
-        // What the Rust collector signs, the C# management API accepts.
+        // What the retired Rust collector signed, the management API still accepts.
         Assert.Null(CollectorEnrolment.TryReadAssertion(
             RustAssertionVector.Assertion, RustAssertionVector.Now, out CollectorAssertion? rust));
         Assert.True(rust!.VerifiedBy(RustPublicKeyPem));

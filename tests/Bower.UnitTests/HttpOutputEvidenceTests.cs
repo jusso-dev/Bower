@@ -5,7 +5,6 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Evidence never claims Sentinel delivery for an output outside the Sentinel allowlist.
-/// Mirrored in rust/crates/bower-evidence/tests/http_output_evidence.rs.
 /// </summary>
 public sealed class HttpOutputEvidenceTests
 {

@@ -26,7 +26,7 @@ Raw Event → Parser → Privacy & Secret Engine → Normalisation → Output
 
 ## Semantic change values and URLs
 
-Before persistence, both runtimes remove change values except the reviewed
+Before persistence, the collector removes change values except the reviewed
 `role_membership_changed` / `role` pair, and strip URL query, fragment and userinfo
 content. These structural guards run even when value detectors are disabled.
 See [SEC-01/SEC-05 migration](../security/producer-scopes.md) for exact scope,
@@ -264,9 +264,8 @@ safe side, and the floor stays a plain "any detector match" rule that a configur
 cannot argue its way around.
 
 The rule is engine behaviour, not profile content, so privacy profile versions and
-hashes do not change. The C# and Rust engines apply the same rule
-(`CanonicalIdentifierTokens`, `identifier_tokens.rs`) and are pinned by the shared parity
-vectors.
+hashes do not change. `CanonicalIdentifierTokens` implements it, pinned by the shared
+parity vectors.
 
 ### Bower-generated identifiers and counters
 
@@ -383,11 +382,6 @@ var engine = new PrivacyEngine(policy, customDetectors);
 - Overlapping matches resolved once (prefer longer, then earlier) in O(n log n).
 - Replacements applied right-to-left in one pass.
 - Micro-benchmarks: `tests/Bower.Benchmarks` (Stopwatch; no extra packages).
-- Rust port: the `regex` crate's DFA cannot evaluate a Unicode `\b` on non-ASCII
-  text, so patterns that allow it scan an all-ASCII stand-in of the value (one byte
-  per UTF-16 unit, same character classes) and map offsets back; a differential
-  test checks identical matches. Timing probe:
-  `cargo test --release -p bower-redaction --test perf_probe -- --ignored --nocapture`.
 
 ## Tests
 

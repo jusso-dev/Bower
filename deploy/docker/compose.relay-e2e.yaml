@@ -4,8 +4,8 @@
 # Topology: the management API listens on loopback only. Each relay shares its network
 # namespace, so only the relays can reach it. The downstream collectors run on the compose
 # network with no route to management at all: their events and their management traffic
-# (enrolment, heartbeats) go through a relay over mutual TLS. The runtimes cross: the C#
-# downstream uses the Rust relay and the Rust downstream uses the C# relay.
+# (enrolment, heartbeats) go through a relay over mutual TLS. The pairs cross: downstream
+# a uses relay b and downstream b uses relay a.
 services:
   bower-management:
     image: ${BOWER_MANAGEMENT_IMAGE:-bower-management:ci}
@@ -23,14 +23,14 @@ services:
     cap_drop:
       - ALL
 
-  relay-cs:
+  relay-a:
     image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
     profiles: [relays]
     network_mode: service:bower-management
     read_only: true
     environment: &relay
       BOWER_LISTEN_URL: http://127.0.0.1:4319
-      BOWER_COLLECTOR_ID: relay-cs
+      BOWER_COLLECTOR_ID: relay-a
       BOWER_ENVIRONMENT: e2e
       BOWER_OUTPUT: ama-spool
       BOWER_AMA_SPOOL_PATH: /var/spool/bower
@@ -43,7 +43,7 @@ services:
       BOWER_RELAY_DOWNSTREAMS_FILE: /run/bower/downstreams.json
       BOWER_RELAY_MANAGEMENT_TUNNEL: "true"
     volumes:
-      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/relay-cs:/run/bower:ro
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/relay-a:/run/bower:ro
     tmpfs:
       - /tmp:size=16m,mode=1770
     security_opt:
@@ -51,18 +51,18 @@ services:
     cap_drop:
       - ALL
 
-  relay-rs:
-    image: ${BOWER_RUST_COLLECTOR_IMAGE:-bower-collector-rs:ci}
+  relay-b:
+    image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
     profiles: [relays]
     network_mode: service:bower-management
     read_only: true
     environment:
       <<: *relay
       BOWER_LISTEN_URL: http://127.0.0.1:4329
-      BOWER_COLLECTOR_ID: relay-rs
+      BOWER_COLLECTOR_ID: relay-b
       BOWER_RELAY_LISTEN_URL: https://0.0.0.0:4453
     volumes:
-      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/relay-rs:/run/bower:ro
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/relay-b:/run/bower:ro
     tmpfs:
       - /tmp:size=16m,mode=1770
     security_opt:
@@ -70,14 +70,14 @@ services:
     cap_drop:
       - ALL
 
-  edge-cs:
+  edge-a:
     image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
     profiles: [edges]
-    container_name: bower-relay-e2e-edge-cs
+    container_name: bower-relay-e2e-edge-a
     read_only: true
     environment: &edge
       BOWER_LISTEN_URL: http://127.0.0.1:4319
-      BOWER_COLLECTOR_ID: edge-cs
+      BOWER_COLLECTOR_ID: edge-a
       BOWER_ENVIRONMENT: e2e
       BOWER_OUTPUT: relay
       BOWER_PRODUCER_SCOPES_FILE: /run/bower/producer-scopes.json
@@ -92,7 +92,7 @@ services:
       BOWER_MANAGEMENT_ENROLMENT_TOKEN_FILE: /run/bower/enrolment-token
       BOWER_MANAGEMENT_VIA_RELAY: "true"
     volumes:
-      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-cs:/run/bower:ro
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-a:/run/bower:ro
     tmpfs:
       - /tmp:size=16m,mode=1770
     security_opt:
@@ -100,17 +100,17 @@ services:
     cap_drop:
       - ALL
 
-  edge-rs:
-    image: ${BOWER_RUST_COLLECTOR_IMAGE:-bower-collector-rs:ci}
+  edge-b:
+    image: ${BOWER_COLLECTOR_IMAGE:-bower-collector:ci}
     profiles: [edges]
-    container_name: bower-relay-e2e-edge-rs
+    container_name: bower-relay-e2e-edge-b
     read_only: true
     environment:
       <<: *edge
-      BOWER_COLLECTOR_ID: edge-rs
+      BOWER_COLLECTOR_ID: edge-b
       BOWER_RELAY_URL: https://bower-management:4443
     volumes:
-      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-rs:/run/bower:ro
+      - ${BOWER_E2E_DIR:?set BOWER_E2E_DIR}/edge-b:/run/bower:ro
     tmpfs:
       - /tmp:size=16m,mode=1770
     security_opt:

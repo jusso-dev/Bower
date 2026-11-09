@@ -6,8 +6,8 @@ namespace Bower.Cli.Commands;
 
 /// <summary>
 /// Renders <c>bower top</c> from two <c>/v1/status</c> documents. Pure and deterministic so
-/// the C# and Rust CLIs print identical text (shared fixtures under
-/// <c>rust/crates/bower-cli/tests/fixtures/top</c>). Rates use integer tenths, never floats.
+/// the output is pinned by fixtures under
+/// <c>tests/fixtures/top-fixtures</c>. Rates use integer tenths, never floats.
 /// Every number comes from status counters; nothing here is event content.
 /// </summary>
 internal static class TopView

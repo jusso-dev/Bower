@@ -42,7 +42,7 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
 {
     private static readonly string[] Scopes = ["https://api.loganalytics.io/.default"];
 
-    // Duplicate keys fail the parse; MaxDepth is the reader default, pinned for Rust parity.
+    // Duplicate keys fail the parse; MaxDepth is the reader default.
     private static readonly JsonDocumentOptions QueryDocumentOptions = new() { AllowDuplicateProperties = false, MaxDepth = 64 };
 
     public async Task<QueryRows> QueryAsync(string workspaceId, string kql, TimeSpan timespan, CancellationToken cancellationToken)
@@ -68,7 +68,7 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         if (!response.IsSuccessStatusCode)
         {
             // Only the error code is kept; bodies can echo query text. Gateways can answer
-            // with an empty or HTML body: fall back to the status code, as the Rust port does.
+            // with an empty or HTML body: fall back to the status code.
             return new QueryRows([], ErrorCode(body) ?? $"http-{(int)response.StatusCode}");
         }
 
@@ -153,7 +153,7 @@ public sealed class LogAnalyticsQueryClient(HttpClient http, TokenCredential cre
         try
         {
             // An escaped lone surrogate parses but throws when the string is read, so every
-            // string and property name is decoded here first, as Rust's parser does.
+            // string and property name is decoded here first.
             Utf8JsonReader reader = new(Encoding.UTF8.GetBytes(body), new JsonReaderOptions { MaxDepth = QueryDocumentOptions.MaxDepth });
             while (reader.Read())
             {

@@ -13,7 +13,7 @@ namespace Bower.UnitTests;
 /// The file tail source without the collector: shared vectors (record shape, event ids,
 /// rotation and truncation sequences, malformed and oversized lines, configuration errors),
 /// path guards, durable cursors, backpressure, bounds and cancellation against a fake sink.
-/// The vectors are shared with the Rust port (<c>rust/crates/bower-source-file</c>). Inputs
+/// The vectors pin the behaviour. Inputs
 /// are hand-written; set <c>BOWER_FILE_TAIL_VECTOR_OUTPUT</c> to a file path to regenerate the
 /// expectations after an intended change, then review the diff.
 /// </summary>
@@ -98,8 +98,7 @@ public sealed class FileTailSourceTests
             RotationGracePolls = options["rotationGracePolls"]?.GetValue<int>() ?? 1,
             RotationDrainMaxPolls = options["rotationDrainMaxPolls"]?.GetValue<int>() ?? FileTailSourceConfigurationLoader.DefaultRotationDrainMaxPolls,
             // Identities alone decide unless the sequence models device and inode numbers
-            // ("fileIds"): the Rust port uses its real ones, C# models the same rules here, so
-            // both runtimes agree on every platform.
+            // (\"fileIds\"): modelled here so every platform agrees.
             UseFileIds = options["fileIds"]?.GetValue<bool>() ?? false
         };
         // device:inode of each path: kept by in-place writes, appends and copytruncate, moved
@@ -244,11 +243,11 @@ public sealed class FileTailSourceTests
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"zz","offset":0}"""));
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":-1}"""));
         Assert.Null(FileTailCursor.Deserialize("not json"));
-        // Every field, in the order both runtimes write it (Rust: cursor_json_matches_csharp).
+        // Every field, in the order it is written.
         string full = $$"""{"schemaVersion":2,"fingerprint":"{{new string('a', 64)}}","offset":42,"discarding":true,"fileId":"1:2","drain":"rename","observedLength":10,"observedWriteTime":11,"stablePolls":1,"drainPolls":3,"drainLength":12,"abandoned":"{{new string('b', 64)}}","abandonedLength":13}""";
         Assert.Equal(full, FileTailCursor.Deserialize(full)!.Serialize());
         // An "anchor" from an earlier pre-release build is ignored, not refused, and dropped on
-        // the next commit (C# and Rust both skip unknown members).
+        // the next commit (unknown members are skipped).
         Assert.Equal(full, FileTailCursor.Deserialize(full[..^1] + $$""","anchor":"{{new string('c', 64)}}"}""")!.Serialize());
         Assert.Null(FileTailCursor.Deserialize("""{"schemaVersion":2,"fingerprint":"","offset":0,"drainLength":5}"""));
     }

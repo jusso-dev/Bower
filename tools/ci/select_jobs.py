@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 
 
-JOBS = ("dotnet", "rust", "infrastructure", "powershell", "ui", "e2e",
+JOBS = ("dotnet", "infrastructure", "powershell", "ui", "e2e",
         "windows", "containers", "platforms", "packaging")
 
 # Direct and transitive project references of lab/aws/upgrade-recovery/probe.
@@ -48,18 +48,14 @@ def select(paths, full=False):
         elif path.startswith(("deploy/installers/", "deploy/ansible/", "deploy/systemd/", "tests/installers/")):
             selected.update(("dotnet", "platforms", "packaging", "powershell"))
         elif path.startswith(("deploy/docker/", "tests/e2e/")) or path in {
-            "rust/Dockerfile", ".dockerignore", "docker-compose.yml", "compose.yml",
+            ".dockerignore", "docker-compose.yml", "compose.yml",
         }:
-            selected.update(("dotnet", "rust", "ui", "containers"))
+            selected.update(("dotnet", "ui", "containers"))
         elif path.startswith(("deploy/bicep/", "deploy/azure-function/", "deploy/sentinel/")):
             # C# contract tests check deployed Sentinel schemas, analytics content and function config.
             selected.update(("infrastructure", "dotnet"))
         elif path.startswith("deploy/"):
             selected.add("infrastructure")
-        elif path.startswith("rust/"):
-            selected.add("rust")
-            if "/relay/" in path or "/enrolment" in path:
-                selected.add("containers")
         elif path.startswith(("src/", "tests/")):
             selected.update(("dotnet", "windows", "e2e"))
             if path.startswith(WEC_PROBE_PROJECTS):
@@ -67,7 +63,7 @@ def select(paths, full=False):
             if "/Relay/" in path or path.startswith("src/Bower.Forwarding/") or "Enrolment" in path:
                 selected.add("containers")
         elif path.startswith(("packs/", "policies/", "schemas/")):
-            selected.update(("dotnet", "rust", "powershell", "e2e"))
+            selected.update(("dotnet", "powershell", "e2e"))
             if path.startswith("policies/default/"):
                 selected.update(("platforms", "packaging"))
         else:

@@ -63,7 +63,7 @@ def compute(core, ref_type, ref_name, build_number, released=False):
     """The version and build number for one CI run. released: tag v<core> already exists."""
     if released and ref_type != "tag":
         raise VersionError(
-            f"v{core} is already released: bump VERSION (and rust/Cargo.toml) before building "
+            f"v{core} is already released: bump VERSION before building "
             f"more development builds, or they would sort before the release")
     if not 0 <= build_number <= MAXIMUM_BUILD:
         raise VersionError(f"the build number must be 0-{MAXIMUM_BUILD}, got {build_number}")

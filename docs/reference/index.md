@@ -6,8 +6,7 @@ to understand the contract, implementation or operating assumptions.
 ## Interfaces and configuration
 
 - [Configuration schemas](https://github.com/jusso-dev/Bower/tree/main/schemas): versioned JSON schemas in the repository.
-- [CLI implementation](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Cli): current C# command definitions. Run `bower --help` for the installed version's commands.
-- [Rust data plane and CLI](https://github.com/jusso-dev/Bower/tree/main/rust): the port follows the C# specification; check runtime support before deployment.
+- [CLI implementation](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Cli): current command definitions. Run `bower --help` for the installed version's commands.
 - [Management API](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Management.Api): endpoint definitions, role enforcement and management contracts.
 - [Collector API](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Collector): intake and collector host implementation.
 - [PowerShell reference](../operations/powershell.md): management and deployment modules.

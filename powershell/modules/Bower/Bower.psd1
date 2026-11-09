@@ -22,7 +22,6 @@
         'ConvertTo-BowerSecretFieldName',
         'Deny-BowerCollector',
         'Deny-BowerPrivacyProfileVersion',
-        'Deploy-BowerAwsLambda',
         'Deploy-BowerAwsSecurity',
         'Deploy-BowerAzureFunction',
         'Deploy-BowerGcpSecurity',
