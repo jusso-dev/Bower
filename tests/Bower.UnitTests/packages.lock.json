@@ -691,7 +691,8 @@
           "Bower.Packs": "[1.0.0, )",
           "Bower.Persistence": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )"
+          "Bower.PolicyEngine": "[1.0.0, )",
+          "Bower.Source.WindowsEventLog": "[1.0.0, )"
         }
       },
       "bower.abstractions": {

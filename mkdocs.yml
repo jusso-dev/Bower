@@ -101,6 +101,7 @@ nav:
       - Connect a source:
           - Syslog: deployment/syslog-source.md
           - Windows Event Log: deployment/windows-event-log-source.md
+          - Windows Event Forwarding: deployment/windows-event-forwarding.md
           - Local files: deployment/file-tail-source.md
           - Azure Monitor Agent companion: deployment/ama-companion.md
           - ASP.NET Core: developer-integration/aspnetcore.md
@@ -162,6 +163,7 @@ nav:
       - Collector enrolment: architecture/collector-enrolment.md
       - Heartbeats: architecture/heartbeat-v2.md
       - Transform design: architecture/transform-language.md
+      - Windows Event Forwarding decision: architecture/windows-event-forwarding-decision.md
       - Azure ingestion API: deployment/logs-ingestion-api.md
       - Entra ingestion plan: deployment/entra-ingestion-plan.md
       - Cloud permissions: deployment/cloud-permission-context.md

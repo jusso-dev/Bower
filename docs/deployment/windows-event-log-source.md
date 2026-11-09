@@ -311,7 +311,9 @@ Sizing a WEC that runs the collector:
 - Message strings are rendered from publisher metadata on the collecting host; a
   missing or changed message file changes or removes `message`.
 - The collector reads local channels only. Forwarded events (Windows Event Forwarding)
-  can be read from the `ForwardedEvents` channel like any other.
+  can be read from the `ForwardedEvents` channel like any other; see
+  [Windows Event Forwarding](windows-event-forwarding.md) for the WEC host setup and
+  `bower wec subscription generate`.
 
 ## Not verified here
 
