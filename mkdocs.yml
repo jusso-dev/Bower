@@ -93,7 +93,6 @@ nav:
           - Hosted collectors: deployment/hosted-collectors.md
           - Azure Functions: deployment/azure-function.md
           - AWS: deployment/aws.md
-          - AWS Lambda: deployment/aws-lambda.md
           - Google Cloud: deployment/gcp.md
           - Relay networks: deployment/relay.md
           - Amazon S3 output: deployment/s3-output.md

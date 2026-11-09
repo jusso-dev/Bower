@@ -1,9 +1,8 @@
 # HTTP output: Splunk HEC and NDJSON
 
 `BOWER_OUTPUT=http` delivers queued events to **Splunk HTTP Event Collector** (HEC) or to
-a **generic HTTPS endpoint that accepts NDJSON**. Both the C# collector
-(`src/Bower.Output.Http`) and the Rust collector (`rust/crates/bower-output-http`)
-implement it, with shared request and response vectors.
+a **generic HTTPS endpoint that accepts NDJSON**. The collector implements it in
+`src/Bower.Output.Http`, pinned by request and response vectors.
 
 It is a delivery sink for the same security events Bower already selected, redacted and
 queued. It is not a generic log forwarder: only events that passed policy and redaction
@@ -35,7 +34,7 @@ reach it, exactly as they would reach Sentinel.
 | `BOWER_HTTP_TOKEN_FILE` | — | File holding the token (preferred). A trailing newline is ignored. Read at start-up. |
 | `BOWER_HTTP_TOKEN` | — | The token itself, when a file is not possible. Exactly one of the two is required. |
 | `BOWER_HTTP_AUTH_HEADER` | `Authorization` | `ndjson` only. `Authorization` sends `Authorization: Bearer <token>`; any other header name (for example `X-Api-Key`) carries the token as is. Refused: hop-by-hop and framing headers (`Host`, `Connection`, `Transfer-Encoding`, `TE`, `Upgrade`, ...), proxy credentials, content headers (`Content-Type`, `Content-Length`, `Content-Disposition`, `Content-Range`, `Content-Language`, `Allow`, `Expires`, ...) and response-only headers (`Server`, `Location`, `Retry-After`, ...). The full list is in `tests/fixtures/http-output/vectors.json`; the collector also refuses to start if the header cannot be added to a request. |
-| `BOWER_HTTP_CA_BUNDLE` | — | PEM **self-signed root** CA certificates added to the system roots, for a private CA. Certificate and host name verification are never disabled. Put only roots in the bundle: the C# collector anchors trust at self-signed roots only, so an intermediate would be trusted by the Rust collector but not the C# one. Start-up refuses a bundle holding a certificate whose subject differs from its issuer. Servers must send their intermediates. |
+| `BOWER_HTTP_CA_BUNDLE` | — | PEM **self-signed root** CA certificates added to the system roots, for a private CA. Certificate and host name verification are never disabled. Put only roots in the bundle: the collector anchors trust at self-signed roots only, so an intermediate is not trusted. Start-up refuses a bundle holding a certificate whose subject differs from its issuer. Servers must send their intermediates. |
 | `BOWER_HTTP_ALLOW_INSECURE_LOOPBACK` | `false` | Allows `http://` only to a loopback IP literal (`127.0.0.0/8` or `::1`), for a local test endpoint. Host names, `localhost` included, and every other address are refused. Plain HTTP never goes through a proxy. |
 | `BOWER_HTTP_HEC_INDEX` | token default | HEC `index` (lowercase letters, digits, `_`, `-`). Omitted when unset, so the token's default index applies. |
 | `BOWER_HTTP_HEC_SOURCETYPE` | `bower:security` | HEC `sourcetype`. |
@@ -109,10 +108,7 @@ bytes are pinned by `tests/fixtures/http-output/vectors.json`.
 
 Delivery is at least once. A request that times out after the endpoint accepted it, or
 a crash between acceptance and the queue's acknowledgement, sends the same event again.
-The Rust collector has one more window: on shutdown its delivery worker aborts the
-output task and discards its partial result, so batches the endpoint already accepted in
-that delivery stay leased and are sent again after the lease expires (C# waits for the
-output and settles what it accepted).
+On shutdown the collector waits for the output and settles what the endpoint accepted.
 Every copy carries the same `bower_event_id`, so deduplicate downstream, for example:
 
 ```spl
@@ -131,7 +127,7 @@ siblings are good.
 | 2xx (HEC: JSON body with `code` 0) | Delivered (`http:<format>:endpoint-accepted`). | — |
 | 2xx from HEC with `code` 24 or 25 (near capacity) | Delivered and never resent; the acknowledgement records the code (see below). | — |
 | 2xx from HEC with any other `code`, or without one (a proxy page, a captive portal, malformed or over 64 KiB) | Held and retried, indefinitely. | `destination-http-response-invalid` |
-| 401, 403 | Held; raises the `destination-credential` health problem (C#). | `destination-http-401`, `destination-http-403` |
+| 401, 403 | Held; raises the `destination-credential` health problem. | `destination-http-401`, `destination-http-403` |
 | 400 with a HEC configuration code (see below) | Held: a destination or token setting is wrong, not the events. | `destination-http-400:hec-<n>` |
 | 3xx (redirects are never followed), 404, 405, 408, 410, 415, 421, 429, 5xx, and any other status not listed here | Held, honouring `Retry-After` up to one hour. | `destination-http-<status>` |
 | Connection, TLS or certificate failure | Held. | `destination-http-unavailable` |
@@ -157,7 +153,7 @@ encoding is wrong for this endpoint, so they are held too.
 !!! warning "Alarm on the destination backlog"
     Held failures retry until the endpoint or its configuration is fixed. Alert on a
     growing retrying backlog with `destination-*` failure codes (`/v1/status`
-    `queue.retrying` and `deliveryActivity.lastFailureCode`, the C# `collector_health`
+    `queue.retrying` and `deliveryActivity.lastFailureCode`, the `collector_health`
     record, or the `Output adapter did not deliver events` log line). In particular a
     2xx from HEC whose `code` is neither 0, 24 nor 25 is retried indefinitely
     (`destination-http-response-invalid`).
@@ -172,7 +168,7 @@ retried after about 30 seconds (or the response's `Retry-After`), indefinitely, 
 spending its attempt budget.
 
 **A held event pauses delivery queue-wide.** Like every `destination-*` failure, it opens
-the queue's destination circuit (both runtimes): while any retrying event holds a
+the queue's destination circuit: while any retrying event holds a
 `destination-*` code with a future retry time, the queue leases nothing, so newly queued
 events wait until that retry time. They are kept, not refused, within the queue's
 capacity. When the pause ends, the next lease takes due and queued events oldest first
@@ -194,7 +190,7 @@ flows. Keep the default (500), or at least a value above 1.
 **Recognise it**
 
 - `/v1/status`: `queue.retrying` stays above zero, `queue.queued` grows during each
-  pause and drains when it ends, and in the C# collector
+  pause and drains when it ends, and
   `deliveryActivity.lastFailureCode` is `destination-http-400`, `-422` or `-413`, often
   with a HEC suffix such as `:hec-6` (invalid data format) or `:hec-15` (error in
   handling indexed fields), while `deliveryActivity.lastSuccessfulDeliveryAt` advances
@@ -264,7 +260,7 @@ it starts answering 503 (code 9) or 429 (codes 26 and 27).
 
 ## Status, health and evidence
 
-- `/v1/status` reports `"output":"http"`; C# also reports the last failure code under
+- `/v1/status` reports `"output":"http"` and the last failure code under
   `deliveryActivity.lastFailureCode`.
 - `bower evidence run` reads `/v1/status` **before** sending anything. Only
   `azure-logs-ingestion` and `ama-spool` are known to deliver to Sentinel; `relay`, a
@@ -276,14 +272,14 @@ it starts answering 503 (code 9) or 429 (codes 26 and 27).
 
 ## Qualification
 
-- Unit and integration tests in both runtimes: shared request vectors (HEC and NDJSON
-  bytes, headers, poison records, batch caps with byte-exact boundaries, gzip), shared
+- Unit and integration tests: request vectors (HEC and NDJSON
+  bytes, headers, poison records, batch caps with byte-exact boundaries, gzip),
   response classification vectors (2xx, 3xx, 4xx, 5xx, `Retry-After`, HEC error-code
-  bodies, malformed, deep and oversize bodies), shared isolation scenarios (mid-stream
+  bodies, malformed, deep and oversize bodies), isolation scenarios (mid-stream
   poison, configuration errors, 413 splitting and budget exhaustion), header-name and
   endpoint-policy vectors, a 500-event multi-pass delivery to a single-event endpoint, TLS policy against a private CA (untrusted, trusted, host name
-  mismatch), 413 splitting and its budget, timeouts, cancellation (C#), queue
-  settlement, the configuration hash (pinned identically in both) and token redaction in
+  mismatch), 413 splitting and its budget, timeouts, cancellation, queue
+  settlement, the configuration hash (pinned) and token redaction in
   logs and status.
 - A real Splunk container run was **not** performed for this change: no local Docker
   daemon was available. Request bytes follow Splunk's documented HEC event format, but a

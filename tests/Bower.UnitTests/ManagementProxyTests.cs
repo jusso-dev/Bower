@@ -142,7 +142,6 @@ public sealed class ManagementProxyTests
         Assert.Equal(
             (managed with { ManagementProxy = proxy, ManagementProxyUsername = "u", ManagementProxyPasswordFile = "a" }).ConfigurationHash(),
             (managed with { ManagementProxy = proxy, ManagementProxyUsername = "v", ManagementProxyPasswordFile = "b" }).ConfigurationHash());
-        // Pinned in the Rust collector too (tests/management_commands.rs).
         CollectorSettings pinned = fromEnvironment with
         {
             ListenUrl = "http://127.0.0.1:4319",

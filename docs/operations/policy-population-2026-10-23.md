@@ -37,8 +37,9 @@ coverage or cost. Unknown tenant distributions remain unmeasured.
 policies and explicit single-trust-domain test configuration. All three public
 SDK methods must reach its durable queue. It also checks approved cloud actions,
 broadened inventory feeds and malformed predicates. Rust `policy_evaluator` and
-`policy_loader` tests pin the same selection cases; default policy hash vectors
-are generated from C#. Existing policy hashes remain pinned and unchanged.
+`policy_loader` tests pinned the same selection cases (the Rust collector was
+retired in November 2026); default policy hash vectors are generated from C#.
+Existing policy hashes remain pinned and unchanged.
 
 ## Investigation contract
 

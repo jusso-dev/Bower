@@ -11,8 +11,8 @@ using Bower.Source.Syslog;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// Syslog source: RFC 5424/3164 vectors shared with the Rust port
-/// (<c>rust/crates/bower-source-syslog/tests/fixtures</c>), framing bounds, configuration
+/// Syslog source: RFC 5424/3164 vectors
+/// (<c>tests/fixtures/syslog-vectors</c>), framing bounds, configuration
 /// validation and the TCP, TLS and UDP listeners against a fake sink. The TLS fixtures are
 /// TEST-ONLY keys generated for these tests.
 /// </summary>
@@ -21,7 +21,7 @@ public sealed class SyslogSourceTests
     private static string Fixtures => Path.Combine(AppContext.BaseDirectory, "syslog-vectors");
 
     [Fact]
-    public void SharedVectors_ParseToTheSameRecordsAndFailureCodesAsRust()
+    public void SharedVectors_ParseToThePinnedRecordsAndFailureCodes()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "syslog-vectors.json")));
         JsonElement root = document.RootElement;
@@ -280,12 +280,12 @@ public sealed class SyslogSourceTests
     }
 
     /// <summary>
-    /// <c>config-vectors.json</c>, shared with the Rust port: non-canonical addresses
+    /// <c>config-vectors.json</c>: non-canonical addresses
     /// (brackets, ports, scopes, whitespace), wrong-case property names and duplicate keys
-    /// fail in both runtimes.
+    /// fail.
     /// </summary>
     [Fact]
-    public void ConfigurationVectors_FailClosedLikeRust()
+    public void ConfigurationVectors_FailClosed()
     {
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "config-vectors.json")));
         int count = 0;
@@ -636,9 +636,9 @@ public sealed class SyslogSourceTests
     }
 
     [Fact]
-    public void SenderVectors_NormalisePeersAndIdsLikeRust()
+    public void SenderVectors_NormalisePeersAndIds()
     {
-        // Shared with Rust: IPv4-mapped IPv6 becomes IPv4 and an IPv6 interface scope is dropped,
+        // IPv4-mapped IPv6 becomes IPv4 and an IPv6 interface scope is dropped,
         // so senderAddress and the event id agree across runtimes.
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "sender-vectors.json")));
         JsonElement root = document.RootElement;

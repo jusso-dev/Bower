@@ -12,7 +12,6 @@ namespace Bower.Redaction.Privacy;
 /// that lies wholly inside one: random identifiers pass those checksums by chance (about 1
 /// in 450 UUIDv4 for the TFN check), and no person writes a TFN, card number or IBAN as a
 /// UUID. Every other detector, including secrets and custom detectors, still scans the token.
-/// Mirrored by <c>rust/crates/bower-redaction/src/identifier_tokens.rs</c>.
 /// </summary>
 public static class CanonicalIdentifierTokens
 {
@@ -103,7 +102,7 @@ public static class CanonicalIdentifierTokens
     {
         Debug.Assert(from >= 0 && from <= matches.Count, "from is an index into matches.");
         Debug.Assert(IsOrderedAndDisjoint(tokens), "tokens must come from Find.");
-        // Nothing at or after from (or a from past the end): nothing to remove, as in Rust.
+        // Nothing at or after from (or a from past the end): nothing to remove.
         if (tokens.Count == 0 || from >= matches.Count)
         {
             return 0;

@@ -44,7 +44,7 @@ public sealed class SemanticPrivacyTests
     }
 
     [Fact]
-    public void CloudDirectionBytesMatchRustFixture()
+    public void CloudDirectionBytesMatchFixture()
     {
         const string input = """{"eventType":"gcp_cloud_audit","change":{"field":"permission_direction","newValue":"mixed"},"attributes":{"cloud.permissionChanges":{"entries":[{"member":"allUsers","permission":"roles/viewer","direction":"grant"}]}}}""";
         Assert.Equal(input, new PrivacyEngine().RedactJson(input).RedactedJson);
@@ -55,7 +55,7 @@ public sealed class SemanticPrivacyTests
     }
 
     [Fact]
-    public void SemanticGuardBytesMatchRustFixture()
+    public void SemanticGuardBytesMatchFixture()
     {
         const string input = """{"change":{"field":"password","newValue":"after-canary"},"request":{"path":"/login?opaque=query-canary"}}""";
         const string expected = """{"change":{"field":"password"},"request":{"path":"/login"},"privacy":{"detected":["field-name-secret"],"actions":{"field-name-secret":"Removed"}}}""";

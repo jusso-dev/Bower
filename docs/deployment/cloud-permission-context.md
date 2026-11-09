@@ -110,8 +110,8 @@ long identifiers, configured/default email handling, canaries and rejection boun
 Accepted fixtures traverse redaction, collector validation, SQLite reopen/lease,
 ingestion preflight and captured simulated Azure upload. Exact structured context
 is asserted at each boundary; database files and captured bodies are checked for
-synthetic secrets. C# `SemanticPrivacyTests` and Rust `semantic_privacy` pin the
-fixed direction allowlist and matching JSON bytes.
+synthetic secrets. `SemanticPrivacyTests` pins the fixed direction allowlist and
+the exact JSON bytes.
 
 These local tests do not prove live cloud collection, selection, deployment or
 query-verified Sentinel delivery.

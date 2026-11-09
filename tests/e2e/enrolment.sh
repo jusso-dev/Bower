@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Token enrolment end to end in compose (#109). Needs the CI images bower-management:ci,
-# bower-collector:ci and bower-collector-rs:ci, plus jq and openssl on the host.
+# bower-collector:ci, plus jq and openssl on the host.
 #
-# An administrator creates one token per collector; the C# and Rust collectors enrol with
+# An administrator creates one token per collector; both collectors enrol with
 # them, land in Pending, are approved and become Active on a heartbeat signed with their
 # key-bound credential. A used token is refused and audited, and no token appears in any
 # container log.
@@ -57,7 +57,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-for id in edge-cs edge-rs; do
+for id in edge-a edge-b; do
   mkdir -p "$work/$id"
   token="$(post /api/enrolment-tokens \
     "{\"environment\":\"e2e\",\"collectorId\":\"$id\",\"reason\":\"CI enrolment e2e\",\"expiresInHours\":1}" \
@@ -68,19 +68,19 @@ for id in edge-cs edge-rs; do
   chmod 644 "$work/$id/enrolment-token"
 done
 
-"${compose[@]}" up -d collector-cs collector-rs
-for id in edge-cs edge-rs; do
+"${compose[@]}" up -d collector-a collector-b
+for id in edge-a edge-b; do
   wait_for "$id" Pending
   post "/api/approvals/$id/approve" '{"reason":"CI enrolment e2e approval"}' >/dev/null
 done
-for id in edge-cs edge-rs; do
+for id in edge-a edge-b; do
   wait_for "$id" Active
 done
 
 # A used token is refused (401) and audited; it never enrols a second collector.
 public_key="$(openssl ecparam -name prime256v1 -genkey -noout | openssl ec -pubout 2>/dev/null)"
-body="$(jq -n --arg token "$(head -n 1 "$work/edge-cs/enrolment-token")" --arg key "$public_key" \
-  '{token: $token, collectorId: "edge-cs", machineName: "ci", environment: "e2e", version: "0",
+body="$(jq -n --arg token "$(head -n 1 "$work/edge-a/enrolment-token")" --arg key "$public_key" \
+  '{token: $token, collectorId: "edge-a", machineName: "ci", environment: "e2e", version: "0",
     configurationHash: "c", policyHash: "p", publicKey: $key}')"
 reused="$(api -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d "$body" \
   "$base/api/collectors/enrol")"
@@ -95,4 +95,4 @@ if "${compose[@]}" logs --no-color 2>&1 | grep -q -F -f "$work/secrets"; then
   echo "An enrolment token appeared in a container log." >&2
   exit 1
 fi
-echo "Token enrolment e2e passed for the C# and Rust collectors."
+echo "Token enrolment e2e passed for both collectors."

@@ -76,7 +76,7 @@ public sealed class HeartbeatV2CollectorTests
         // Signature-verified refusals still name the command so management can record them.
         Assert.Equal(new string('c', 32), ManagementCommandVerifier.Verify(
             JsonSerializer.SerializeToElement(Command(privatePem, command: "exec")), CollectorId, trusted, Now).CommandId);
-        // System.Text.Json rejects a leap second; the Rust collector must too (vectors).
+        // System.Text.Json rejects a leap second.
         JsonObject leap = Command(privatePem);
         leap["issuedAt"] = "2026-12-31T23:59:60.0000000Z";
         Assert.Equal(ManagementCommandResults.MalformedCommand, Code(leap));

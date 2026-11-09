@@ -7,9 +7,8 @@ forwarder, and never Sentinel delivery: evidence must not claim Sentinel arrival
 - Credentials come only from the AWS default chain (web identity/IRSA, ECS and EC2
   roles, environment). Never accept, persist or log static keys; settings that look
   like keys are refused at start-up.
-- `S3ObjectLayout` is pure and shared with `rust/crates/bower-output-s3`: object keys,
-  NDJSON bodies and splitting must match `tests/fixtures/s3-output/vectors.json` in both
-  runtimes. Keys are `<prefix>/<collectorId>/yyyy/MM/dd/HH/<object hash>`; the hash
+- `S3ObjectLayout` is pure: object keys, NDJSON bodies and splitting must match
+  `tests/fixtures/s3-output/vectors.json`. Keys are `<prefix>/<collectorId>/yyyy/MM/dd/HH/<object hash>`; the hash
   length-prefixes every id and binds the SHA-256 of the uncompressed body, so a retried
   batch rewrites the same key and a 412 always means byte-identical content. Never
   weaken that binding (it is what makes 412 safe to acknowledge).

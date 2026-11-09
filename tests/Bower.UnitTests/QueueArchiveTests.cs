@@ -239,8 +239,8 @@ public sealed class QueueArchiveTests
 }
 
 /// <summary>
-/// A C#-written archive pinned for the Rust port
-/// (<c>rust/crates/bower-persistence/tests/fixtures/archive-csharp</c>): both runtimes must
+/// A pinned archive
+/// (<c>tests/fixtures/persistence-vectors/archive-csharp</c>): it must
 /// verify it. Set <c>BOWER_ARCHIVE_VECTOR_OUTPUT</c> to a directory to regenerate.
 /// </summary>
 public sealed class QueueArchiveParityTests

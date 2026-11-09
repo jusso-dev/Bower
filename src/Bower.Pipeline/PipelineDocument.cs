@@ -95,7 +95,7 @@ public static class PipelineDocument
 
         // A declared name (any case, surrounding whitespace ignored) or a declared ordinal
         // written as ASCII digits. Enum.TryParse alone also accepts undefined numbers
-        // ("999", "-1"), signs and comma-joined names, which the Rust port rejects.
+        // ("999", "-1"), signs and comma-joined names.
         private static bool TryParseKind(string? text, out PipelineNodeKind kind)
         {
             string trimmed = text?.Trim() ?? string.Empty;

@@ -6,8 +6,7 @@ namespace Bower.UnitTests;
 
 /// <summary>
 /// Bower-generated record ids (lowercase SHA-256 digests) skip content detectors only when
-/// the caller proves Bower computed them; source text is always scanned. The Rust port pins
-/// the same vectors (rust/crates/bower-redaction/tests/generated_event_id.rs).
+/// the caller proves Bower computed them; source text is always scanned.
 /// </summary>
 public sealed class GeneratedEventIdRedactionTests
 {

@@ -269,7 +269,7 @@ public sealed class PrivacyEngineTests
         // A match timeout makes the redaction outcome depend on machine load: 50 ms
         // timeouts on the API key patterns quarantined a valid 60,000-character value
         // under CI load. Built-in patterns are linear and inputs are bounded by
-        // MaximumPayloadBytes instead, as in the Rust engine (which has no timeouts).
+        // MaximumPayloadBytes instead.
         MethodInfo[] factories =
         [
             .. typeof(PrivacyEngine).Assembly.GetTypes()

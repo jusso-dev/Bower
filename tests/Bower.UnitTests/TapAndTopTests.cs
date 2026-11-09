@@ -17,7 +17,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Bower.UnitTests;
 
-/// <summary>Tap session caps, back-pressure and filters (bower tap). The Rust port mirrors these in bower-core.</summary>
+/// <summary>Tap session caps, back-pressure and filters (bower tap).</summary>
 public sealed class EventTapTests
 {
     private static EventTapRecord Accepted(string payload = """{"eventId":"e-1"}""") => new(

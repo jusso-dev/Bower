@@ -259,7 +259,7 @@ public sealed class AzureLogsIngestionOutput : IOutputAdapter, IOutputConcurrenc
 
     /// <summary>
     /// Whether a token failure is the credential's fault rather than the network's (same
-    /// rule as the Rust port). Walks inner and aggregate exceptions, because Azure.Core
+    /// rule). Walks inner and aggregate exceptions, because Azure.Core
     /// retries wrap attempts in an <see cref="AggregateException"/>:
     /// a rejection by the identity service (an MSAL 4xx other than 408/429, such as
     /// <c>invalid_client</c> or <c>unauthorized_client</c>) anywhere in the tree is a
