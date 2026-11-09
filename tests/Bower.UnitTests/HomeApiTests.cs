@@ -114,6 +114,38 @@ public sealed class HomeApiTests
     }
 
     [Fact]
+    public async Task Home_FullQueueAndFailedJobsHaveTheirOwnPlainFix()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(Now);
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, clock, cancellationToken);
+        ManagementStore store = app.Services.GetRequiredService<ManagementStore>();
+        await ActiveAsync(store, "full-01", "production", Now, Heartbeat() with { DeliveryStatus = "backpressure" }, cancellationToken);
+        await ActiveAsync(store, "jobs-01", "staging", Now, Heartbeat() with
+        {
+            Jobs = [new Bower.Jobs.BackgroundJobStatus("queue-retention", "0 * * * *", Now.AddMinutes(-5), Bower.Jobs.BackgroundJobStates.Failed, Now.AddMinutes(55))]
+        }, cancellationToken);
+        await ActiveAsync(store, "jobs-02", "test", Now, Heartbeat() with
+        {
+            Jobs = [new Bower.Jobs.BackgroundJobStatus("queue-retention", "0 * * * *", Now.AddMinutes(-5), Bower.Jobs.BackgroundJobStates.Succeeded, Now.AddMinutes(55))]
+        }, cancellationToken);
+
+        HomeRecord home = await HomeAsync(app, cancellationToken);
+
+        HomeGroup full = home.Groups.Single(group => group.Name == "production");
+        Assert.Equal(HomeStates.Amber, full.State);
+        Assert.Equal("The collector has a full queue and is refusing new events.", full.Reason);
+        Assert.StartsWith("Free disk space", full.Fix!.Action, StringComparison.Ordinal);
+        HomeGroup failed = home.Groups.Single(group => group.Name == "staging");
+        Assert.Equal("The collector has a maintenance job whose last run failed.", failed.Reason);
+        Assert.Equal(HomeStates.Green, home.Groups.Single(group => group.Name == "test").State);
+        Assert.Contains("queue-full", home.Attention.Select(item => item.Id));
+        Assert.Contains("job-failed", home.Attention.Select(item => item.Id));
+        Assert.DoesNotContain("send-trouble", home.Attention.Select(item => item.Id));
+    }
+
+    [Fact]
     public async Task Home_DeliveryFailingForFifteenMinutesIsRedAndShorterTroubleIsAmber()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

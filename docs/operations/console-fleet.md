@@ -18,9 +18,9 @@ status without changing anything.
 | Behind a relay | This machine is configured to send through a relay. If delivery fails, check both machines. |
 | Waiting for approval | An approver reviews the request on **Approvals**. |
 | Not heard from recently | Check that the machine is running and can reach Bower. If its sign-in credential expired or was revoked, enrol it again. |
-| Can't deliver to Sentinel | Follow the suggested connection or queue check. Events waiting or set aside need attention even if the machine is still checking in. |
+| Can't deliver to Sentinel | Follow the suggested connection or queue check. Events waiting or set aside, or a full queue refusing new events, need attention even if the machine is still checking in. |
 | Running old version | Compare its installed version with your fleet's newest reported stable release and update as appropriate. |
-| Needs a check | Follow the specific privacy, policy, source or event-history check shown. |
+| Needs a check | Follow the specific privacy, policy, source, event-history or failed-job check shown. |
 | Paused | Ask an administrator why management access is paused. Local collection and delivery may continue. |
 | Removed | The machine has been revoked and cannot connect to management. |
 

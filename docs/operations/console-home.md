@@ -67,6 +67,7 @@ worst condition, in this order:
 | `history-changed` | red | ... reported an event history that changed unexpectedly. | Audit |
 | `not-sending` | red | ... not been able to send events for more than 15 minutes. | Collectors |
 | `stale` | amber | ... not checked in for a few minutes. | Collectors |
+| `queue-full` | amber | ... a full queue and is refusing new events. | Collectors |
 | `send-trouble` | amber | ... had trouble sending events. | Collectors |
 | `pending` | amber | ... asked to join. | Approvals |
 | `suspended` | amber | ... been paused. | Collectors |
@@ -75,6 +76,7 @@ worst condition, in this order:
 | `quiet-source` | amber | ... an expected app that has gone quiet. | Collectors |
 | `policy-not-applied` | amber | ... not switched to the assigned event rules yet. | Collectors |
 | `privacy-not-applied` | amber | ... not applied its assigned privacy profile yet. | Privacy profiles |
+| `job-failed` | amber | ... a maintenance job whose last run failed. | Collectors |
 
 A group with none of these is green: "All 3 collectors are checking in and sending
 events." Every amber or red reason carries a fix: what to do and a link to the page.
