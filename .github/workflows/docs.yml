@@ -106,7 +106,26 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 45
     steps:
+      # GitHub Pages occasionally stalls in `syncing_files` past the action's 10-minute
+      # default (#207, run 42373708403); later runs of the same content succeed. Wait longer,
+      # then retry once: the action cancels a timed-out deployment, so a retry is clean.
       - name: Deploy documentation
-        id: deployment
+        id: first
+        continue-on-error: true
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        with:
+          timeout: '1200000'
+      - name: Retry the deployment once
+        id: retry
+        if: steps.first.outcome == 'failure'
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+        with:
+          timeout: '1200000'
+      - name: Report the page URL
+        id: deployment
+        env:
+          FIRST_URL: ${{ steps.first.outputs.page_url }}
+          RETRY_URL: ${{ steps.retry.outputs.page_url }}
+        run: echo "page_url=${RETRY_URL:-$FIRST_URL}" >> "$GITHUB_OUTPUT"
