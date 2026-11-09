@@ -104,6 +104,14 @@ nav:
           - Local files: deployment/file-tail-source.md
           - Azure Monitor Agent companion: deployment/ama-companion.md
           - ASP.NET Core: developer-integration/aspnetcore.md
+          - Web frameworks (ASVS pack): developer-integration/asvs-logging-frameworks.md
+          - Next.js: developer-integration/frameworks/nextjs.md
+          - Express, Fastify, NestJS: developer-integration/frameworks/node.md
+          - Django, Flask, FastAPI: developer-integration/frameworks/python.md
+          - Rails: developer-integration/frameworks/rails.md
+          - Laravel: developer-integration/frameworks/laravel.md
+          - Spring Boot: developer-integration/frameworks/spring-boot.md
+          - Go with log/slog: developer-integration/frameworks/go.md
           - Custom parsers: developer-integration/custom-log-parser.md
           - Transform language: developer-integration/transform-language.md
       - Privacy and packs:

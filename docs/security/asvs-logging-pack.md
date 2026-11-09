@@ -42,7 +42,7 @@ Related requirements in other chapters:
 | V8.2.1, V8.2.2, V8.2.3 | `authorisation_failure` with action `authz.function`, `authz.object` or `authz.field` |
 | V8.3.2 | `authorisation_failure` with action `authz.stale_grant` (local detection) |
 | V2.4.1 | `anti_automation_triggered`; the [mass export rule](#sentinel-analytics) |
-| V4.1.3, V15.3.4 | `source.ipAddress` must come from a trusted proxy header; see each [framework guide](../developer-integration/aspnetcore.md) |
+| V4.1.3, V15.3.4 | `source.ipAddress` must come from a trusted proxy header; see each [framework guide](../developer-integration/asvs-logging-frameworks.md) |
 | V13.4.5 | The collector's monitoring endpoints need the ingest token; keep `/health` and `/v1/status` off the internet |
 | V14.1.2, V14.2.4 | The privacy profile is the documented logging rule for each data class |
 
@@ -147,7 +147,7 @@ BOWER_PRIVACY_HMAC_KEY_ID=k2026
 
 Keep `policies/default` as the policy directory: the pack adds to it. Applications send
 events to `POST /v1/events` with their ingest token; see the
-[framework guides](../developer-integration/aspnetcore.md).
+[framework guides](../developer-integration/asvs-logging-frameworks.md).
 
 ## Sentinel ingestion
 
@@ -308,6 +308,7 @@ For Australian government readers. This adds to, and doesn't repeat, the
   controls the events report on (rate limits, MFA, session revocation, V16.5 error handling).
 - The analytics rules are statically tested only. No live Sentinel run is claimed.
 - The SDK (`Bower.Sdk`) has typed helpers only for the three default events. Other families
-  are sent as envelopes over HTTP; typed helpers are a follow-up.
+  are sent as envelopes over HTTP (see the [framework guides](../developer-integration/asvs-logging-frameworks.md));
+  typed helpers are a follow-up.
 - User agent and route are labels, not first-class columns. Query them as `Labels.userAgent`
   and `Labels.route`.

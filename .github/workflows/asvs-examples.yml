@@ -1,0 +1,45 @@
+name: ASVS logging examples
+
+# Optional: checks the per-framework helpers in examples/asvs-logging against the shared
+# contract. Not part of the main CI; runs only when the examples change or on demand. Uses the
+# toolchains preinstalled on the GitHub-hosted Ubuntu image (Python, Node.js, Go, Ruby, PHP,
+# Java), plus .NET from setup-dotnet. Jackson jars for the Java check are fetched from Maven
+# Central and verified against pinned SHA-256 digests.
+on:
+  pull_request:
+    paths:
+      - 'examples/asvs-logging/**'
+      - '.github/workflows/asvs-examples.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: asvs-examples-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+      - name: Fetch pinned Jackson jars for the Java contract runner
+        run: |
+          mkdir -p "$RUNNER_TEMP/jackson"
+          cd "$RUNNER_TEMP/jackson"
+          base=https://repo1.maven.org/maven2/com/fasterxml/jackson/core
+          curl -fsSL -o jackson-databind.jar "$base/jackson-databind/2.20.1/jackson-databind-2.20.1.jar"
+          curl -fsSL -o jackson-core.jar "$base/jackson-core/2.20.1/jackson-core-2.20.1.jar"
+          curl -fsSL -o jackson-annotations.jar "$base/jackson-annotations/2.20/jackson-annotations-2.20.jar"
+          sha256sum -c "$GITHUB_WORKSPACE/examples/asvs-logging/java/jackson.sha256"
+      - name: Every helper produces the contract
+        env:
+          REQUIRE: all
+        run: JACKSON_DIR="$RUNNER_TEMP/jackson" examples/asvs-logging/check.sh
