@@ -111,6 +111,7 @@ nav:
           - Custom redaction: privacy/custom-redaction-rules.md
           - Managed profiles: privacy/managed-privacy-profiles.md
           - Signed packs: deployment/packs.md
+          - Database audit: deployment/database-audit.md
   - Production readiness:
       - production-readiness/index.md
       - 1. Syslog delivery: production-readiness/01-syslog-delivery-reliability.md
@@ -142,6 +143,7 @@ nav:
       - ISM alignment: security/ism-alignment.md
       - Verified ASVS and ISM IDs: security/verified-standards.md
       - Event catalogue: security/default-event-catalogue.md
+      - ASVS logging pack: security/asvs-logging-pack.md
       - Pack catalogue: security/pack-runtime-catalogue.md
       - Engineering reviews:
           - Adversarial remediation: security/adversarial-remediation-2026-10-23.md

@@ -1,0 +1,23 @@
+title: Backend TLS failure
+id: bower-pack-asvs-backend-tls-failure-001
+status: stable
+description: >-
+  A backend TLS handshake or certificate validation failed (ASVS 5.0 V16.3.4). Can mean an
+  expired certificate or an interception attempt between services.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: application-security
+detection:
+  selection:
+    EventType: security_control_failure
+    EventOutcomeReason:
+      - BackendTlsHandshakeFailed
+      - BackendCertificateInvalid
+  condition: selection
+tags:
+  - attack.t1557
+  - attack.credential_access
+falsepositives:
+  - Planned certificate rotation
