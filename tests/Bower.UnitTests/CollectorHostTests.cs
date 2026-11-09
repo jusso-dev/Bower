@@ -233,7 +233,7 @@ public sealed class CollectorHostTests
         Assert.Equal("""{"status":"healthy"}""", health);
         Assert.Equal(HttpStatusCode.Unauthorized, anonymousStatus.StatusCode);
         Assert.Equal(HttpStatusCode.OK, status.StatusCode);
-        // The installed build, right after the status (as the Rust collector).
+        // The installed build, right after the status.
         Assert.StartsWith($$"""{"status":"healthy","version":"{{BowerVersion.Current}}",""", statusBody, StringComparison.Ordinal);
         Assert.DoesNotContain("version", health, StringComparison.Ordinal);
         Assert.Contains("queue-retention", statusBody, StringComparison.Ordinal);
@@ -260,7 +260,6 @@ public sealed class CollectorHostTests
         string body = await status.Content.ReadAsStringAsync(cancellationToken);
 
         Assert.Equal(HttpStatusCode.OK, status.StatusCode);
-        // Same text as the Rust collector (collector_host.rs).
         Assert.Contains(
             """
             "delivery":{"outputId":"azure-logs-ingestion","limit":2,"minimumLimit":1,"maximumLimit":4,"inFlight":1,"latencyEwmaMilliseconds":163,"requests":9,"throttles":3,"serverErrors":1,"timeouts":0,"latencySpikes":1,"decreases":2,"increases":1,"pauses":1,"processLocalPausedUntil":"2026-07-26T02:16:19+00:00"}
@@ -570,7 +569,7 @@ public sealed class CollectorHostTests
         CollectorSettings original = BaseSettings("unused") with { SingleTrustDomain = false };
         CollectorSettings first = original with { ProducerScopesJson = "[]" };
         CollectorSettings second = original with { ProducerScopesJson = "[{\"producer\":\"different\"}]" };
-        // Shared vector for the Rust collector's inline-scope configuration hash.
+        // Pinned inline-scope configuration hash.
         Assert.Equal("sha256:82030a56551266744926a51e40db705ffc5c45500d52ecb28af907582a23c6d5", first.ConfigurationHash());
         Assert.NotEqual(original.ConfigurationHash(), first.ConfigurationHash());
         Assert.NotEqual(first.ConfigurationHash(), second.ConfigurationHash());

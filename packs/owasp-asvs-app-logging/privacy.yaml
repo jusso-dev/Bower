@@ -1,0 +1,58 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata:
+  id: owasp-asvs-app-logging
+  version: 1.0.0
+  description: >-
+    Default Australian redaction plus ASVS 5.0 V16.2.5 and V16.4.1 handling for application
+    security events. Usernames and session identifiers become keyed HMAC pseudonyms, display
+    names are removed, one-time codes and recovery material are removed by field name, and
+    carriage returns and line feeds are replaced so no value can forge a log line.
+fields:
+  # Joinable for spraying and stuffing analytics without exposing the account name.
+  - path: actor.username
+    action: hmac
+  - path: actor.displayName
+    action: remove
+  # V16.2.5: session tokens may only be logged hashed. Keyed, so a dictionary of leaked
+  # session ids cannot be matched back.
+  - path: request.sessionId
+    action: hmac
+  - path: labels.userAgent
+    action: truncate
+    maxLength: 256
+secretFieldNames:
+  - otp
+  - otpCode
+  - totp
+  - mfaCode
+  - verificationCode
+  - recoveryCode
+  - backupCode
+  - securityAnswer
+  - magicLink
+  - nonce
+  - samlResponse
+  - idToken
+  - setCookie
+  - rawBody
+  - rawQuery
+  - queryString
+  - stackTrace
+  - exceptionMessage
+  # Raw SQL can hold literals, personal data and secrets. Use labels.dbStatementClass;
+  # the database's native audit log keeps the statement where ISM-1536 needs it.
+  - statement
+  - queryText
+  - sqlText
+customDetectors:
+  # V16.4.1: CR and LF are the line separators every text log sink honours. Replacing them
+  # in any value or property name stops a submitted username or reason forging a new line.
+  - id: custom.log-line-break
+    description: Carriage return or line feed in any value (log injection).
+    pattern: '[\r\n]+'
+    action: replace
+    tests:
+      match: ["alice\r\nINFO forged", "a\nb", "a\rb"]
+      noMatch: ["alice", "a b", "a\\nb literal backslash"]
+maximumFieldLength: 8192

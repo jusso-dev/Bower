@@ -12,7 +12,7 @@ namespace Bower.Source.File;
 /// <para>
 /// <paramref name="Discarding"/> means <paramref name="Offset"/> lies inside an oversized
 /// line: bytes up to and including its newline are skipped. <paramref name="FileId"/> is the
-/// file's <c>device:inode</c> where the platform reports it (Linux; every Unix in Rust).
+/// file's <c>device:inode</c> where the platform reports it (Linux).
 /// <paramref name="Drain"/> (<c>rename</c> or <c>copytruncate</c>) means the cursor refers to
 /// <c>path.1</c>, which is drained before the current file is read again; for a rename,
 /// <paramref name="ObservedLength"/>, <paramref name="ObservedWriteTime"/> (100 ns ticks since
@@ -203,7 +203,7 @@ public sealed record FileTailReaderOptions
     /// <summary>
     /// Use device and inode numbers where the platform reports them (Linux) to tell rename
     /// from copytruncate and to spot a replaced file. Off, identities alone decide (as on
-    /// other platforms); the shared vectors run this way so both runtimes agree everywhere.
+    /// other platforms); the shared vectors run this way so every platform agrees.
     /// </summary>
     public bool UseFileIds { get; init; } = true;
 }

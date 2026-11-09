@@ -1,11 +1,10 @@
 # Container images
 
-The `Images` workflow publishes six images to GitHub Container Registry for
+The `Images` workflow publishes five images to GitHub Container Registry for
 `linux/amd64` and `linux/arm64`:
 
 | Image | Contents |
 |---|---|
-| `ghcr.io/jusso-dev/bower-collector-rs` | Rust collector with the same event contract |
 | `ghcr.io/jusso-dev/bower-collector` | Collector: redaction, policy, durable queue and outputs |
 | `ghcr.io/jusso-dev/bower-management` | Management API with the bundled console |
 | `ghcr.io/jusso-dev/bower-web` | Standalone console on unprivileged nginx ([details](console-image.md)) |

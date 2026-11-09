@@ -10,8 +10,8 @@ using Bower.Source.Syslog;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// RELP listener: framing and offer vectors shared with the Rust port
-/// (<c>rust/crates/bower-source-syslog/tests/fixtures/relp-vectors.json</c>), malformed and
+/// RELP listener: framing and offer vectors
+/// (<c>tests/fixtures/syslog-vectors/relp-vectors.json</c>), malformed and
 /// oversized input, acknowledgement only after a durable decision, bounded backpressure,
 /// crash/resend deduplication, stop, and mutual TLS. The TLS fixtures are TEST-ONLY keys.
 /// </summary>
@@ -27,7 +27,7 @@ public sealed class SyslogRelpTests
 
     [Theory]
     [MemberData(nameof(Chunks))]
-    public async Task FrameVectors_ParseLikeRustAcrossArbitraryReads(string name, int chunk)
+    public async Task FrameVectors_ParseAcrossArbitraryReads(string name, int chunk)
     {
         Assert.NotEmpty(name);
         foreach (JsonElement vector in Vectors.GetProperty("frames").EnumerateArray())
@@ -59,7 +59,7 @@ public sealed class SyslogRelpTests
     }
 
     [Fact]
-    public void OfferAndResponseVectors_MatchRust()
+    public void OfferAndResponseVectors_Match()
     {
         foreach (JsonElement vector in Vectors.GetProperty("offers").EnumerateArray())
         {

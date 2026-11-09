@@ -59,8 +59,7 @@ reads events and ledger entries in one read transaction, so concurrent enqueues
 cannot produce false issues.
 
 The source cursor store runs `CREATE TABLE IF NOT EXISTS` on every start (WAL only
-for a new file) and treats any failed cursor write as a lost race (`false`). The
-C# and Rust stores share the same DDL, column order and timestamp text.
+for a new file) and treats any failed cursor write as a lost race (`false`).
 Queue schema version 5 adds lease generations, enqueue incarnations and compacted
 ledger checkpoints. The old table name becomes a read-only view, refusing old
 writers. DB/WAL limits include retained payloads, indexes and ledger history.
@@ -69,7 +68,7 @@ See [upgrade, rollback and storage contract](../operations/queue-v5-durability.m
 Suppression windows (`suppression_windows`), per-source activity
 (`source_activity`) and per-source monitoring starts (`source_monitoring`) are
 auxiliary tables created on every start without a schema
-version, so a version 5 queue stays openable by either runtime. Suppression is
+version, so a version 5 queue stays openable by any collector that supports it. Suppression is
 decided inside the enqueue transaction after the duplicate check; a hosted
 `SuppressionWindowWorker` closes ended windows and queues their summaries in one
 transaction. The optional archive reads stored events with their ledger entries and

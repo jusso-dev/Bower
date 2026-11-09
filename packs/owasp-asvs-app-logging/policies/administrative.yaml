@@ -1,0 +1,24 @@
+# ASVS 5.0 V16.3.3, V7.4.5, V6.4.6: privileged and administrative actions and security
+# configuration changes. change.field names the setting; before and after values are removed
+# by the privacy engine for every event type except role membership.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-PACK-ASVS-ADMIN
+  name: Privileged actions and configuration changes
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-11-01
+match:
+  eventCategories: [administrative-activity]
+  eventTypes: [admin_action, configuration_changed, permission_changed]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventAction, eventResult, application.name, request.correlationId, actor.userId, target.type]
+  recommendedFields: [actor.role, target.id, change.field, source.ipAddress, labels.userAgent]
+decision:
+  action: accept
+  minimumValueScore: 80
+  neverSample: true
+routing:
+  profile: application-security
+  destination: security-events

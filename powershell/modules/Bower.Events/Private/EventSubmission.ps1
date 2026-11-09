@@ -32,9 +32,6 @@ function Get-BowerEventAuthentication {
         [hashtable] $Context
     )
 
-    if ($Context.Target -eq 'Lambda') {
-        return $null
-    }
     if ($Context.StaticToken) {
         return $Context.StaticToken
     }
@@ -119,21 +116,8 @@ function Send-BowerEventItem {
         MaximumRetryDelaySeconds = $Context.MaximumRetryDelaySeconds
         TimeoutSec               = $Context.TimeoutSec
     }
-    if ($Context.Target -eq 'Lambda') {
-        $request.Body = $Item.Bytes
-        $request.ContentType = 'application/json'
-        $request.HeaderFactory = ${function:Get-BowerLambdaSignedHeader}
-        $request.HeaderFactoryArgument = @{
-            Uri           = $Context.Uri
-            Payload       = $Item.Bytes
-            Region        = $Context.Region
-            AwsCredential = $Context.AwsCredential
-        }
-    }
-    else {
-        $request.Body = $Item.Json
-        $request.Token = Get-BowerEventAuthentication -Context $Context
-    }
+    $request.Body = $Item.Json
+    $request.Token = Get-BowerEventAuthentication -Context $Context
 
     $response = Invoke-BowerHttpRequest @request
     if ($response.Succeeded) {

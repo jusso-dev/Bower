@@ -9,7 +9,6 @@
     PowerShellVersion    = '7.4'
     CompatiblePSEditions = @('Core')
     FunctionsToExport    = @(
-        'Deploy-BowerAwsLambda',
         'Deploy-BowerAwsSecurity',
         'Deploy-BowerAzureFunction',
         'Deploy-BowerGcpSecurity',

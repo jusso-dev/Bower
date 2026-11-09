@@ -7,8 +7,7 @@ using Bower.Persistence;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// <c>bower archive replay</c> origin labels and per-event mismatch handling. The Rust port
-/// pins the same cases (rust/crates/bower-cli/tests/archive_and_sources.rs).
+/// <c>bower archive replay</c> origin labels and per-event mismatch handling.
 /// </summary>
 public sealed class ArchiveReplayCliTests
 {

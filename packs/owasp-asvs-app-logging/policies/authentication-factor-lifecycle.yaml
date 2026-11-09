@@ -1,0 +1,25 @@
+# ASVS 5.0 V6.4.3, V6.4.6, V6.5.6, V6.3.7, V7.5.1: factor enrolment and removal, password
+# resets and changes. The new value never travels: only who changed what, and how.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-PACK-ASVS-FACTOR-LIFECYCLE
+  name: Authentication factor and password lifecycle
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-11-01
+match:
+  eventCategories: [identity-management]
+  eventTypes: [mfa_factor_enrolled, mfa_factor_removed, password_reset_requested, password_reset_completed, password_changed]
+  eventActions: [mfa.enrol, mfa.remove, mfa.revoke, password.reset_request, password.reset_complete, password.change]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventResult, application.name, request.correlationId, target.id]
+  atLeastOne: [actor.userId, actor.username]
+  recommendedFields: [source.ipAddress, labels.mfaFactor, labels.initiatedBy, labels.userAgent, eventOutcomeReason]
+decision:
+  action: accept
+  minimumValueScore: 80
+  neverSample: true
+routing:
+  profile: identity
+  destination: security-events

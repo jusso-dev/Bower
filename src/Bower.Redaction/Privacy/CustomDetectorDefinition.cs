@@ -47,7 +47,7 @@ public sealed class CustomDetectorDefinition
     /// <summary>Pattern as written in the profile.</summary>
     public string Pattern { get; }
 
-    /// <summary>Translated pattern that is compiled (identical in the Rust engine).</summary>
+    /// <summary>Translated pattern that is compiled.</summary>
     public string CanonicalPattern { get; }
 
     public bool IgnoreCase { get; }

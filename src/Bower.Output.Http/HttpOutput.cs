@@ -662,7 +662,7 @@ public sealed partial class HttpOutput : IOutputAdapter, IDisposable
         }
 
         // Custom root trust anchors only at self-signed roots; an intermediate here would
-        // be trusted by the Rust collector but not by this one.
+        // be trusted elsewhere but not by this one.
         if (roots.Any(root => !root.SubjectName.RawData.AsSpan().SequenceEqual(root.IssuerName.RawData)))
         {
             throw new InvalidOperationException(

@@ -1,0 +1,25 @@
+# ASVS 5.0 V16.3.1: successful authentication, with the method or factors used.
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+metadata:
+  id: BWR-PACK-ASVS-AUTH-SUCCESS
+  name: Successful authentication
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-11-01
+match:
+  eventCategories: [authentication]
+  eventTypes: [authentication_success]
+  eventActions: [authentication.login, authentication.reauthenticate, authentication.token_issued]
+  eventResults: [success]
+requirements:
+  requiredFields: [timeGenerated, eventType, eventResult, application.name, request.correlationId]
+  atLeastOne: [actor.userId, actor.username]
+  recommendedFields: [source.ipAddress, labels.authMethod, labels.userAgent, request.traceId, application.tenantId]
+decision:
+  action: accept
+  minimumValueScore: 80
+  neverSample: true
+routing:
+  profile: authentication
+  destination: security-events

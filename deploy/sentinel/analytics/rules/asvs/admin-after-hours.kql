@@ -1,0 +1,32 @@
+// Bower ASVS pack: privileged or configuration action outside business hours.
+// admin_action, configuration_changed, permission_changed and role_membership_changed
+// events whose event time falls outside `businessStart`-`businessEnd` on a weekday, or at any
+// time on a weekend, in `timeZone` (IANA name, default Australia/Sydney; daylight saving is
+// applied by datetime_utc_to_local). ASVS 5.0 V16.3.3. Replay-safe: once per event.
+let timeZone = "Australia/Sydney";
+let businessStart = 7;
+let businessEnd = 19;
+let settleDelay = 5m;
+let frequency = 5m;
+let catchUp = 60m;
+let maxDelay = 360m;
+let ruleKey = "bower-asvs-admin-after-hours:default";
+let windowEnd = bin(now() - settleDelay, frequency);
+let catchUpStart = windowEnd - catchUp;
+let alerted = SecurityAlert
+    | where ProviderName == "ASI Scheduled Alerts"
+    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
+    | where BowerDetectionKey startswith strcat(ruleKey, "|")
+    | distinct BowerDetectionKey;
+BowerSecurityEventsOfType(dynamic(["admin_action", "configuration_changed", "permission_changed", "role_membership_changed"]))
+| where EventResult == "success"
+| where BowerFirstIngested >= catchUpStart and BowerFirstIngested < windowEnd
+| where BowerFirstIngested - BowerEventTime <= maxDelay
+| extend LocalTime = datetime_utc_to_local(BowerEventTime, timeZone)
+| extend LocalHour = hourofday(LocalTime), LocalDay = toint(dayofweek(LocalTime) / 1d)
+// dayofweek: 0 = Sunday, 6 = Saturday.
+| where LocalDay in (0, 6) or LocalHour < businessStart or LocalHour >= businessEnd
+| extend BowerDetectionKey = strcat(ruleKey, "|", CollectorId, "|", EventId)
+| where BowerDetectionKey !in (alerted)
+| project BowerDetectionKey, BowerEventTime, LocalTime, TimeZone = timeZone, ApplicationName, EventType, EventAction,
+    ActorUserId, SourceIpAddress, CorrelationId, CollectorId, EventId, EvaluatedAt = now()

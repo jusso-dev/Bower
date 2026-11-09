@@ -8,7 +8,7 @@ for your environment, then return to [your first verified event](first-event.md)
 | Linux hosts | [deb/rpm packages and Ansible](../deployment/installers.md) | Service identity, queue storage and outbound connectivity. |
 | Windows hosts | [MSI installer](../deployment/installers.md) and [Windows Event Log](../deployment/windows-event-log-source.md) | The current source has a narrow channel/event allow-list. WEC-first rollout remains planned. |
 | Containers | [Container images](../deployment/container-images.md), [console](../deployment/console-image.md), [Docker sidecar](../deployment/docker-sidecar.md) | Durable volumes and explicit source opt-in. |
-| AWS | [AWS security sources](../deployment/aws.md) or [Lambda](../deployment/aws-lambda.md) | Queue permissions, least privilege and which runtime owns delivery. |
+| AWS | [AWS security sources](../deployment/aws.md) | Queue permissions and least privilege. |
 | Google Cloud | [GCP security sources](../deployment/gcp.md) | Pub/Sub acknowledgement and forwarding configuration. |
 | Azure Functions | [Azure Functions collector](../deployment/azure-function.md) | This path currently has no durable queue; durable ingest is tracked in issue #137. |
 | Segmented networks | [Relay mode](../deployment/relay.md) | Mutual TLS, allowed collectors and downstream connectivity. |

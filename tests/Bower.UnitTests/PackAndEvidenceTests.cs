@@ -205,7 +205,7 @@ public sealed class PackAndEvidenceTests
         Assert.Equal("e1", row["EventId"]!.GetValue<string>());
 
         // An empty, non-JSON or non-object body is a failed query, never an empty result,
-        // and the body is not echoed (same as the Rust client).
+        // and the body is not echoed.
         foreach (string body in new[] { "", "<html>sensitive body marker</html>", """["sensitive body marker"]""", "42" })
         {
             QueryRows invalid = LogAnalyticsQueryClient.Parse(body);
@@ -229,8 +229,6 @@ public sealed class PackAndEvidenceTests
         Assert.Null(rows.Error);
         Assert.Empty(rows.Rows);
     }
-
-    // Same table as the Rust `query_parser_rejects_unusable_bodies`.
     [Theory]
     [InlineData("{}")]
     [InlineData("""{"name":"PrimaryResult"}""")]
