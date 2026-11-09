@@ -1,0 +1,427 @@
+{
+  "standard": "Information Security Manual (ISM)",
+  "release": "September 2026",
+  "source": {
+    "publisher": "Australian Signals Directorate",
+    "page": "https://www.cyber.gov.au/ism/oscal/v2026.09.4",
+    "catalogue": "https://www.cyber.gov.au/ism/oscal/v2026.09.4/artifacts/ISM_catalog.json",
+    "catalogueVersion": "2026.09.4",
+    "catalogueSha256": "237ea09362b8449ed5c5ee85de4725a0468ee73d13af7cf61c26d4e6ac47f12d"
+  },
+  "controls": [
+    {
+      "id": "ISM-1976",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for system hardening",
+      "section": "Operating system hardening > Operating system event logging",
+      "text": "Security-relevant events for Apple macOS operating systems are centrally logged."
+    },
+    {
+      "id": "ISM-1977",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for system hardening",
+      "section": "Operating system hardening > Operating system event logging",
+      "text": "Security-relevant events for Linux operating systems are centrally logged."
+    },
+    {
+      "id": "ISM-0582",
+      "revision": 10,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for system hardening",
+      "section": "Operating system hardening > Operating system event logging",
+      "text": "Security-relevant events for Microsoft Windows operating systems are centrally logged."
+    },
+    {
+      "id": "ISM-1978",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for system hardening",
+      "section": "Server application hardening > Server application event logging",
+      "text": "Security-relevant events for server applications on internet-facing servers are centrally logged."
+    },
+    {
+      "id": "ISM-1979",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for system hardening",
+      "section": "Server application hardening > Server application event logging",
+      "text": "Security-relevant events for server applications on non-internet-facing servers are centrally logged."
+    },
+    {
+      "id": "ISM-0580",
+      "revision": 8,
+      "updated": "Jun-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Security monitoring policy",
+      "text": "A security monitoring policy is developed, implemented and maintained."
+    },
+    {
+      "id": "ISM-1405",
+      "revision": 4,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Centralised event logging facility",
+      "text": "A centralised event logging facility is implemented."
+    },
+    {
+      "id": "ISM-1983",
+      "revision": 1,
+      "updated": "Jun-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Centralised event logging facility",
+      "text": "Event logs sent to a centralised event logging facility are sent as soon as possible after they occur."
+    },
+    {
+      "id": "ISM-1984",
+      "revision": 1,
+      "updated": "Jun-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Centralised event logging facility",
+      "text": "Event logs sent to a centralised event logging facility are encrypted in transit using Australian Signals Directorate (ASD)-approved cryptography."
+    },
+    {
+      "id": "ISM-1985",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Centralised event logging facility",
+      "text": "Event logs are protected from unauthorised access."
+    },
+    {
+      "id": "ISM-1815",
+      "revision": 1,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Centralised event logging facility",
+      "text": "Event logs are protected from unauthorised modification and deletion."
+    },
+    {
+      "id": "ISM-0988",
+      "revision": 7,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Centralised event logging facility",
+      "text": "An accurate and consistent time source is used for event logging."
+    },
+    {
+      "id": "ISM-0585",
+      "revision": 7,
+      "updated": "Dec-25",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log details",
+      "text": "For each event logged, the date and time of the event, the relevant user or process, the relevant filename, the event description, and the information technology equipment involved are captured."
+    },
+    {
+      "id": "ISM-1959",
+      "revision": 0,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log details",
+      "text": "To the extent possible, event logs are captured and stored in a consistent and structured format."
+    },
+    {
+      "id": "ISM-0120",
+      "revision": 6,
+      "updated": "Jun-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Cyber security personnel have access to sufficient tools to facilitate the detection of cyber security events and the identification of cyber security incidents."
+    },
+    {
+      "id": "ISM-2116",
+      "revision": 0,
+      "updated": "Jun-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Cyber threat intelligence services are used to support the detection of cyber security events and the identification of cyber security incidents."
+    },
+    {
+      "id": "ISM-2117",
+      "revision": 0,
+      "updated": "Jun-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Suitable AI models are used to augment the detection of cyber security events and the identification of cyber security incidents."
+    },
+    {
+      "id": "ISM-1986",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from critical servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-1906",
+      "revision": 0,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-1907",
+      "revision": 0,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from non-internet-facing servers are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-0109",
+      "revision": 9,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from workstations are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-1987",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from security products are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-1960",
+      "revision": 0,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from internet-facing network devices are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-1961",
+      "revision": 0,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Event logs from non-internet-facing network devices are analysed in a timely manner to detect cyber security events."
+    },
+    {
+      "id": "ISM-1228",
+      "revision": 3,
+      "updated": "Mar-22",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log monitoring",
+      "text": "Cyber security events are analysed in a timely manner to identify cyber security incidents."
+    },
+    {
+      "id": "ISM-2153",
+      "revision": 0,
+      "updated": "Sep-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Threat hunting",
+      "text": "Threat hunting activities, informed by current strategic and sector-specific cyber threat intelligence, are conducted at least every three months."
+    },
+    {
+      "id": "ISM-1988",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log retention",
+      "text": "Event logs are retained in a searchable manner for at least 12 months."
+    },
+    {
+      "id": "ISM-1989",
+      "revision": 0,
+      "updated": "Dec-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for security assurance",
+      "section": "Security monitoring > Event log retention",
+      "text": "Event logs are retained as per minimum retention requirements for various classes of records as set out by the National Archives of Australia’s Administrative Functions Disposal Authority Express (AFDA Express) Version 2 publication."
+    },
+    {
+      "id": "ISM-1911",
+      "revision": 3,
+      "updated": "Dec-25",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Software development fundamentals > Software event logging",
+      "text": "Security-relevant usage, error messages and crashes for software are centrally logged."
+    },
+    {
+      "id": "ISM-1537",
+      "revision": 5,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for database systems",
+      "section": "Databases > Database event logging",
+      "text": "Security-relevant events for databases are centrally logged, including:\n\n- access or modification of particularly important content\n- addition of new users, especially privileged users\n- changes to user roles or privileges\n- attempts to elevate user privileges\n- queries containing comments\n- queries containing multiple embedded queries\n- database and query alerts or failures\n- database structure changes\n- database administrator actions\n- use of executable commands\n- database logons and logoffs."
+    },
+    {
+      "id": "ISM-1963",
+      "revision": 0,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for networking",
+      "section": "Network design and configuration > Network device event logging",
+      "text": "Security-relevant events for internet-facing network devices are centrally logged."
+    },
+    {
+      "id": "ISM-1964",
+      "revision": 0,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for networking",
+      "section": "Network design and configuration > Network device event logging",
+      "text": "Security-relevant events for non-internet-facing network devices are centrally logged."
+    },
+    {
+      "id": "ISM-1509",
+      "revision": 3,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Privileged access to systems",
+      "text": "Privileged access events are centrally logged."
+    },
+    {
+      "id": "ISM-1650",
+      "revision": 3,
+      "updated": "Sep-24",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Privileged access to systems",
+      "text": "Privileged user account and security group management events are centrally logged."
+    },
+    {
+      "id": "ISM-1683",
+      "revision": 2,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Multi-factor authentication",
+      "text": "Successful and unsuccessful multi-factor authentication events are centrally logged."
+    },
+    {
+      "id": "ISM-1895",
+      "revision": 0,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Single-factor authentication",
+      "text": "Successful and unsuccessful single-factor authentication events are centrally logged."
+    },
+    {
+      "id": "ISM-1566",
+      "revision": 3,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Unprivileged access to systems",
+      "text": "Use of unprivileged access is centrally logged."
+    },
+    {
+      "id": "ISM-1613",
+      "revision": 2,
+      "updated": "Dec-23",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Emergency access to systems",
+      "text": "Use of break glass accounts is centrally logged."
+    },
+    {
+      "id": "ISM-2139",
+      "revision": 0,
+      "updated": "Sep-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for system access",
+      "section": "Identity and access management > Third-party application access and device code authentication",
+      "text": "Consent grants, token issuance and token use for third-party OAuth applications are centrally logged."
+    },
+    {
+      "id": "ISM-2051",
+      "revision": 1,
+      "updated": "Dec-25",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Software development fundamentals > Secure software development",
+      "text": "Software generates sufficient event logs to support the detection of cyber security events."
+    },
+    {
+      "id": "ISM-2052",
+      "revision": 0,
+      "updated": "Jun-25",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Software development fundamentals > Secure software development",
+      "text": "Event logs produced by software ensure that any sensitive data is protected."
+    },
+    {
+      "id": "ISM-1910",
+      "revision": 1,
+      "updated": "Mar-25",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Software development fundamentals > Network application programming interfaces",
+      "text": "Network API calls that facilitate modification of data, or access to data not authorised for release into the public domain, and are accessible over the internet, are centrally logged."
+    },
+    {
+      "id": "ISM-2015",
+      "revision": 0,
+      "updated": "Mar-25",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Software development fundamentals > Network application programming interfaces",
+      "text": "Network API calls that facilitate modification of data, or access to data not authorised for release into the public domain, but are not accessible over the internet, are centrally logged."
+    },
+    {
+      "id": "ISM-1536",
+      "revision": 4,
+      "updated": "Sep-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Software development fundamentals > Software interaction with databases",
+      "text": "All queries to databases from software, and any resulting crash or error messages, are centrally logged."
+    },
+    {
+      "id": "ISM-2159",
+      "revision": 0,
+      "updated": "Sep-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for software development",
+      "section": "Artificial intelligence application development > Excessive agency",
+      "text": "All tool invocations, external requests and outputs generated by agentic AI applications are centrally logged with sufficient detail to support cyber security incident investigations."
+    },
+    {
+      "id": "ISM-2125",
+      "revision": 0,
+      "updated": "Sep-26",
+      "applicability": "TS",
+      "guideline": "Guidelines for procurement and outsourcing",
+      "section": "Managed services and cloud services > Access to systems by service providers",
+      "text": "All access to an organisation’s systems by a service provider is independently logged by the organisation in a manner that the service provider cannot modify or delete, and analysed in a timely manner to detect any anomalous, unexpected or unauthorised activity."
+    }
+  ]
+}
