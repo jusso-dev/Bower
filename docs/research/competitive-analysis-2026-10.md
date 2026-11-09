@@ -151,7 +151,7 @@ The ISM's September 2026 update added controls that read like a backlog for an S
 - **ISM-2139** covers logging of OAuth consent grants and token use.
 - **ISM-2159** requires that tool invocations and outputs of agentic AI applications are centrally logged.
 
-ISM-2139 and ISM-2159 appear only in the TERESEC summary and should be verified against ASD's OSCAL release before Bower markets them ([TERESEC](https://teresec.com.au/blog/2026-09-17-ism-september-2026-update)). Each control maps cleanly to a Bower event type with a schema, a default-deny policy entry and SDK helpers:
+ISM-2139 and ISM-2159 appear only in the TERESEC summary and should be verified against ASD's OSCAL release before Bower markets them ([TERESEC](https://teresec.com.au/blog/2026-09-17-ism-september-2026-update)). Update 09-11-2026: ISM-2125, ISM-2139 and ISM-2159 are now verified against the September 2026 OSCAL catalogue (see [verified ASVS and ISM IDs](../security/verified-standards.md)). Each control maps cleanly to a Bower event type with a schema, a default-deny policy entry and SDK helpers:
 
 - service-provider/MSP session access;
 - OAuth consent and token issuance;
