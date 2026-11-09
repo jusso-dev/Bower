@@ -13,6 +13,8 @@ here=$(cd "$(dirname "$0")" && pwd)
 cases="$here/contract/cases.json"
 expected="$here/contract/expected.jsonl"
 events_only=$(mktemp)
+classes=""
+trap 'rm -rf "$events_only" ${classes:+"$classes"}' EXIT
 grep -v '"clientIp"' "$expected" > "$events_only"
 failed=0
 skipped=()
@@ -49,7 +51,6 @@ else
   skipped+=(dotnet)
 fi
 
-rm -f "$events_only"
 for item in "${skipped[@]+"${skipped[@]}"}"; do echo "SKIP  $item"; done
 if [ "${REQUIRE:-}" = all ] && [ ${#skipped[@]} -gt 0 ]; then failed=1; fi
 exit $failed
