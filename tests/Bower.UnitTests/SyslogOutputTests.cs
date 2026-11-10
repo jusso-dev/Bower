@@ -32,6 +32,9 @@ public sealed class SyslogOutputTests
 
     private const string NoDatagramSockets = "Datagram Unix sockets exist only on Linux and macOS.";
 
+    // SyslogOutputOptions takes a Unix path such as /dev/log, which Windows doesn't treat as a full path.
+    private const string NoUnixSocketPath = "The syslog output takes a Unix socket path; Windows refuses it.";
+
     private static bool DatagramSockets => OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
 
     [Fact]
@@ -88,6 +91,7 @@ public sealed class SyslogOutputTests
     [Fact]
     public void Format_PadsSingleDigitDaysWithASpace()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), NoUnixSocketPath);
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog" }, new FixedClock(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero)));
 
         byte[]? message = output.TryFormat("{}");
@@ -99,6 +103,7 @@ public sealed class SyslogOutputTests
     [Fact]
     public void Format_DefaultLimitLeavesRoomForTheHeaderRsyslogAddsWhenForwarding()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), NoUnixSocketPath);
         // rsyslog forwards at most 8,096 characters per line, its own header included
         // (measured with stock rsyslog on Rocky Linux 9, #230). The default leaves 416 for it.
         Assert.Equal(7_680, SyslogOutputOptions.DefaultMaximumMessageBytes);
