@@ -203,6 +203,18 @@ jobs:
           --configuration Release --no-build
           --filter-class "Bower.UnitTests.WindowsEventLog*"
           --output Detailed
+      # TEMPORARY (#198): repeat the real Event Log tests to show the write retry. Reverted before merge.
+      - name: Repeat the real Event Log tests 40 times
+        env:
+          BOWER_REQUIRE_WINDOWS_EVENTLOG_TESTS: "1"
+        shell: pwsh
+        run: |
+          for ($run = 1; $run -le 40; $run++) {
+            $out = dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj --configuration Release --no-build --filter-class "Bower.UnitTests.WindowsEventLogWindowsTests" --output Detailed 2>&1 | Out-String
+            $retries = ($out -split "`n" | Where-Object { $_ -match 'write: accepted after' }) -join ' | '
+            Write-Output ("run {0}: exit {1} {2}" -f $run, $LASTEXITCODE, $retries)
+            if ($LASTEXITCODE -ne 0) { Write-Output $out; exit 1 }
+          }
       - name: Windows settings handle and ACL tests
         env:
           BOWER_REQUIRE_WINDOWS_SETTINGS_TESTS: "1"
