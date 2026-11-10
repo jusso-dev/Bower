@@ -61,6 +61,12 @@ so a value an application puts there is replaced.
   [trust boundary](../deployment/ama-syslog-output.md#who-can-write-to-the-table)), but the row
   names the host it came from.
 
+Live on 10-11-2026 (#249), Azure Monitor Agent 1.45.1 on Ubuntu 24.04: a row sent through
+`ama-syslog` had `Origin` `{"kind":"ama-syslog","host":"<the VM>"}`. A row forged with `logger` by
+`nobody`, whose envelope claimed a CloudWatch Logs origin, had the same `Origin`: the agent's real
+host, not the claim. A record uploaded through the Logs Ingestion rule kept its
+`collector.origin` (`cloudwatch-logs`, log group and stream) in `Origin`.
+
 Example query, rows per server in the last day:
 
 ```kusto
