@@ -252,18 +252,82 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
   -a append-config -m ec2 -s -c file:/opt/aws/amazon-cloudwatch-agent/etc/bower-events.json
 ```
 
-Windows ([`amazon-cloudwatch-agent.windows.json`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/amazon-cloudwatch-agent.windows.json),
-file `C:\ProgramData\BowerEvents\events.jsonl`):
+### Windows
+
+!!! note "Not yet run on Windows"
+    The Windows commands below were written from Microsoft's documentation for `icacls` and
+    the ScheduledTasks module. They haven't been run on a Windows server: try them on a test
+    server first, and run the checks at the end of this section.
+
+The event file is `C:\ProgramData\BowerEvents\events.jsonl`. A folder made under
+`C:\ProgramData` inherits an ACL that lets every local user create files (the Bower installer
+breaks inheritance on its own folder for the same reason), so lock the folder down before the
+application writes to it. Without that, any local user could read the unredacted events, or
+create `events.jsonl` first and own it.
+
+In an elevated PowerShell on each server, replacing the application account (a domain
+account, `NT SERVICE\<service>` or `IIS AppPool\<pool>`):
 
 ```powershell
-New-Item -ItemType Directory -Force -Path C:\ProgramData\BowerEvents | Out-Null
-Copy-Item amazon-cloudwatch-agent.windows.json C:\ProgramData\BowerEvents\bower-events.json
-& "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" `
-  -a append-config -m ec2 -s -c file:C:\ProgramData\BowerEvents\bower-events.json
+$dir = 'C:\ProgramData\BowerEvents'
+$app = 'CONTOSO\svc-orders'   # the account the application runs as
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+# Remove inherited entries, then grant SYSTEM (S-1-5-18) and Administrators (S-1-5-32-544)
+# full control and the application Modify, for the folder and everything created in it.
+icacls $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "${app}:(OI)(CI)M"
+# Create the file now, so no one else can create it first. It inherits the folder's entries.
+if (-not (Test-Path "$dir\events.jsonl")) { New-Item -ItemType File -Path "$dir\events.jsonl" | Out-Null }
+icacls $dir
 ```
 
-Grant the application's account Modify on `C:\ProgramData\BowerEvents` so it can create and
-append to `events.jsonl`. The agent runs as Local System and can read it.
+The last command should list only `NT AUTHORITY\SYSTEM`, `BUILTIN\Administrators` and the
+application account. If the folder already existed with explicit entries (for example a
+grant to `Users`), they survive `/inheritance:r`: remove them with `icacls $dir /remove:g <name>`.
+
+Then add the file to the agent (`amazon-cloudwatch-agent.windows.json`), with `-m ec2` on EC2
+or `-m onPremise` outside EC2:
+
+```powershell
+$base = "https://raw.githubusercontent.com/jusso-dev/Bower/$env:BOWER_REF/examples/cloud-agents/aws"
+Invoke-WebRequest "$base/amazon-cloudwatch-agent.windows.json" -OutFile "$dir\bower-events.json"
+& "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" `
+  -a append-config -m ec2 -s -c "file:$dir\bower-events.json"
+```
+
+Set `$env:BOWER_REF` to the release tag first. The agent runs as Local System, so it can read
+the file.
+
+**Check the permissions** while signed in as a standard user who isn't the application
+account. Both commands must fail with "Access to the path is denied":
+
+```powershell
+Get-Content C:\ProgramData\BowerEvents\events.jsonl
+New-Item -ItemType File -Path C:\ProgramData\BowerEvents\other.jsonl
+```
+
+**Rotate the file.** Windows has no logrotate.
+[`rotate-bower-events.ps1`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/rotate-bower-events.ps1)
+renames `events.jsonl` to `events.jsonl.1` (keeping seven), and creates a new empty file,
+which inherits the folder's entries. Run it daily as SYSTEM from a scheduled task. Keep the
+script in a folder only administrators can write to, because SYSTEM runs it:
+
+```powershell
+$tool = 'C:\Program Files\BowerEvents'
+New-Item -ItemType Directory -Force -Path $tool | Out-Null
+Invoke-WebRequest "$base/rotate-bower-events.ps1" -OutFile "$tool\rotate-bower-events.ps1"
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+  -Argument "-NoProfile -File `"$tool\rotate-bower-events.ps1`""
+$trigger = New-ScheduledTaskTrigger -Daily -At 00:05
+Register-ScheduledTask -TaskName 'Bower event file rotation' -Action $action -Trigger $trigger `
+  -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest
+```
+
+This approach is untested. The application must open the file for each event, or reopen it
+after rotation. If a process holds `events.jsonl` open without delete sharing, the rename
+fails and the script stops without changing anything; it tries again the next day. If the
+task history shows it failing every day, this approach doesn't suit your application, and
+the file keeps growing until you rotate it another way. AWS doesn't document how the agent on
+Windows follows a renamed file.
 
 ### Least-privilege policy for the agent
 
@@ -339,7 +403,9 @@ sudo -u orders-api python3 /tmp/emit_event.py /var/log/bower/events.jsonl \
   --application orders-api --environment production
 ```
 
-It prints the `eventId`. Then:
+On Windows, run `python emit_event.py C:\ProgramData\BowerEvents\events.jsonl` as the
+application account (for example with `runas /user:CONTOSO\svc-orders`). It prints the
+`eventId`. Then:
 
 1. On the server: `sudo tail -1 /var/log/bower/events.jsonl` shows the event.
 2. In CloudWatch Logs: the event appears in `/bower/app-events`.

@@ -271,7 +271,7 @@ jobs:
       - name: Check Windows lab script syntax
         shell: pwsh
         run: |
-          foreach ($file in Get-ChildItem @('lab/aws/scripts/*.ps1', 'lab/aws/monitoring/*.ps1', 'lab/aws/tests/*.ps1')) {
+          foreach ($file in Get-ChildItem @('lab/aws/scripts/*.ps1', 'lab/aws/monitoring/*.ps1', 'lab/aws/tests/*.ps1', 'examples/cloud-agents/aws/*.ps1')) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
