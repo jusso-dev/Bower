@@ -59,7 +59,12 @@ links support the `/Bower/` base path. No custom domain is required.
 ## Privacy and motion
 
 There are no third-party analytics, remote fonts or external help widgets. The
-illustration makes no network calls and contains no customer data. The animated
+illustration makes no network calls and contains no customer data. One exception: on
+the six pages with a diagram, Material for MkDocs loads `mermaid.min.js` from
+`unpkg.com` in the browser to draw it (checked with Playwright against the built site).
+Without that script, or with JavaScript off, the diagram shows as its source text. The
+docs workflow checks that each diagram is built as a diagram element
+(`tools/docs/check_diagrams.py`); it does not check that the drawing renders. The animated
 packets are explanatory and never represent live delivery or verified evidence.
 A pause control and `prefers-reduced-motion` support make motion optional.
 

@@ -7,7 +7,7 @@ on every server.
 
 ```mermaid
 flowchart LR
-    APP[App on EC2 or on-premises] -->|appends JSON lines| F[/var/log/bower/events.jsonl/]
+    APP[App on EC2 or on-premises] -->|appends JSON lines| F["/var/log/bower/events.jsonl"]
     F --> CWA[CloudWatch agent] --> CWL[CloudWatch Logs<br/>/bower/app-events]
     CWL -->|subscription filter| FH[Firehose] --> S3[(S3)] --> Q[(SQS)]
     Q --> AG[bower-cloud agent] --> C[Bower collector] --> S[Sentinel]

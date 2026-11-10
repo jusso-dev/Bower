@@ -10,7 +10,7 @@ no Azure credential on the server; AMA's managed identity does the upload.
 flowchart LR
     APP[App on the server] -->|POST /v1/events| B[Bower collector<br/>BOWER_OUTPUT=syslog]
     SRC[File tail and syslog sources] --> B
-    B -->|local4, redacted| L[/dev/log<br/>rsyslog/]
+    B -->|local4, redacted| L["/dev/log (rsyslog)"]
     L --> AMA[Azure Monitor Agent] --> DCR[DCR: Linux syslog<br/>decode + map] --> S[BowerSecurity_CL]
 ```
 
