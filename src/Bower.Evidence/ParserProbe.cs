@@ -118,11 +118,11 @@ public static class ProbeOutcomes
     public const string CollectorOutputNotSentinel = "collector-output-not-sentinel";
 
     /// <summary>
-    /// Outputs whose delivery a Sentinel query can prove: direct Logs Ingestion and the AMA
-    /// spool, plus <c>relay</c> (the relay's own output is unknown here, so the query stays
+    /// Outputs whose delivery a Sentinel query can prove: direct Logs Ingestion, the AMA
+    /// spool and local syslog (both collected by Azure Monitor Agent), plus <c>relay</c> (the relay's own output is unknown here, so the query stays
     /// the only proof). An allowlist: any other value, including future outputs, refuses.
     /// </summary>
-    public static IReadOnlyList<string> SentinelOutputs { get; } = ["azure-logs-ingestion", "ama-spool", "relay"];
+    public static IReadOnlyList<string> SentinelOutputs { get; } = ["azure-logs-ingestion", "ama-spool", "syslog", "relay"];
 
     /// <summary>
     /// The output a collector status body reports when it is not on the Sentinel allowlist,

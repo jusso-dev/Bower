@@ -744,6 +744,7 @@
           "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
           "Bower.Output.Http": "[1.0.0, )",
           "Bower.Output.S3": "[1.0.0, )",
+          "Bower.Output.Syslog": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",
           "Bower.Source.File": "[1.0.0, )",
           "Bower.Source.Syslog": "[1.0.0, )",
@@ -840,6 +841,12 @@
         "dependencies": {
           "AWSSDK.S3": "[4.0.104.7, )",
           "AWSSDK.SecurityToken": "[4.0.101.7, )",
+          "Bower.Abstractions": "[1.0.0, )"
+        }
+      },
+      "bower.output.syslog": {
+        "type": "Project",
+        "dependencies": {
           "Bower.Abstractions": "[1.0.0, )"
         }
       },

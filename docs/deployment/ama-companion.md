@@ -1,7 +1,9 @@
 # AMA companion mode
 
-For a step-by-step setup with a ready-made collection rule, see
-[Quick start: Azure Monitor Agent](../getting-started/azure-monitor-agent.md).
+On Linux, Azure Monitor Agent collects syslog, so the simpler path is
+`BOWER_OUTPUT=syslog` with a ready-made collection rule: see
+[Quick start: Azure Monitor Agent](../getting-started/azure-monitor-agent.md). The spool below
+needs a custom-log collection rule that you write yourself.
 
 Set `BOWER_OUTPUT=ama-spool` and `BOWER_AMA_SPOOL_PATH` to a restrictive local
 directory. Bower writes `active/*.tmp`, flushes each file, then atomically renames

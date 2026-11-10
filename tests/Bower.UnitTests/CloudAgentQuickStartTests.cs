@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Bower.Output.Syslog;
 using Bower.Source.Aws;
 
 namespace Bower.UnitTests;
@@ -7,8 +8,8 @@ namespace Bower.UnitTests;
 /// <summary>
 /// The cloud-agent quick starts (docs/getting-started/aws-cloudwatch-agent.md and
 /// azure-monitor-agent.md): the sample event is a valid envelope that the AWS forwarder would
-/// pick out of CloudWatch Logs, the CloudWatch agent filter keeps it, and the AMA spool rule
-/// lands rows in BowerSecurity_CL exactly as the Logs Ingestion API rule does.
+/// pick out of CloudWatch Logs, the CloudWatch agent filter keeps it, and the AMA syslog rule
+/// decodes Bower's syslog messages into the same BowerSecurity_CL columns as the Logs Ingestion API rule.
 /// </summary>
 public sealed partial class CloudAgentQuickStartTests
 {
@@ -49,25 +50,46 @@ public sealed partial class CloudAgentQuickStartTests
     }
 
     [Fact]
-    public void AmaSpoolRule_UsesTheSameStreamColumnsAndTransformAsTheIngestionRule()
+    public void AmaSyslogRule_ProjectsTheSameColumnsAsTheIngestionRuleFromTheDecodedEnvelope()
     {
         string main = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));
-        string spool = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-spool-dcr.bicep"));
+        string syslog = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
+        string transform = Normalise(Transform(syslog));
 
-        Assert.Equal(StreamColumns(main, "'Custom-BowerSecurity': {"), StreamColumns(spool, "'Custom-BowerSpool': {"));
-        Assert.Equal(Normalise(Transform(main)), Normalise(Transform(spool)));
-        Assert.Contains("outputStream: 'Custom-BowerSecurity_CL'", spool, StringComparison.Ordinal);
-        Assert.Contains("format: 'json'", spool, StringComparison.Ordinal);
-        Assert.Contains("dataCollectionEndpointId: dataCollectionEndpointId", spool, StringComparison.Ordinal);
-        Assert.Contains("'/var/spool/bower/ready/*.jsonl'", spool, StringComparison.Ordinal);
+        // Every main.bicep projection, read from the decoded envelope e instead of the stream.
+        string[] columns = StreamColumnNames(main);
+        string expected = Regex.Replace(Normalise(Transform(main)).Split("| project ", 2)[1], $@"(?<![.\w])({string.Join('|', columns.OrderByDescending(name => name.Length))})(?!\w)", "e.$1")
+            .Replace("pack_all()", "e", StringComparison.Ordinal)
+            .Replace("TimeGenerated = e.timeGenerated", "TimeGenerated = todatetime(e.timeGenerated)", StringComparison.Ordinal)
+            .Replace("TimeObserved = e.timeObserved", "TimeObserved = todatetime(e.timeObserved)", StringComparison.Ordinal);
+        Assert.Equal(expected, transform.Split("| project ", 2)[1]);
+
+        Assert.StartsWith(
+            "source | where SyslogMessage contains_cs \"bower-b64:\" | extend e = parse_json(base64_decodestring(substring(SyslogMessage, indexof(SyslogMessage, \"bower-b64:\") + 10))) | where tostring(e.schemaVersion) == \"1.0.0\"",
+            transform,
+            StringComparison.Ordinal);
+        Assert.Contains($"\"{SyslogOutput.MessagePrefix}\") + {SyslogOutput.MessagePrefix.Length})", transform, StringComparison.Ordinal);
+        Assert.Contains("outputStream: 'Custom-BowerSecurity_CL'", syslog, StringComparison.Ordinal);
+        Assert.Contains("streams: ['Microsoft-Syslog']", syslog, StringComparison.Ordinal);
+        Assert.Contains("param facility string = 'local4'", syslog, StringComparison.Ordinal);
+        // Notice and above: Bower writes at notice, so a lower minimum would only add noise.
+        Assert.Contains("logLevels: ['Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency']", syslog, StringComparison.Ordinal);
     }
 
-    private static string[] StreamColumns(string bicep, string marker)
+    [Fact]
+    public void SyslogOutputDefaults_MatchTheRule()
     {
-        int start = bicep.IndexOf(marker, StringComparison.Ordinal);
-        Assert.True(start >= 0, $"{marker} not found");
+        SyslogOutputOptions options = new() { Id = "syslog" };
+
+        Assert.Equal((20, 5, "/dev/log"), (options.Facility, options.Severity, options.SocketPath));
+    }
+
+    private static string[] StreamColumnNames(string bicep)
+    {
+        int start = bicep.IndexOf("'Custom-BowerSecurity': {", StringComparison.Ordinal);
+        Assert.True(start >= 0);
         int end = bicep.IndexOf(']', start);
-        return [.. ColumnPattern().Matches(bicep[start..end]).Select(match => $"{match.Groups["name"].Value}:{match.Groups["type"].Value}")];
+        return [.. ColumnPattern().Matches(bicep[start..end]).Select(match => match.Groups["name"].Value)];
     }
 
     private static string Transform(string bicep) =>

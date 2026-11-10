@@ -25,7 +25,7 @@ control plane, or runtime AI filter.
 - `src/Bower.Functions.Collector`: serverless Azure Functions collector (Entra-authenticated, no durable queue).
 - `src/Bower.Management.Api`: Entra-protected fleet, approval and audit API.
 - `ui/Bower.Management.Web`: tenant-controlled operational console.
-- `src/Bower.Output.*`: bounded delivery adapters (`AmaSpool`, `AzureLogsIngestion`; `S3`: NDJSON objects in Amazon S3, and `Http`: Splunk HEC or NDJSON endpoints, both extra sinks and never Sentinel delivery).
+- `src/Bower.Output.*`: bounded delivery adapters (`AmaSpool`, `AzureLogsIngestion`, `Syslog`: local `/dev/log` for Azure Monitor Agent on Linux; `S3`: NDJSON objects in Amazon S3, and `Http`: Splunk HEC or NDJSON endpoints, both extra sinks and never Sentinel delivery).
 - `src/Bower.Source.Aws`: AWS security telemetry parsers (CloudTrail, GuardDuty, Security Hub, CloudWatch), EventBridge/SNS/S3 queue message parser and Firehose log object reader.
 - `src/Bower.Source.Gcp`: Cloud Audit Logs and Security Command Center mapper for Pub/Sub messages.
 - `src/Bower.Forwarding`: shared collector client for agents (at-least-once acknowledgement rule) and the relay output and wire contract.

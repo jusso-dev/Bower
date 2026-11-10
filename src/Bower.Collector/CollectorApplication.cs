@@ -10,6 +10,7 @@ using Bower.Core;
 using Bower.Forwarding;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
+using Bower.Output.Syslog;
 using Bower.Output.AzureLogsIngestion;
 using Bower.Output.Http;
 using Bower.Output.S3;
@@ -674,6 +675,13 @@ public static partial class CollectorApplication
                 },
                 settings.CollectorId),
             "s3" => new S3Output(settings.S3Output! with { CollectorId = settings.CollectorId }),
+            "syslog" => new SyslogOutput(new SyslogOutputOptions
+            {
+                Id = "syslog",
+                SocketPath = settings.SyslogOutputSocket,
+                Facility = settings.SyslogOutputFacility,
+                MaximumMessageBytes = settings.SyslogOutputMaximumBytes
+            }),
             // The token and CA bundle are read here, so a bad file stops start-up.
             HttpOutput.OutputId => new HttpOutput(
                 settings.HttpOutput!.Options(settings.CollectorId), settings.HttpOutput.ReadToken()),

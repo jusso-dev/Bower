@@ -363,7 +363,8 @@ public sealed partial class QueueDeliveryWorker(
         "destination-azure-http-403:retry-after-capped" => "destination-azure-http-403",
         "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403"
             or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
-            or "destination-output-timeout" or "output-adapter-failure" or "output-result-missing" => code,
+            or "destination-output-timeout" or "output-adapter-failure" or "output-result-missing"
+            or "destination-syslog-unavailable" => code,
         _ when IsS3Code(code) => code,
         _ when IsHttpOutputCode(Uncapped(code)) => Uncapped(code),
         _ => "delivery-failure"
