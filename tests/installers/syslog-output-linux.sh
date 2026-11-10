@@ -134,20 +134,22 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 # A separate rsyslogd with only this input and the forward: the distribution's instance (its
-# journal input) is left alone and cannot delay or swallow the message.
-cat > /root/bower-forward-test.rsyslog.conf <<'RSYSLOG'
-global(workDirectory="/root/bower-forward-test.rsyslog")
+# journal input) is left alone and cannot delay or swallow the message. Its files live where
+# a confined rsyslogd may read and write (/etc, /var/lib/rsyslog, /var/log, /run): on the CI
+# host it could not open a config under /root ("Permission denied").
+cat > /etc/rsyslog-bower-test.conf <<'RSYSLOG'
+global(workDirectory="/var/lib/rsyslog/bower-test")
 module(load="imuxsock" SysSock.Use="off")
 input(type="imuxsock" Socket="/run/bower-rsyslog-test.sock" CreatePath="on")
 local4.* action(type="omfwd" target="127.0.0.1" port="28330" protocol="tcp")
 RSYSLOG
-install -d /root/bower-forward-test.rsyslog
-rsyslogd -N1 -f /root/bower-forward-test.rsyslog.conf >/root/rsyslog-test.log 2>&1 \
-  || { cat /root/rsyslog-test.log >&2; fail "the test rsyslog configuration is invalid"; }
-rsyslogd -n -f /root/bower-forward-test.rsyslog.conf -i /run/bower-forward-test.pid >>/root/rsyslog-test.log 2>&1 &
+install -d /var/lib/rsyslog/bower-test
+rsyslogd -N1 -f /etc/rsyslog-bower-test.conf >/var/log/rsyslog-bower-test.log 2>&1 \
+  || { cat /var/log/rsyslog-bower-test.log >&2; fail "the test rsyslog configuration is invalid"; }
+rsyslogd -n -f /etc/rsyslog-bower-test.conf -i /run/bower-forward-test.pid >>/var/log/rsyslog-bower-test.log 2>&1 &
 test_rsyslog=$!
 for _ in $(seq 1 60); do [ -S /run/bower-rsyslog-test.sock ] && break; sleep 0.5; done
-[ -S /run/bower-rsyslog-test.sock ] || { cat /root/rsyslog-test.log >&2; fail "rsyslog did not create the test socket"; }
+[ -S /run/bower-rsyslog-test.sock ] || { cat /var/log/rsyslog-bower-test.log >&2; fail "rsyslog did not create the test socket"; }
 printf 'BOWER_SYSLOG_OUTPUT_SOCKET=/run/bower-rsyslog-test.sock\n' >> "$env_file"
 systemctl restart bower.service
 for _ in $(seq 1 60); do curl -sf http://127.0.0.1:4319/health >/dev/null && break; sleep 1; done
@@ -200,10 +202,10 @@ PYTHON
 if [ "$forward_ok" -ne 0 ]; then
   # Metadata only: sizes, counts and rsyslog's own messages, never event content.
   echo "forwarded bytes: $(stat -c %s /root/forwarded 2>/dev/null || echo none); listener: $(cat /root/forward-listener.log 2>/dev/null)" >&2
-  grep -v 'bower-b64:' /root/rsyslog-test.log >&2 || true
+  grep -v 'bower-b64:' /var/log/rsyslog-bower-test.log >&2 || true
   curl -sf http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; s=json.load(sys.stdin); print("queue", s["queue"], "last failure", s["deliveryActivity"]["lastFailureCode"])' >&2 || true
   fail "the forwarded line for the large event was not whole"
 fi
 kill "$listener" 2>/dev/null || true
 kill "$test_rsyslog" 2>/dev/null || true
-rm -rf /root/forwarded /run/bower-rsyslog-test.sock /root/bower-forward-test.rsyslog /root/bower-forward-test.rsyslog.conf
+rm -rf /root/forwarded /run/bower-rsyslog-test.sock /var/lib/rsyslog/bower-test /etc/rsyslog-bower-test.conf /var/log/rsyslog-bower-test.log
