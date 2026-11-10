@@ -25,6 +25,10 @@ WEC_POSITION_INPUTS = {
 def select(paths, full=False):
     selected = set(JOBS) if full else set()
     for path in paths:
+        # The Windows steps of this guide are run as written by the monitoring-windows job (#246).
+        if path == "docs/getting-started/aws-cloudwatch-agent.md":
+            selected.add("infrastructure")
+            continue
         # Known editorial inputs cannot affect product builds. Check this before
         # the unknown-file fallback, but never ignore Markdown under source/tests.
         if path.startswith(("docs/", "docs-site/", "tools/docs/")) or path in {

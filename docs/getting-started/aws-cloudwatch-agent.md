@@ -254,10 +254,12 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 
 ### Windows
 
-!!! note "Not yet run on Windows"
-    The Windows commands below were written from Microsoft's documentation for `icacls` and
-    the ScheduledTasks module. They haven't been run on a Windows server: try them on a test
-    server first, and run the checks at the end of this section.
+!!! note "How these steps are tested"
+    CI runs the commands in this section as written on Windows Server 2025
+    ([`test_windows_event_folder.ps1`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/test_windows_event_folder.ps1)).
+    It signs in as a second standard user, who is refused both reading the file and creating
+    one in the folder, and it runs the rotation task as SYSTEM. It doesn't run the
+    CloudWatch agent itself. Run the permission check below on your own servers too.
 
 The event file is `C:\ProgramData\BowerEvents\events.jsonl`. A folder made under
 `C:\ProgramData` inherits an ACL that lets every local user create files (the Bower installer
@@ -322,8 +324,7 @@ Register-ScheduledTask -TaskName 'Bower event file rotation' -Action $action -Tr
   -User 'NT AUTHORITY\SYSTEM' -RunLevel Highest
 ```
 
-This approach is untested. The application must open the file for each event, or reopen it
-after rotation. If a process holds `events.jsonl` open without delete sharing, the rename
+The application must open the file for each event, or reopen it after rotation. If a process holds `events.jsonl` open without delete sharing, the rename
 fails and the script stops without changing anything; it tries again the next day. If the
 task history shows it failing every day, this approach doesn't suit your application, and
 the file keeps growing until you rotate it another way. AWS doesn't document how the agent on

@@ -20,6 +20,9 @@ class SelectionTests(unittest.TestCase):
             "tools/docs/check_links.py", "README.md", "mkdocs.yml",
         ]))
 
+    def test_cloudwatch_agent_guide_runs_its_windows_steps(self):
+        self.assertEqual({"infrastructure"}, self.enabled(["docs/getting-started/aws-cloudwatch-agent.md"]))
+
     def test_ui_runs_browser_tests_without_platform_matrix(self):
         self.assertEqual({"ui", "e2e"}, self.enabled(["ui/Bower.Management.Web/src/App.tsx"]))
 
