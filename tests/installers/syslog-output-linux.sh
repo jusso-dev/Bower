@@ -15,7 +15,7 @@ cp -p "$env_file" /root/bower.env.before
 listener=""
 restore() {
   [ -z "$listener" ] || kill "$listener" 2>/dev/null || true
-  rm -f /etc/rsyslog.d/10-bower-forward-test.conf
+  rm -f /etc/rsyslog.d/09-bower-forward-test-module.conf /etc/rsyslog.d/10-bower-forward-test.conf
   cp -p /root/bower.env.before "$env_file"
   rm -f /etc/bower/producer-scopes.json /etc/systemd/system/bower.service.d/syslog-output.conf
   systemctl daemon-reload
@@ -108,6 +108,10 @@ echo "syslog output: 2000 of 2000 burst events acknowledged and in the journal"
 
 # 3. rsyslog forwards the largest event Bower accepts whole (#230, #245 test 4). A local TCP
 #    listener stands in for Azure Monitor Agent's forward. Event content is never printed.
+#    Bower writes to a dedicated rsyslog socket here, not /dev/log: the line limit is in
+#    rsyslog's core, whichever input reads the message, and in the CI container imjournal
+#    stopped reading the journal after the burst ("Journal indicates no msgs when positioned
+#    at head"), which would test the input, not the size.
 if command -v dnf >/dev/null; then dnf install -y -q rsyslog >/dev/null; else apt-get install -y -qq rsyslog >/dev/null; fi
 python3 - >/root/forward-listener.log 2>&1 <<'PYTHON' &
 import socket
@@ -127,10 +131,19 @@ for _ in $(seq 1 20); do
   (exec 3<>/dev/tcp/127.0.0.1/28330) 2>/dev/null && break
   sleep 0.5
 done
-printf 'local4.* action(type="omfwd" target="127.0.0.1" port="28330" protocol="tcp")\n' \
-  > /etc/rsyslog.d/10-bower-forward-test.conf
+# The distribution's rsyslog.conf already loads imuxsock (with the system socket off).
+grep -q 'imuxsock' /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null \
+  || printf 'module(load="imuxsock")\n' > /etc/rsyslog.d/09-bower-forward-test-module.conf
+cat > /etc/rsyslog.d/10-bower-forward-test.conf <<'RSYSLOG'
+input(type="imuxsock" Socket="/run/bower-rsyslog-test.sock" CreatePath="on")
+local4.* action(type="omfwd" target="127.0.0.1" port="28330" protocol="tcp")
+RSYSLOG
 systemctl restart rsyslog
-sleep 2
+for _ in $(seq 1 20); do [ -S /run/bower-rsyslog-test.sock ] && break; sleep 0.5; done
+[ -S /run/bower-rsyslog-test.sock ] || fail "rsyslog did not create the test socket"
+printf 'BOWER_SYSLOG_OUTPUT_SOCKET=/run/bower-rsyslog-test.sock\n' >> "$env_file"
+systemctl restart bower.service
+for _ in $(seq 1 60); do curl -sf http://127.0.0.1:4319/health >/dev/null && break; sleep 1; done
 # The collector adds its own context to the envelope (its size depends on the collector id
 # and settings). Aim for about 5,400 bytes of JSON, below the 5,730 that fits the default
 # 7,680-byte message with room for that context, and well above rsyslog's old risk zone.
@@ -151,13 +164,12 @@ urllib.request.urlopen(request).read()
 print(event_id)
 PYTHON
 )"
-# On a fresh install imjournal starts at the beginning of the journal and replays the burst
-# above before this event: allow it time on a slow runner.
+# Wait for this event's line (the socket input sends it at once).
 forward_ok=0
 python3 - "$large_id" <<'PYTHON' || forward_ok=$?
 import base64, json, re, sys, time
 want = sys.argv[1]
-deadline = time.time() + 240
+deadline = time.time() + 60
 while time.time() < deadline:
     try:
         forwarded = open("/root/forwarded", "rb").read().decode(errors="replace")
@@ -186,5 +198,5 @@ if [ "$forward_ok" -ne 0 ]; then
   fail "the forwarded line for the large event was not whole"
 fi
 kill "$listener" 2>/dev/null || true
-rm -f /etc/rsyslog.d/10-bower-forward-test.conf /root/forwarded
+rm -f /etc/rsyslog.d/09-bower-forward-test-module.conf /etc/rsyslog.d/10-bower-forward-test.conf /root/forwarded /run/bower-rsyslog-test.sock
 systemctl restart rsyslog
