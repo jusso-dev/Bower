@@ -48,7 +48,7 @@
         "required": ["id", "type", "enabled"],
         "properties": {
           "id": {"type": "string"},
-          "type": {"enum": ["ama-spool", "azure-logs-ingestion"]},
+          "type": {"enum": ["ama-spool", "azure-logs-ingestion", "http", "relay", "s3", "syslog"]},
           "enabled": {"type": "boolean"}
         }
       }
