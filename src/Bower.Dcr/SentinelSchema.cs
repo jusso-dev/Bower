@@ -88,6 +88,48 @@ public sealed record SentinelSchema(
 
     public string OutputStream => $"Custom-{TableName}";
 
+    /// <summary>
+    /// The transform for Azure Monitor Agent's syslog collection (<c>deploy/bicep/ama-syslog-dcr.bicep</c>):
+    /// keep only a message whose tag is <paramref name="processName"/> and whose text is, apart
+    /// from surrounding white space, <paramref name="marker"/> followed by base64; decode it into
+    /// the envelope <c>e</c>; then project the same columns as <see cref="TransformKql"/>, read
+    /// from <c>e</c> instead of the stream. Not run against a live agent until the live run (#249).
+    /// </summary>
+    public string SyslogTransformKql(string marker, string processName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(marker);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processName);
+        HashSet<string> stream = [.. StreamColumns.Select(column => column.Name)];
+        HashSet<string> datetimes = [.. StreamColumns.Where(column => column.Type == "datetime").Select(column => column.Name)];
+        IEnumerable<string> projections = TableColumns.Select(column =>
+        {
+            string expression = column.Expression == "pack_all()"
+                ? "e"
+                : System.Text.RegularExpressions.Regex.Replace(
+                    column.Expression,
+                    @"(?<![.\w])([A-Za-z_]\w*)(?![\w(])",
+                    match => stream.Contains(match.Value) ? $"e.{match.Value}" : match.Value);
+            // The stream types datetime columns; read from dynamic JSON they need converting.
+            if (datetimes.Contains(column.Expression))
+            {
+                expression = $"todatetime({expression})";
+            }
+
+            return $"    {column.Name} = {expression}";
+        });
+
+        string quotedMarker = System.Text.RegularExpressions.Regex.Escape(marker);
+        return string.Join('\n',
+            "source",
+            $"| where ProcessName == \"{processName}\"",
+            $"| extend b64 = extract(@\"^\\s*{quotedMarker}([A-Za-z0-9+/]+={{0,2}})\\s*$\", 1, SyslogMessage)",
+            "| where isnotempty(b64)",
+            "| extend e = parse_json(base64_decodestring(b64))",
+            $"| where tostring(e.schemaVersion) == \"{SchemaVersionFilter}\"",
+            "| project",
+            string.Join(",\n", projections));
+    }
+
     /// <summary>Log Analytics table schema type names (dateTime) differ from DCR stream types (datetime).</summary>
     internal static string TableType(string type) => type == "datetime" ? "dateTime" : type;
 }

@@ -4,6 +4,14 @@
 // This rule collects that facility, decodes the envelope and maps it into BowerSecurity_CL with
 // the same columns as main.bicep's Logs Ingestion rule (tests derive one from the other).
 // Other local4 messages match no row here and are not stored. Plan-only until deployed.
+//
+// The transform is generated from SentinelSchema.Default (Bower.Dcr SyslogTransformKql);
+// CloudAgentQuickStartTests renders it and fails, naming this file, when it differs.
+// It keeps only messages tagged "bower" (ProcessName) whose whole text, apart from surrounding
+// white space, is the marker and one base64 value. Any local account can still send such a
+// message (docs/deployment/syslog-output.md, trust boundary). schemaVersion is pinned to 1.0.0,
+// as in main.bicep: when the envelope version changes, deploy the new rule first, then
+// upgrade collectors. None of this has run against a live agent yet (#249).
 targetScope = 'resourceGroup'
 
 @description('Region matching the Log Analytics workspace.')
@@ -60,8 +68,10 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
         outputStream: 'Custom-BowerSecurity_CL'
         transformKql: '''
           source
-          | where SyslogMessage contains_cs "bower-b64:"
-          | extend e = parse_json(base64_decodestring(substring(SyslogMessage, indexof(SyslogMessage, "bower-b64:") + 10)))
+          | where ProcessName == "bower"
+          | extend b64 = extract(@"^\s*bower-b64:([A-Za-z0-9+/]+={0,2})\s*$", 1, SyslogMessage)
+          | where isnotempty(b64)
+          | extend e = parse_json(base64_decodestring(b64))
           | where tostring(e.schemaVersion) == "1.0.0"
           | project
               TimeGenerated = todatetime(e.timeGenerated),

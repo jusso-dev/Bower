@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Bower.Dcr;
 using Bower.Output.Syslog;
 using Bower.Source.Aws;
 
@@ -50,30 +51,53 @@ public sealed partial class CloudAgentQuickStartTests
     }
 
     [Fact]
-    public void AmaSyslogRule_ProjectsTheSameColumnsAsTheIngestionRuleFromTheDecodedEnvelope()
+    public void AmaSyslogRule_IsGeneratedFromTheSchemaModel()
     {
-        string main = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));
+        // #236: one definition. Adding a column to SentinelSchema changes both rules or fails here.
         string syslog = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
-        string transform = Normalise(Transform(syslog));
+        string expected = SentinelSchema.Default.SyslogTransformKql(SyslogOutput.MessagePrefix, new SyslogOutputOptions { Id = "syslog" }.AppName);
 
-        // Every main.bicep projection, read from the decoded envelope e instead of the stream.
-        string[] columns = StreamColumnNames(main);
-        string expected = Regex.Replace(Normalise(Transform(main)).Split("| project ", 2)[1], $@"(?<![.\w])({string.Join('|', columns.OrderByDescending(name => name.Length))})(?!\w)", "e.$1")
-            .Replace("pack_all()", "e", StringComparison.Ordinal)
-            .Replace("TimeGenerated = e.timeGenerated", "TimeGenerated = todatetime(e.timeGenerated)", StringComparison.Ordinal)
-            .Replace("TimeObserved = e.timeObserved", "TimeObserved = todatetime(e.timeObserved)", StringComparison.Ordinal);
-        Assert.Equal(expected, transform.Split("| project ", 2)[1]);
-
-        Assert.StartsWith(
-            "source | where SyslogMessage contains_cs \"bower-b64:\" | extend e = parse_json(base64_decodestring(substring(SyslogMessage, indexof(SyslogMessage, \"bower-b64:\") + 10))) | where tostring(e.schemaVersion) == \"1.0.0\"",
-            transform,
-            StringComparison.Ordinal);
-        Assert.Contains($"\"{SyslogOutput.MessagePrefix}\") + {SyslogOutput.MessagePrefix.Length})", transform, StringComparison.Ordinal);
+        Assert.True(
+            Normalise(expected) == Normalise(Transform(syslog)),
+            "deploy/bicep/ama-syslog-dcr.bicep transformKql differs from SentinelSchema.SyslogTransformKql. Regenerate it:\n" + expected);
         Assert.Contains("outputStream: 'Custom-BowerSecurity_CL'", syslog, StringComparison.Ordinal);
         Assert.Contains("streams: ['Microsoft-Syslog']", syslog, StringComparison.Ordinal);
         Assert.Contains("param facility string = 'local4'", syslog, StringComparison.Ordinal);
         // Notice and above: Bower writes at notice, so a lower minimum would only add noise.
         Assert.Contains("logLevels: ['Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency']", syslog, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AmaSyslogRule_ProjectsTheSameColumnsAsTheIngestionRule()
+    {
+        // The generated projection reads each main.bicep column from the decoded envelope e.
+        string main = Normalise(Transform(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"))));
+        string syslog = Normalise(SentinelSchema.Default.SyslogTransformKql(SyslogOutput.MessagePrefix, "bower"));
+        string[] Columns(string kql) => [.. Regex.Matches(kql.Split("| project ", 2)[1], @"(?:^|, )(?<name>\w+) = ").Select(match => match.Groups["name"].Value)];
+
+        Assert.Equal(Columns(main), Columns(syslog));
+        Assert.Equal(SentinelSchema.Default.TableColumns.Select(column => column.Name), Columns(syslog));
+        Assert.Contains("TimeGenerated = todatetime(e.timeGenerated)", syslog, StringComparison.Ordinal);
+        Assert.Contains("RawEnvelope = e,", syslog, StringComparison.Ordinal);
+        Assert.Contains("ActorUsername = substring(tostring(e.actor.username), 0, 256)", syslog, StringComparison.Ordinal);
+        Assert.DoesNotContain("tostring(eventId)", syslog, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("bower-b64:eyJhIjoxfQ==", true)]
+    [InlineData("  bower-b64:eyJhIjoxfQ==\n", true)]
+    [InlineData("bower-b64:eyJhIjoxfQ== trailing", false)]
+    [InlineData("prefix bower-b64:eyJhIjoxfQ==", false)]
+    [InlineData("bower-b64:eyJhIjo", true)]
+    [InlineData("bower-b64:", false)]
+    public void AmaSyslogRule_DecodesOnlyAMessageThatIsTheMarkerAndOneBase64Value(string message, bool kept)
+    {
+        // The extract pattern, read with .NET's regex engine, which matches RE2 for this pattern.
+        // Whether Azure accepts and runs it the same way is check 1 of the live run (#249).
+        string transform = SentinelSchema.Default.SyslogTransformKql(SyslogOutput.MessagePrefix, "bower");
+        string pattern = Regex.Match(transform, "extract\\(@\"(?<pattern>[^\"]+)\"").Groups["pattern"].Value;
+
+        Assert.Equal(kept, Regex.IsMatch(message, pattern.Replace("$", @"\n?\z", StringComparison.Ordinal)));
     }
 
     [Fact]
@@ -150,19 +174,8 @@ public sealed partial class CloudAgentQuickStartTests
             .Select(directory => Path.Combine(directory, executable))
             .FirstOrDefault(File.Exists);
 
-    private static string[] StreamColumnNames(string bicep)
-    {
-        int start = bicep.IndexOf("'Custom-BowerSecurity': {", StringComparison.Ordinal);
-        Assert.True(start >= 0);
-        int end = bicep.IndexOf(']', start);
-        return [.. ColumnPattern().Matches(bicep[start..end]).Select(match => match.Groups["name"].Value)];
-    }
-
     private static string Transform(string bicep) =>
         Regex.Match(bicep, "transformKql: '''(?<kql>.*?)'''", RegexOptions.Singleline).Groups["kql"].Value;
 
     private static string Normalise(string kql) => Regex.Replace(kql, @"\s+", " ").Trim();
-
-    [GeneratedRegex(@"\{ name: '(?<name>[^']+)', type: '(?<type>[^']+)' \}")]
-    private static partial Regex ColumnPattern();
 }
