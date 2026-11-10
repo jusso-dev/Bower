@@ -128,7 +128,8 @@ public static partial class CollectorApplication
                 services.GetService<SyslogSource>(),
                 services.GetService<WindowsEventLogSource>(),
                 services.GetRequiredService<ManagedPrivacyProfileState>(),
-                services.GetRequiredService<QueueStoragePressure>()));
+                services.GetRequiredService<QueueStoragePressure>(),
+                services.GetService<IOutputAdapter>()));
         }
         builder.Services.AddHostedService<QueueStorageMonitor>();
         if (sources.Syslog is { } syslog)

@@ -104,9 +104,10 @@ Compression is not possible: the rule's transform language has no decompression 
 ([supported functions](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/data-collection-transformations-kql)).
 
 `collector_health` records travel this output too. Their size grows with the number of
-sources listed (at most 25 of each kind). At the default limit a record fits with up to three
-overdue sources plus syslog listeners; from four it is refused with `payload-too-large`
-(measured, #230).
+sources listed (at most 25 of each kind). With this output the collector shortens those lists,
+worst first, until the record fits the message limit, and says so in
+`monitoringCoverage.listedLimit`. Every count and problem code stays complete, so health
+records keep arriving however many sources are overdue (#230).
 
 ## Rate limits
 

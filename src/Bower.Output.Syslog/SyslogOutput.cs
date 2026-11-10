@@ -216,6 +216,13 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
     /// <summary>Whole datagram size for a JSON payload of this many UTF-8 bytes.</summary>
     internal int MessageBytes(int jsonBytes) => HeaderBytes + Base64.GetMaxEncodedToUtf8Length(jsonBytes);
 
+    /// <summary>
+    /// The largest envelope JSON, in UTF-8 bytes, that fits <see cref="SyslogOutputOptions.MaximumMessageBytes"/>
+    /// (5,730 at the defaults). The collector keeps its own records, such as collector_health,
+    /// within it.
+    /// </summary>
+    public int MaximumJsonBytes => (options.MaximumMessageBytes - HeaderBytes) / 4 * 3;
+
     /// <summary>The datagram for one envelope, or null when it is invalid text or exceeds the limit.</summary>
     internal byte[]? TryFormat(string payload)
     {
