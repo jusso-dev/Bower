@@ -72,7 +72,10 @@ duplicate runs write no extra audit rows.
 - **Management API:** `GET /api/jobs` (`View` policy) and
   `POST /api/jobs/{id}/trigger` (`Administer` policy, audited as `job.triggered`).
 - **Collector:** `GET /v1/status` with the ingest token returns queue counts and
-  job states.
+  job states. The fields are read at slightly different moments: for a short time after a
+  failed delivery, `lastFailureCode` can name the failure while the queue counts still show
+  the event as uploading. Read the status again rather than treat one response as a
+  consistent snapshot.
 
 There is no scheduler dashboard: the management API uses bearer tokens only, and a
 dashboard would add a cookie-authenticated surface. Job status is metadata only — no
