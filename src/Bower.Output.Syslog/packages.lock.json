@@ -16,6 +16,9 @@
       },
       "bower.contracts": {
         "type": "Project"
+      },
+      "bower.dcr": {
+        "type": "Project"
       }
     }
   }

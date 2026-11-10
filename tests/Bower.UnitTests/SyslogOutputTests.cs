@@ -264,6 +264,33 @@ public sealed class SyslogOutputTests
         Assert.Equal((SyslogOutput.AccessDeniedCode, true), (Assert.Single(result.Failures).Code, result.Failures[0].IsRetryable));
     }
 
+    [Theory]
+    [InlineData("""{"schemaVersion":"1.0.0","eventId":"bad","eventType":"authentication_failure"}""", "preflight-time-generated-missing")]
+    [InlineData("""{"schemaVersion":"1.0.0","eventId":"bad","timeGenerated":"2026-11-10T01:02:03Z","actor":"a string, not an object"}""", "preflight-type-mismatch")]
+    [InlineData("""{"schemaVersion":"1.0.0","eventId":"other","timeGenerated":"2026-11-10T01:02:03Z"}""", "payload-event-id-mismatch")]
+    [InlineData("""not json""", "payload-invalid-json")]
+    [InlineData("\"bad\ud800\"", "payload-invalid-json")]
+    public async Task Deliver_RefusesWhatTheLogsIngestionOutputRefuses(string payload, string code)
+    {
+        // #232: both outputs feed BowerSecurity_CL, so both run the same record checks and
+        // dead-letter by the same names.
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
+        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
+
+        DeliveryResult result = await output.DeliverAsync(
+            [new("bad", "sha256:bad", payload, Now), new("good", "sha256:good", Envelope("good"), Now)],
+            cancellationToken);
+
+        Assert.Equal(("bad", code, false), (Assert.Single(result.Failures).EventId, result.Failures[0].Code, result.Failures[0].IsRetryable));
+        Assert.Equal(["good"], result.AcknowledgedEventIds);
+
+        // The Logs Ingestion output refuses the same record with the same code.
+        Assert.Equal(code, await LogsIngestionRefusalAsync(payload, cancellationToken));
+    }
+
     [Fact]
     public async Task Deliver_ReconnectsAfterTheDaemonRestarts()
     {
@@ -505,6 +532,31 @@ public sealed class SyslogOutputTests
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", IngestToken);
         using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
         return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    /// <summary>The code the Logs Ingestion output gives this payload before any upload.</summary>
+    private static async Task<string> LogsIngestionRefusalAsync(string payload, CancellationToken cancellationToken)
+    {
+        Bower.Output.AzureLogsIngestion.AzureLogsIngestionOutput output = new(
+            new Bower.Output.AzureLogsIngestion.AzureLogsIngestionOptions
+            {
+                Id = "azure-logs-ingestion",
+                Endpoint = new Uri("https://example.invalid"),
+                DcrImmutableId = "dcr-00000000000000000000000000000000",
+                StreamName = "Custom-BowerSecurity"
+            },
+            new NeverCredential());
+        DeliveryResult result = await output.DeliverAsync([new("bad", "sha256:bad", payload, Now)], cancellationToken);
+        return Assert.Single(result.Failures).Code;
+    }
+
+    private sealed class NeverCredential : Azure.Core.TokenCredential
+    {
+        public override Azure.Core.AccessToken GetToken(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("No upload is expected for a refused record.");
+
+        public override ValueTask<Azure.Core.AccessToken> GetTokenAsync(Azure.Core.TokenRequestContext requestContext, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("No upload is expected for a refused record.");
     }
 
     /// <summary>A minimal envelope that passes the record checks, with optional extra members.</summary>

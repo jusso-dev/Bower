@@ -848,7 +848,8 @@
       "bower.output.syslog": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Dcr": "[1.0.0, )"
         }
       },
       "bower.packs": {

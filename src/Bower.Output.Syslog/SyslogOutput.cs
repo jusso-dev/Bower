@@ -2,7 +2,9 @@ using System.Buffers.Text;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Bower.Abstractions;
+using Bower.Dcr;
 
 namespace Bower.Output.Syslog;
 
@@ -36,8 +38,11 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
     /// <summary>The message does not fit one datagram; never truncated.</summary>
     public const string MessageTooLargeCode = "payload-too-large";
 
-    /// <summary>The payload is not valid UTF-16 text (an unpaired surrogate).</summary>
+    /// <summary>The payload is not one JSON object in valid UTF-16 text.</summary>
     public const string InvalidPayloadCode = "payload-invalid-json";
+
+    /// <summary>The payload's eventId differs from the queued event's.</summary>
+    public const string EventIdMismatchCode = "payload-event-id-mismatch";
 
     /// <summary>Marks the encoded envelope inside the syslog message.</summary>
     public const string MessagePrefix = "bower-b64:";
@@ -173,6 +178,32 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
         catch (EncoderFallbackException)
         {
             // An unpaired surrogate: not a size problem.
+            return InvalidPayloadCode;
+        }
+
+        // The same record checks the Logs Ingestion output runs, against the same table.
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(json);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return InvalidPayloadCode;
+            }
+
+            if (!document.RootElement.TryGetProperty("eventId", out JsonElement eventId)
+                || eventId.ValueKind != JsonValueKind.String
+                || !string.Equals(eventId.GetString(), item.EventId, StringComparison.Ordinal))
+            {
+                return EventIdMismatchCode;
+            }
+
+            if (IngestionPreflight.Check(json, SentinelSchema.Default) is { Count: > 0 } issues)
+            {
+                return $"preflight-{issues[0].Code}";
+            }
+        }
+        catch (JsonException)
+        {
             return InvalidPayloadCode;
         }
 
@@ -454,7 +485,7 @@ public sealed record SyslogOutputOptions
     /// </summary>
     public int Severity { get; init; } = 5;
 
-    /// <summary>The syslog tag, which Azure Monitor Agent records as ProcessName.</summary>
+    /// <summary>The syslog tag, which Azure Monitor Agent records as ProcessName (the rule checks it).</summary>
     public string AppName { get; init; } = "bower";
 
     /// <summary>Whole datagram limit, header included.</summary>
