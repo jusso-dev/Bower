@@ -14,11 +14,19 @@
 // upgrade collectors. None of this has run against a live agent yet (#249).
 targetScope = 'resourceGroup'
 
-@description('Region matching the Log Analytics workspace.')
-param location string = resourceGroup().location
-
 @description('Existing Log Analytics workspace name, already holding BowerSecurity_CL from main.bicep.')
 param workspaceName string
+
+@description('Resource group of the workspace. Defaults to the deployment\'s resource group.')
+param workspaceResourceGroup string = resourceGroup().name
+
+// Bicep cannot default this to the existing workspace's region: a resource's location must be
+// known when the deployment starts (BCP120). Pass the workspace's region when it differs.
+@description('Region for the rule. Must be the workspace\'s region.')
+param location string = resourceGroup().location
+
+@description('Tags for the rule.')
+param tags object = {}
 
 @description('Bower resource name prefix.')
 @minLength(3)
@@ -34,11 +42,13 @@ param dataCollectionEndpointId string = ''
 
 resource workspace 'Microsoft.OperationalInsights/workspaces@2025-07-01' existing = {
   name: workspaceName
+  scope: resourceGroup(workspaceResourceGroup)
 }
 
 resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
   name: '${namePrefix}-ama-syslog-dcr'
   location: location
+  tags: tags
   kind: 'Linux'
   properties: {
     description: 'Bower security events from local syslog, collected by Azure Monitor Agent'
