@@ -262,6 +262,10 @@ jobs:
           python3 -m compileall -q lab/aws/monitoring
           for script in lab/aws/scripts/*.sh; do bash -n "$script"; done
           python3 lab/aws/scripts/template.py "$RUNNER_TEMP/bower-lab.json"
+      # The quick start's logrotate config against the guide's directory permissions (#226).
+      # The script adds users and writes /var/log, so it runs in a throwaway container.
+      - name: Rotate the CloudWatch agent quick start's event file
+        run: docker run --rm -v "$GITHUB_WORKSPACE/examples/cloud-agents:/ex:ro" ubuntu:24.04 bash /ex/aws/test_logrotate.sh
       - name: Test Sentinel analytics validation harness
         run: python3 -m unittest discover -s deploy/sentinel/analytics/validation -v
       - name: Check Windows lab script syntax

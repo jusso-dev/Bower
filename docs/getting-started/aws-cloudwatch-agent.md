@@ -63,8 +63,23 @@ groups it started with, so restart the application, and the agent if you added i
 
 Rotate the file with logrotate
 ([`logrotate-bower-events`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/logrotate-bower-events)
-goes in `/etc/logrotate.d/`). It recreates the file with the same owner, group and mode. The
-agent finishes a renamed file, then follows the new one.
+goes in `/etc/logrotate.d/`). It renames the file to `events.jsonl.1` and creates a new
+`events.jsonl` with the same owner, group and mode. Its `su root bower-events` line is
+required: without it logrotate refuses to rotate a file in a group-writable directory
+("parent directory has insecure permissions") and the file grows without limit. Check it with
+`sudo logrotate -d /etc/logrotate.d/bower-events`.
+
+What your application must do at rotation depends on how it writes:
+
+- **Opens the file for each event** (as `emit_event.py` does): nothing. The next event goes to
+  the new file.
+- **Keeps the file open**: it goes on appending to the renamed `events.jsonl.1` until it
+  reopens the path. Make it reopen on a signal and send that signal from a `postrotate` block
+  in the logrotate file (the example shows where). Don't switch to `copytruncate`: lines
+  written between the copy and the truncate are lost.
+
+`examples/cloud-agents/aws/test_logrotate.sh` checks all of this in a container (Ubuntu 24.04
+and Amazon Linux 2023), and CI runs it.
 
 !!! warning "Events are stored before Bower redacts them"
     In this path CloudWatch Logs and the S3 bucket hold the event as the server wrote it.
