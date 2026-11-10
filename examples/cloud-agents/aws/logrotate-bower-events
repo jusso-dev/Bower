@@ -8,5 +8,6 @@
     notifempty
     compress
     delaycompress
-    create 0640 root adm
+    # Same owner, group and mode as the original, so the application can keep appending.
+    create 0660 root bower-events
 }

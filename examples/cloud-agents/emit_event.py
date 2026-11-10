@@ -35,11 +35,16 @@ def append(path: str, record: dict) -> None:
     line = json.dumps(record, separators=(",", ":"), ensure_ascii=False) + "\n"
     # O_APPEND makes each write land at the end, so concurrent writers never interleave
     # inside a line shorter than the pipe buffer.
-    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o640)
+    data = line.encode("utf-8")
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o660)
     try:
-        os.write(fd, line.encode("utf-8"))
+        written = os.write(fd, data)
     finally:
         os.close(fd)
+    if written != len(data):
+        # A short write (for example a full disk) leaves a partial line. Don't retry here:
+        # another writer may already have appended after it. Report it so it can be fixed.
+        raise OSError(f"short write to {path}: {written} of {len(data)} bytes; the last line is incomplete")
 
 
 if __name__ == "__main__":

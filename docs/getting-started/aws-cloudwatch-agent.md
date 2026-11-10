@@ -41,14 +41,26 @@ written with a single append. The minimum is:
   and append the result instead of posting it. To try the path, append a test event with
   [`examples/cloud-agents/emit_event.py`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/emit_event.py):
 
+Give the application a group that can write the file, and keep everyone else out. Replace
+`orders-api` with the account your application runs as:
+
 ```bash
-sudo install -d -m 0750 -o root -g adm /var/log/bower
-sudo python3 examples/cloud-agents/emit_event.py /var/log/bower/events.jsonl
+sudo groupadd --system bower-events
+sudo usermod -a -G bower-events orders-api
+sudo install -d -m 2770 -o root -g bower-events /var/log/bower
+sudo install -m 0660 -o root -g bower-events /dev/null /var/log/bower/events.jsonl
+sudo -u orders-api python3 examples/cloud-agents/emit_event.py /var/log/bower/events.jsonl
 ```
+
+The setgid directory keeps new files in the `bower-events` group. The CloudWatch agent runs
+as root by default and can read the file. If your agent configuration sets `run_as_user`
+(for example `cwagent`), add that account to `bower-events` too, and restart the application
+so it picks up the new group.
 
 Rotate the file with logrotate
 ([`logrotate-bower-events`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/logrotate-bower-events)
-goes in `/etc/logrotate.d/`). The agent finishes a renamed file, then follows the new one.
+goes in `/etc/logrotate.d/`). It recreates the file with the same owner, group and mode. The
+agent finishes a renamed file, then follows the new one.
 
 !!! warning "Events are stored before Bower redacts them"
     In this path CloudWatch Logs and the S3 bucket hold the event as the server wrote it.
@@ -59,12 +71,18 @@ goes in `/etc/logrotate.d/`). The agent finishes a renamed file, then follows th
 
 ## 2. Configure the CloudWatch agent
 
-Create the log group once, with a short retention:
+Create the log group once, with a short retention, in the Region where you deploy the
+Bower stack in step 3 (Sydney here):
 
 ```bash
-aws logs create-log-group --log-group-name /bower/app-events
-aws logs put-retention-policy --log-group-name /bower/app-events --retention-in-days 7
+export AWS_REGION=ap-southeast-2
+aws logs create-log-group --region "$AWS_REGION" --log-group-name /bower/app-events
+aws logs put-retention-policy --region "$AWS_REGION" --log-group-name /bower/app-events --retention-in-days 7
 ```
+
+The agent on each server must send to the same Region. On EC2 it uses the instance's Region
+by default. On a server outside AWS it uses the `region` in the `AmazonCloudWatchAgent`
+profile of its AWS config file.
 
 Add the Bower file to the agent configuration. If the agent already has a configuration,
 merge this `collect_list` entry into it rather than replacing the file:
@@ -107,9 +125,15 @@ Windows ([`amazon-cloudwatch-agent.windows.json`](https://github.com/jusso-dev/B
 file `C:\ProgramData\BowerEvents\events.jsonl`):
 
 ```powershell
+New-Item -ItemType Directory -Force -Path C:\ProgramData\BowerEvents | Out-Null
+Copy-Item examples\cloud-agents\aws\amazon-cloudwatch-agent.windows.json `
+  C:\ProgramData\BowerEvents\bower-events.json
 & "C:\Program Files\Amazon\AmazonCloudWatchAgent\amazon-cloudwatch-agent-ctl.ps1" `
   -a append-config -m ec2 -s -c file:C:\ProgramData\BowerEvents\bower-events.json
 ```
+
+Grant the application's account Modify on `C:\ProgramData\BowerEvents` so it can create and
+append to `events.jsonl`. The agent runs as Local System and can read it.
 
 Use `-m onPremise` on servers outside EC2. `append-config` keeps the agent's existing
 sources; `fetch-config` would replace them.
@@ -125,6 +149,16 @@ aws cloudformation deploy --region ap-southeast-2 \
   --stack-name bower-aws-security \
   --capabilities CAPABILITY_IAM \
   --parameter-overrides AppLogBucketName=acme-bower-app-logs AppLogGroupName=/bower/app-events
+```
+
+Then allow the new bucket in the `bower-cloud` agent. It ignores S3 notifications from any
+bucket not listed in `BOWER_AWS_S3_BUCKETS` and deletes them as unsupported, so without this
+the events reach the queue but never Sentinel. Add the bucket to any already listed:
+
+```bash
+# in the environment of the bower-cloud agent (for example deploy/docker/compose.cloud.yaml)
+BOWER_AWS_S3_BUCKETS=acme-bower-app-logs
+docker compose -f deploy/docker/compose.cloud.yaml up -d   # recreate the agent with the new setting
 ```
 
 The stack takes one log group. To collect from several applications, point their agents at
