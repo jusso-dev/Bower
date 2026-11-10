@@ -1,10 +1,16 @@
 using System.Diagnostics;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Collector;
+using Bower.Contracts;
 using Bower.Output.Syslog;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Logging;
 
 namespace Bower.UnitTests;
 
@@ -301,6 +307,17 @@ public sealed class SyslogOutputTests
         Assert.Equal(500, result.AcknowledgedEventIds.Count + result.Failures.Count);
     }
 
+    [Fact]
+    public void Probe_NamesTheErrorForAMissingSocket()
+    {
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
+
+        Assert.Null(SyslogOutput.Probe(daemon.Path));
+        Assert.NotNull(SyslogOutput.Probe(Path.Combine(directory.Path, "missing.sock")));
+    }
+
     [Theory]
     [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "relative/log.sock", "must be an absolute path")]
     [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "/run/a-socket-path-that-is-far-too-long-for-sun-path-because-it-keeps-going-and-going-and-going-and-on/log.sock", "must be at most")]
@@ -315,6 +332,7 @@ public sealed class SyslogOutputTests
     [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "31", "between 1 and 30")]
     public void Settings_RefuseAnInvalidSyslogOutput(string name, string value, string message)
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog before these checks.");
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => CollectorSettings.FromEnvironment(Syslog(new() { [name] = value })));
 
@@ -324,6 +342,7 @@ public sealed class SyslogOutputTests
     [Fact]
     public void Settings_BusyWaitMustFitInsideTheDeliveryTimeout()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog before these checks.");
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new()
         {
             ["BOWER_DELIVERY_TIMEOUT_SECONDS"] = "5",
@@ -336,6 +355,7 @@ public sealed class SyslogOutputTests
     [Fact]
     public void Settings_DefaultToDevLogAndLocal4()
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog.");
         CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog([]));
 
         Assert.Equal(("syslog", "/dev/log", 20, 7_680, TimeSpan.FromSeconds(2)),
@@ -352,15 +372,14 @@ public sealed class SyslogOutputTests
         Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_SOCKET"] = path + "a" })));
     }
 
-    /// <summary>A minimal envelope that passes the record checks, with optional extra members.</summary>
-    private static string Envelope(string eventId, string extra = "") =>
-        $$"""{"schemaVersion":"1.0.0","eventId":"{{eventId}}",{{extra.Trim()}}"timeGenerated":"2026-11-10T01:02:03.456Z"}""";
-
-    private static QueuedEvent[] Burst(int count, int padding)
+    [Fact]
+    public void Settings_RefuseTheSyslogOutputOnWindowsAndNameThePlatform()
     {
-        string note = new('a', padding);
-        return [.. Enumerable.Range(0, count).Select(index =>
-            new QueuedEvent($"e{index}", $"sha256:{index}", Envelope($"e{index}", $$""" "attributes":{"note":"{{note}}"}, """), Now))];
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Checks the Windows start-up message.");
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog([])));
+
+        Assert.Contains("Linux only", error.Message, StringComparison.Ordinal);
+        Assert.Contains("azure-logs-ingestion", error.Message, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -377,6 +396,7 @@ public sealed class SyslogOutputTests
     [InlineData("23", 23)]
     public void Settings_AcceptEveryFacilityTheRuleCanCollectByName(string value, int number)
     {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog.");
         CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_FACILITY"] = value }));
 
         Assert.Equal(number, settings.SyslogOutputFacility);
@@ -386,6 +406,116 @@ public sealed class SyslogOutputTests
         allowed = allowed[..allowed.IndexOf(')', StringComparison.Ordinal)];
         Assert.Contains($"'{SyslogOutputOptions.FacilityName(number)}'", allowed, StringComparison.Ordinal);
         Assert.Equal(SyslogOutputOptions.FacilityNames.Select(name => $"'{name}'"), allowed.Split('[', ']')[1].Split(", "));
+    }
+
+    [Fact]
+    public async Task Collector_DeliversAnAcceptedEventToTheSyslogSocketAndReportsTheOutput()
+    {
+        // #245: the factory mapping, policy, redaction, queue, worker and status together.
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
+        await using WebApplication app = await StartCollectorAsync(directory, daemon.Path, cancellationToken);
+        HttpClient client = app.GetTestClient();
+
+        Assert.True((await PostAsync(client, "syslog-e2e-1", cancellationToken)).IsSuccessStatusCode);
+
+        string message = await Task.Run(daemon.Receive, cancellationToken);
+        Assert.StartsWith("<165>", message, StringComparison.Ordinal);
+        Assert.Contains(" bower: bower-b64:", message, StringComparison.Ordinal);
+        using JsonDocument envelope = JsonDocument.Parse(Decode(message));
+        Assert.Equal("syslog-e2e-1", envelope.RootElement.GetProperty("eventId").GetString());
+        // The arranged envelope: policy decision and collector stamped before persistence.
+        Assert.Equal("collector-test", envelope.RootElement.GetProperty("collector").GetProperty("id").GetString());
+        Assert.False(string.IsNullOrEmpty(envelope.RootElement.GetProperty("security").GetProperty("policyId").GetString()));
+        string status = await Polling.UntilAsync(
+            () => StatusAsync(client, cancellationToken),
+            static body => body.Contains("\"delivered\":1", StringComparison.Ordinal),
+            cancellationToken);
+        Assert.Contains("\"output\":\"syslog\"", status, StringComparison.Ordinal);
+        await app.StopAsync(cancellationToken);
+    }
+
+    [Fact]
+    public async Task Collector_ReportsAMissingSyslogSocketAtStartUpAndInStatus()
+    {
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        using CapturingLoggerProvider logs = new();
+        string missing = Path.Combine(directory.Path, "missing.sock");
+        await using WebApplication app = await StartCollectorAsync(directory, missing, cancellationToken, logs);
+        HttpClient client = app.GetTestClient();
+
+        Assert.Contains(logs.Messages, line => line.Contains($"Syslog output socket {missing} does not accept connections", StringComparison.Ordinal));
+        Assert.Contains(logs.Messages, line => line.Contains("on facility local4", StringComparison.Ordinal));
+        Assert.True((await PostAsync(client, "syslog-e2e-2", cancellationToken)).IsSuccessStatusCode);
+        string status = await Polling.UntilAsync(
+            () => StatusAsync(client, cancellationToken),
+            static body => body.Contains("destination-syslog-unavailable", StringComparison.Ordinal)
+                && body.Contains("\"retrying\":1", StringComparison.Ordinal),
+            cancellationToken);
+        Assert.Contains("\"output\":\"syslog\"", status, StringComparison.Ordinal);
+        await app.StopAsync(cancellationToken);
+    }
+
+    private const string IngestToken = "syslog-output-ingest-token-0123456789abcdef";
+
+    private static async Task<WebApplication> StartCollectorAsync(
+        ShortDirectory directory, string socket, CancellationToken cancellationToken, CapturingLoggerProvider? logs = null)
+    {
+        CollectorSettings settings = new()
+        {
+            ListenUrl = "http://127.0.0.1:4319",
+            QueuePath = Path.Combine(directory.Path, "queue.db"),
+            PolicyDirectory = Path.Combine(AppContext.BaseDirectory, "policies", "default"),
+            CollectorId = "collector-test",
+            SingleTrustDomain = true,
+            IngestToken = IngestToken,
+            OutputType = "syslog",
+            SyslogOutputSocket = socket
+        };
+        WebApplication app = CollectorApplication.Build(settings, builder =>
+        {
+            builder.WebHost.UseTestServer();
+            if (logs is not null)
+            {
+                builder.Logging.AddProvider(logs);
+            }
+        });
+        await CollectorApplication.InitializeAsync(app, cancellationToken);
+        await app.StartAsync(cancellationToken);
+        return app;
+    }
+
+    private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string eventId, CancellationToken cancellationToken)
+    {
+        using HttpRequestMessage post = new(HttpMethod.Post, "/v1/events")
+        {
+            Content = JsonContent.Create(TestEvents.AuthenticationFailure(DateTimeOffset.UtcNow, eventId), options: BowerJson.Options)
+        };
+        post.Headers.Authorization = new AuthenticationHeaderValue("Bearer", IngestToken);
+        return await client.SendAsync(post, cancellationToken);
+    }
+
+    private static async Task<string> StatusAsync(HttpClient client, CancellationToken cancellationToken)
+    {
+        using HttpRequestMessage request = new(HttpMethod.Get, "/v1/status");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", IngestToken);
+        using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+        return await response.Content.ReadAsStringAsync(cancellationToken);
+    }
+
+    /// <summary>A minimal envelope that passes the record checks, with optional extra members.</summary>
+    private static string Envelope(string eventId, string extra = "") =>
+        $$"""{"schemaVersion":"1.0.0","eventId":"{{eventId}}",{{extra.Trim()}}"timeGenerated":"2026-11-10T01:02:03.456Z"}""";
+
+    private static QueuedEvent[] Burst(int count, int padding)
+    {
+        string note = new('a', padding);
+        return [.. Enumerable.Range(0, count).Select(index =>
+            new QueuedEvent($"e{index}", $"sha256:{index}", Envelope($"e{index}", $$""" "attributes":{"note":"{{note}}"}, """), Now))];
     }
 
     private static string Base64(string json) => Convert.ToBase64String(Encoding.UTF8.GetBytes(json));

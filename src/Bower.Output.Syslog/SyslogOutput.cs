@@ -137,6 +137,31 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
         return new DeliveryResult(acknowledged, failures, null);
     }
 
+    /// <summary>
+    /// Connects a fresh socket once, sends nothing. Null when the daemon accepts connections,
+    /// otherwise the socket error name (for a start-up warning or <c>bower doctor</c>).
+    /// </summary>
+    public string? Probe() => Probe(options.SocketPath);
+
+    /// <inheritdoc cref="Probe()"/>
+    public static string? Probe(string socketPath)
+    {
+        try
+        {
+            using Socket probe = new(AddressFamily.Unix, SocketType.Dgram, ProtocolType.Unspecified);
+            probe.Connect(new UnixDomainSocketEndPoint(socketPath));
+            return null;
+        }
+        catch (SocketException exception)
+        {
+            return exception.SocketErrorCode.ToString();
+        }
+        catch (Exception exception) when (exception is PlatformNotSupportedException or NotSupportedException or ArgumentException)
+        {
+            return "NotSupported";
+        }
+    }
+
     /// <summary>The failure code that refuses this event before sending, or null to send it.</summary>
     private string? Prepare(QueuedEvent item)
     {

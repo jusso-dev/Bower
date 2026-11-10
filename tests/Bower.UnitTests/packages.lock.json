@@ -688,6 +688,7 @@
           "Bower.Core": "[1.0.0, )",
           "Bower.Dcr": "[1.0.0, )",
           "Bower.Evidence": "[1.0.0, )",
+          "Bower.Output.Syslog": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",
           "Bower.Persistence": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",

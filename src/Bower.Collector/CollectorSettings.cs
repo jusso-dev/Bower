@@ -526,6 +526,13 @@ public sealed record CollectorSettings
 
         if (OutputType == "syslog")
         {
+            if (OperatingSystem.IsWindows())
+            {
+                // Windows has no datagram Unix sockets and no /dev/log.
+                throw new InvalidOperationException(
+                    "BOWER_OUTPUT=syslog writes to a local syslog socket and runs on Linux only. On Windows use BOWER_OUTPUT=azure-logs-ingestion.");
+            }
+
             if (SyslogOutputOptions.SocketPathProblem(SyslogOutputSocket) is { } problem)
             {
                 throw new InvalidOperationException($"BOWER_SYSLOG_OUTPUT_SOCKET {problem}.");

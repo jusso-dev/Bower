@@ -332,6 +332,19 @@ public static partial class CollectorApplication
             LogUnauthenticatedIngest(app.Logger);
         }
 
+        if (app.Services.GetService<IOutputAdapter>() is SyslogOutput syslog)
+        {
+            // Do not stop start-up: the daemon may come up later and the queue is durable. Say
+            // once, by path and error class, what delivery will report as unavailable.
+            if (syslog.Probe() is { } problem)
+            {
+                LogSyslogSocketUnavailable(app.Logger, settings.SyslogOutputSocket, problem);
+            }
+
+            string facility = SyslogOutputOptions.FacilityName(settings.SyslogOutputFacility!.Value);
+            LogSyslogOutput(app.Logger, settings.SyslogOutputSocket, facility, settings.SyslogOutputMaximumBytes);
+        }
+
         IDurableEventStore queue = app.Services.GetRequiredService<IDurableEventStore>();
         await queue.InitializeAsync(cancellationToken);
         await RecoverFromUncleanShutdownAsync(app, settings, queue, cancellationToken);
@@ -709,4 +722,16 @@ public static partial class CollectorApplication
         Message = "Collector ingest authentication is disabled on a non-loopback listener. " +
             "Use BOWER_ALLOW_UNAUTHENTICATED_INGEST only on an isolated network.")]
     private static partial void LogUnauthenticatedIngest(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1010,
+        Level = LogLevel.Warning,
+        Message = "Syslog output socket {SocketPath} does not accept connections ({SocketError}). Events stay queued and are retried; check that the syslog daemon is running and the path is right.")]
+    private static partial void LogSyslogSocketUnavailable(ILogger logger, string socketPath, string socketError);
+
+    [LoggerMessage(
+        EventId = 1011,
+        Level = LogLevel.Information,
+        Message = "Syslog output writes to {SocketPath} on facility {Facility}, at most {MaximumBytes} bytes per message. The collection rule's facility must match.")]
+    private static partial void LogSyslogOutput(ILogger logger, string socketPath, string facility, int maximumBytes);
 }
