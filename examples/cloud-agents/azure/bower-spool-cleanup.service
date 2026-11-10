@@ -1,0 +1,7 @@
+[Unit]
+Description=Delete Bower AMA spool files older than three days
+
+[Service]
+Type=oneshot
+# Azure Monitor recommends leaving at least two days for collection before clean-up.
+ExecStart=/usr/bin/find /var/spool/bower/ready -maxdepth 1 -type f -name '*.jsonl' -mtime +3 -delete

@@ -92,7 +92,7 @@ public sealed partial class AsvsExampleContractTests
     // Structural JSON Schema subset the envelope uses: type, required, properties,
     // additionalProperties (bool or schema), enum, const, pattern, minLength, maxLength,
     // minimum, maximum, maxProperties, oneOf and local $ref. Anything else fails loudly.
-    private static void Validate(JsonElement value, JsonElement schema, JsonElement root, string path, List<string> errors)
+    internal static void Validate(JsonElement value, JsonElement schema, JsonElement root, string path, List<string> errors)
     {
         if (schema.TryGetProperty("$ref", out JsonElement reference))
         {

@@ -1,5 +1,8 @@
 # AMA companion mode
 
+For a step-by-step setup with a ready-made collection rule, see
+[Quick start: Azure Monitor Agent](../getting-started/azure-monitor-agent.md).
+
 Set `BOWER_OUTPUT=ama-spool` and `BOWER_AMA_SPOOL_PATH` to a restrictive local
 directory. Bower writes `active/*.tmp`, flushes each file, then atomically renames
 it to `ready/*.jsonl` and syncs the ready directory (Linux and macOS), so a ready

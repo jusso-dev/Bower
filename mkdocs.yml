@@ -74,6 +74,8 @@ nav:
       - Your first verified event: getting-started/first-event.md
       - Concepts: getting-started/concepts.md
       - Choose a deployment: getting-started/deployment.md
+      - "Quick start: AWS CloudWatch agent": getting-started/aws-cloudwatch-agent.md
+      - "Quick start: Azure Monitor Agent": getting-started/azure-monitor-agent.md
       - FAQ: getting-started/faq.md
   - Guides:
       - guides/index.md
