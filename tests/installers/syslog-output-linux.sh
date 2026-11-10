@@ -134,9 +134,12 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 # A separate rsyslogd with only this input and the forward: the distribution's instance (its
-# journal input) is left alone and cannot delay or swallow the message. Its files live where
-# a confined rsyslogd may read and write (/etc, /var/lib/rsyslog, /var/log, /run): on the CI
-# host it could not open a config under /root ("Permission denied").
+# journal input) is left alone and cannot delay or swallow the message.
+# The Ubuntu CI host confines /usr/sbin/rsyslogd with AppArmor, and AppArmor attaches by
+# binary path, so the profile applies inside this container too: rsyslogd could not open a
+# config under /root or /etc ("Permission denied"). A copy of the same binary at another
+# path runs unconfined, which is what a test-only instance needs. The real rsyslogd and its
+# confinement are untouched.
 cat > /etc/rsyslog-bower-test.conf <<'RSYSLOG'
 global(workDirectory="/var/lib/rsyslog/bower-test")
 module(load="imuxsock" SysSock.Use="off")
@@ -144,10 +147,13 @@ input(type="imuxsock" Socket="/run/bower-rsyslog-test.sock" CreatePath="on")
 local4.* action(type="omfwd" target="127.0.0.1" port="28330" protocol="tcp")
 RSYSLOG
 install -d /var/lib/rsyslog/bower-test
-rsyslogd -N1 -f /etc/rsyslog-bower-test.conf >/var/log/rsyslog-bower-test.log 2>&1 \
+install -m 0755 "$(command -v rsyslogd)" /usr/local/sbin/rsyslogd-bower-test
+/usr/local/sbin/rsyslogd-bower-test -N1 -f /etc/rsyslog-bower-test.conf >/var/log/rsyslog-bower-test.log 2>&1 \
   || { cat /var/log/rsyslog-bower-test.log >&2; fail "the test rsyslog configuration is invalid"; }
-rsyslogd -n -f /etc/rsyslog-bower-test.conf -i /run/bower-forward-test.pid >>/var/log/rsyslog-bower-test.log 2>&1 &
+/usr/local/sbin/rsyslogd-bower-test -n -f /etc/rsyslog-bower-test.conf -i /run/bower-forward-test.pid >>/var/log/rsyslog-bower-test.log 2>&1 &
 test_rsyslog=$!
+# Record the confinement each binary runs under, as evidence for the comment above.
+echo "confinement: test rsyslogd $(cat "/proc/$test_rsyslog/attr/current" 2>/dev/null || echo unknown); system rsyslogd $(cat "/proc/$(pgrep -xo rsyslogd || echo 0)/attr/current" 2>/dev/null || echo 'not running')"
 for _ in $(seq 1 60); do [ -S /run/bower-rsyslog-test.sock ] && break; sleep 0.5; done
 [ -S /run/bower-rsyslog-test.sock ] || { cat /var/log/rsyslog-bower-test.log >&2; fail "rsyslog did not create the test socket"; }
 printf 'BOWER_SYSLOG_OUTPUT_SOCKET=/run/bower-rsyslog-test.sock\n' >> "$env_file"
@@ -208,4 +214,4 @@ if [ "$forward_ok" -ne 0 ]; then
 fi
 kill "$listener" 2>/dev/null || true
 kill "$test_rsyslog" 2>/dev/null || true
-rm -rf /root/forwarded /run/bower-rsyslog-test.sock /var/lib/rsyslog/bower-test /etc/rsyslog-bower-test.conf /var/log/rsyslog-bower-test.log
+rm -rf /root/forwarded /run/bower-rsyslog-test.sock /var/lib/rsyslog/bower-test /etc/rsyslog-bower-test.conf /var/log/rsyslog-bower-test.log /usr/local/sbin/rsyslogd-bower-test
