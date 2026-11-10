@@ -128,8 +128,12 @@ public sealed record CollectorSettings
     /// <summary>BOWER_SYSLOG_OUTPUT_SOCKET: the local syslog daemon's datagram socket (BOWER_OUTPUT=syslog).</summary>
     public string SyslogOutputSocket { get; init; } = "/dev/log";
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_FACILITY: syslog facility number (20, local4, by default).</summary>
-    public int SyslogOutputFacility { get; init; } = 20;
+    /// <summary>
+    /// BOWER_SYSLOG_OUTPUT_FACILITY: <c>local0</c> to <c>local7</c> (numbers 16 to 23 also
+    /// accepted), <c>local4</c> by default. The collection rule's <c>facility</c> must match.
+    /// Held as the facility number; null when the value was not one of those.
+    /// </summary>
+    public int? SyslogOutputFacility { get; init; } = 20;
 
     /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole datagram limit; keep it at least 512 below rsyslog's MaxMessageSize.</summary>
     public int SyslogOutputMaximumBytes { get; init; } = SyslogOutputOptions.DefaultMaximumMessageBytes;
@@ -372,7 +376,9 @@ public sealed record CollectorSettings
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
             SyslogOutputSocket = Blank(read("BOWER_SYSLOG_OUTPUT_SOCKET")) ?? "/dev/log",
-            SyslogOutputFacility = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_FACILITY", 20),
+            SyslogOutputFacility = Blank(read("BOWER_SYSLOG_OUTPUT_FACILITY")) is { } facility
+                ? SyslogOutputOptions.TryParseFacility(facility, out int number) ? number : null
+                : 20,
             SyslogOutputMaximumBytes = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", SyslogOutputOptions.DefaultMaximumMessageBytes),
             SyslogOutputBusyWait = TimeSpan.FromSeconds(ReadInt32(read, "BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", 2)),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
@@ -525,9 +531,10 @@ public sealed record CollectorSettings
                 throw new InvalidOperationException($"BOWER_SYSLOG_OUTPUT_SOCKET {problem}.");
             }
 
-            if (SyslogOutputFacility is < 0 or > 23)
+            if (SyslogOutputFacility is null)
             {
-                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_FACILITY must be between 0 and 23.");
+                throw new InvalidOperationException(
+                    $"BOWER_SYSLOG_OUTPUT_FACILITY must be one of {string.Join(", ", SyslogOutputOptions.FacilityNames)} (or 16 to 23), the facilities the collection rule can collect.");
             }
 
             if (SyslogOutputMaximumBytes < SyslogOutputOptions.MinimumMessageBytes

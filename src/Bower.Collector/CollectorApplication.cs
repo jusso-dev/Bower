@@ -692,7 +692,7 @@ public static partial class CollectorApplication
             {
                 Id = "syslog",
                 SocketPath = settings.SyslogOutputSocket,
-                Facility = settings.SyslogOutputFacility,
+                Facility = settings.SyslogOutputFacility!.Value,
                 MaximumMessageBytes = settings.SyslogOutputMaximumBytes,
                 BusyWait = settings.SyslogOutputBusyWait
             }),

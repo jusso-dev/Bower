@@ -304,7 +304,10 @@ public sealed class SyslogOutputTests
     [Theory]
     [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "relative/log.sock", "must be an absolute path")]
     [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "/run/a-socket-path-that-is-far-too-long-for-sun-path-because-it-keeps-going-and-going-and-going-and-on/log.sock", "must be at most")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "24", "between 0 and 23")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "1", "local0, local1, local2, local3, local4, local5, local6, local7")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "24", "local0")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "user", "local0")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "4294967316", "local0")]
     [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES", "512", "between 1024 and 65507")]
     [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES", "4294975488", "must be an integer")]
     [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "4294967298", "must be an integer")]
@@ -358,6 +361,31 @@ public sealed class SyslogOutputTests
         string note = new('a', padding);
         return [.. Enumerable.Range(0, count).Select(index =>
             new QueuedEvent($"e{index}", $"sha256:{index}", Envelope($"e{index}", $$""" "attributes":{"note":"{{note}}"}, """), Now))];
+    }
+
+    [Theory]
+    [InlineData("local0", 16)]
+    [InlineData("local1", 17)]
+    [InlineData("local2", 18)]
+    [InlineData("local3", 19)]
+    [InlineData("local4", 20)]
+    [InlineData("LOCAL5", 21)]
+    [InlineData("local6", 22)]
+    [InlineData("local7", 23)]
+    [InlineData("20", 20)]
+    [InlineData("16", 16)]
+    [InlineData("23", 23)]
+    public void Settings_AcceptEveryFacilityTheRuleCanCollectByName(string value, int number)
+    {
+        CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_FACILITY"] = value }));
+
+        Assert.Equal(number, settings.SyslogOutputFacility);
+        // The name Bower reports is one the rule's facility parameter allows.
+        string bicep = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
+        string allowed = bicep[bicep.IndexOf("@allowed(", StringComparison.Ordinal)..];
+        allowed = allowed[..allowed.IndexOf(')', StringComparison.Ordinal)];
+        Assert.Contains($"'{SyslogOutputOptions.FacilityName(number)}'", allowed, StringComparison.Ordinal);
+        Assert.Equal(SyslogOutputOptions.FacilityNames.Select(name => $"'{name}'"), allowed.Split('[', ']')[1].Split(", "));
     }
 
     private static string Base64(string json) => Convert.ToBase64String(Encoding.UTF8.GetBytes(json));

@@ -406,12 +406,21 @@ public sealed record SyslogOutputOptions
     /// </summary>
     public static int MaximumSocketPathBytes => OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD() ? 103 : 107;
 
+    /// <summary>
+    /// Facilities the collection rule can be set to collect (<c>local0</c> to <c>local7</c>,
+    /// the <c>facility</c> parameter's allowed values in <c>deploy/bicep/ama-syslog-dcr.bicep</c>).
+    /// </summary>
+    public static IReadOnlyList<string> FacilityNames { get; } = ["local0", "local1", "local2", "local3", "local4", "local5", "local6", "local7"];
+
+    /// <summary>Facility number of <c>local0</c>.</summary>
+    public const int FirstLocalFacility = 16;
+
     public required string Id { get; init; }
 
     /// <summary>The local daemon's datagram socket.</summary>
     public string SocketPath { get; init; } = "/dev/log";
 
-    /// <summary>Syslog facility number; 20 is local4.</summary>
+    /// <summary>Syslog facility number, 16 (local0) to 23 (local7); 20 is local4.</summary>
     public int Facility { get; init; } = 20;
 
     /// <summary>
@@ -435,6 +444,35 @@ public sealed record SyslogOutputOptions
     /// </summary>
     internal int? SendBufferBytes { get; init; }
 
+    /// <summary>The facility's name (<c>local4</c>), or its number when it has none here.</summary>
+    public static string FacilityName(int facility) =>
+        facility is >= FirstLocalFacility and < FirstLocalFacility + 8
+            ? FacilityNames[facility - FirstLocalFacility]
+            : facility.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>Reads <c>local0</c> to <c>local7</c>, or the numbers 16 to 23; false otherwise.</summary>
+    public static bool TryParseFacility(string? value, out int facility)
+    {
+        facility = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        string trimmed = value.Trim();
+        for (int index = 0; index < FacilityNames.Count; index++)
+        {
+            if (string.Equals(trimmed, FacilityNames[index], StringComparison.OrdinalIgnoreCase))
+            {
+                facility = FirstLocalFacility + index;
+                return true;
+            }
+        }
+
+        return int.TryParse(trimmed, NumberStyles.None, CultureInfo.InvariantCulture, out facility)
+            && facility is >= FirstLocalFacility and < FirstLocalFacility + 8;
+    }
+
     /// <summary>Null when the socket path is usable, otherwise why not.</summary>
     public static string? SocketPathProblem(string? path)
     {
@@ -456,8 +494,8 @@ public sealed record SyslogOutputOptions
             throw new ArgumentException($"The syslog socket path {problem}.", nameof(SocketPath));
         }
 
-        ArgumentOutOfRangeException.ThrowIfLessThan(Facility, 0);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(Facility, 23);
+        ArgumentOutOfRangeException.ThrowIfLessThan(Facility, FirstLocalFacility);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(Facility, FirstLocalFacility + 7);
         ArgumentOutOfRangeException.ThrowIfLessThan(Severity, 0);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(Severity, 7);
         ArgumentOutOfRangeException.ThrowIfLessThan(MaximumMessageBytes, MinimumMessageBytes);
