@@ -131,7 +131,7 @@ public sealed record CollectorSettings
     /// <summary>BOWER_SYSLOG_OUTPUT_FACILITY: syslog facility number (20, local4, by default).</summary>
     public int SyslogOutputFacility { get; init; } = 20;
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole message limit; match the daemon's MaxMessageSize.</summary>
+    /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole datagram limit; keep it at least 512 below rsyslog's MaxMessageSize.</summary>
     public int SyslogOutputMaximumBytes { get; init; } = SyslogOutputOptions.DefaultMaximumMessageBytes;
 
     /// <summary>BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS: how long one message may wait for a full daemon queue.</summary>

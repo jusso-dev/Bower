@@ -386,8 +386,13 @@ public sealed record SyslogOutputOptions
     /// <summary>Largest accepted <see cref="MaximumMessageBytes"/>: the largest UDP-sized datagram.</summary>
     public const int MaximumMessageBytesLimit = 65_507;
 
-    /// <summary>Default whole-datagram limit. rsyslog's default MaxMessageSize is 8 KiB.</summary>
-    public const int DefaultMaximumMessageBytes = 8_192;
+    /// <summary>
+    /// Default whole-datagram limit. rsyslog forwards at most 8,096 characters per line,
+    /// including the header it writes for the agent (measured with stock rsyslog, #230), so
+    /// this leaves 416 characters for that header. Keep at least 512 below rsyslog's
+    /// <c>MaxMessageSize</c> when raising either.
+    /// </summary>
+    public const int DefaultMaximumMessageBytes = 7_680;
 
     /// <summary>Default <see cref="BusyWait"/>.</summary>
     public static readonly TimeSpan DefaultBusyWait = TimeSpan.FromSeconds(2);

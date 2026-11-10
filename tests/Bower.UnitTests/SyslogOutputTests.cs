@@ -91,6 +91,26 @@ public sealed class SyslogOutputTests
     }
 
     [Fact]
+    public void Format_DefaultLimitLeavesRoomForTheHeaderRsyslogAddsWhenForwarding()
+    {
+        // rsyslog forwards at most 8,096 characters per line, its own header included
+        // (measured with stock rsyslog on Rocky Linux 9, #230). The default leaves 416 for it.
+        Assert.Equal(7_680, SyslogOutputOptions.DefaultMaximumMessageBytes);
+        Assert.True(8_096 - SyslogOutputOptions.DefaultMaximumMessageBytes >= 256);
+
+        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog" }, new FixedClock(Now));
+        // 38 header bytes, then base64: the largest JSON that fits is 5,730 bytes.
+        string Json(int bytes) => "{\"n\":\"" + new string('a', bytes - 8) + "\"}";
+        byte[]? largest = output.TryFormat(Json(5_730));
+        Assert.NotNull(largest);
+        Assert.Equal(7_678, largest.Length);
+        Assert.Null(output.TryFormat(Json(5_731)));
+        // The computed size is the byte count actually written.
+        Assert.Equal(output.MessageBytes(5_730), largest.Length);
+        Assert.True(largest.All(value => value < 0x80));
+    }
+
+    [Fact]
     public async Task Deliver_RetriesEveryEventWhenTheDaemonIsNotListening()
     {
         Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
@@ -315,7 +335,7 @@ public sealed class SyslogOutputTests
     {
         CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog([]));
 
-        Assert.Equal(("syslog", "/dev/log", 20, 8_192, TimeSpan.FromSeconds(2)),
+        Assert.Equal(("syslog", "/dev/log", 20, 7_680, TimeSpan.FromSeconds(2)),
             (settings.OutputType, settings.SyslogOutputSocket, settings.SyslogOutputFacility, settings.SyslogOutputMaximumBytes, settings.SyslogOutputBusyWait));
     }
 
