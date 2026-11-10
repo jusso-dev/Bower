@@ -33,6 +33,10 @@ case "${1:-}" in
     expect_mode /opt/bower/Bower.Collector "root:root 755"
     expect_mode /etc/bower "root:root 755"
     expect_mode /etc/bower/bower.env "root:bower 640"
+    # The packaged template offers the syslog output for Azure Monitor Agent, commented (#251).
+    for line in '#BOWER_OUTPUT=syslog' '#BOWER_SYSLOG_OUTPUT_FACILITY=local4' '#BOWER_SYSLOG_OUTPUT_MAX_BYTES=7680'; do
+      grep -qxF "$line" /usr/share/bower/bower.env.example || fail "bower.env.example lacks $line"
+    done
     expect_mode /etc/bower/secrets "root:bower 750"
     expect_mode /etc/bower/keys "root:root 755"
     expect_mode /var/lib/bower "bower:bower 700"
