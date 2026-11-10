@@ -10,7 +10,9 @@
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
-config="$here/logrotate-bower-events"
+# logrotate ignores a config not owned by root, and a mounted checkout is owned by the CI
+# runner's user. Copy it into the container as root:root 0644, as /etc/logrotate.d would hold it.
+config=/tmp/logrotate-bower-events
 emit="$here/../emit_event.py"
 
 if [[ $(id -u) -ne 0 || ! -f /.dockerenv ]]; then
@@ -25,6 +27,7 @@ if ! command -v logrotate >/dev/null || ! command -v python3 >/dev/null || ! com
     dnf install -y -q logrotate python3 shadow-utils util-linux procps-ng >/dev/null
   fi
 fi
+install -m 0644 -o root -g root "$here/logrotate-bower-events" "$config"
 echo "logrotate $(logrotate --version 2>&1 | head -1 | awk '{print $2}'), fs.protected_regular=$(cat /proc/sys/fs/protected_regular)"
 
 fail() { echo "FAIL: $*" >&2; exit 1; }
