@@ -86,7 +86,7 @@
       <Link>deploy/ama-syslog-dcr.bicep</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="../../examples/cloud-agents/**/*.json;../../examples/cloud-agents/*.jsonl">
+    <Content Include="../../examples/cloud-agents/**/*.json;../../examples/cloud-agents/*.jsonl;../../examples/cloud-agents/*.py">
       <Link>examples/cloud-agents/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

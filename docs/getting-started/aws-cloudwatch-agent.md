@@ -35,6 +35,14 @@ written with a single append. The minimum is:
 ```
 
 - `eventId` must be unique per event and stay the same if the line is written again.
+- Write each line with one `write` call on a file opened for append (`O_APPEND`). On a local
+  Linux file system, writers then never interleave inside a line, whatever its length. A
+  buffered writer (a default `print` to a file, most logging handlers) can split a line, and
+  NFS doesn't give the same guarantee.
+- A short write (for example a full disk) leaves a line with no line break, and the next
+  event is glued to it: both are then invalid and the forwarder drops them. Before writing,
+  check whether the file ends with a line break and start with one if it doesn't, as
+  `emit_event.py` does. That limits the damage to the fragment.
 - Only lines that contain `schemaVersion` leave CloudWatch Logs, so ordinary application
   logging can share the file, but a separate file is easier to reason about.
 - To build events in an application, use the [framework helpers](../developer-integration/asvs-logging-frameworks.md)

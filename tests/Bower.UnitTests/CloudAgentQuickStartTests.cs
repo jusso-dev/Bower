@@ -84,6 +84,72 @@ public sealed partial class CloudAgentQuickStartTests
         Assert.Equal((20, 5, "/dev/log"), (options.Facility, options.Severity, options.SocketPath));
     }
 
+    [Fact]
+    public async Task EmitEventScript_AppendsALineThatMatchesTheEnvelopeSchema()
+    {
+        string? python = FindOnPath(OperatingSystem.IsWindows() ? "python3.exe" : "python3");
+        Assert.SkipWhen(python is null, "python3 is not on PATH.");
+        string directory = Directory.CreateTempSubdirectory("bower-emit-").FullName;
+        try
+        {
+            string target = Path.Combine(directory, "events.jsonl");
+            // A fragment left by a cut-short writer: the script must start its event on a new line.
+            await File.WriteAllTextAsync(target, "{\"schemaVersion\":\"1.0.0\",\"eventId\":\"cut-sh", TestContext.Current.CancellationToken);
+
+            await RunEmitEvent(python!, target, "--application", "billing-api", "--environment", "staging");
+            await RunEmitEvent(python!, target);
+
+            string[] lines = (await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken)).Split('\n');
+            Assert.Equal(4, lines.Length);
+            Assert.Equal("", lines[^1]);
+            using JsonDocument schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "schemas", "envelope", "security-event.schema.json")));
+            foreach (string line in lines[1..^1])
+            {
+                using JsonDocument written = JsonDocument.Parse(line);
+                List<string> errors = [];
+                AsvsExampleContractTests.Validate(written.RootElement, schema.RootElement, schema.RootElement, "$", errors);
+                Assert.True(errors.Count == 0, string.Join("; ", errors));
+                Assert.Equal(line, FirehoseLogObjectReader.TryExtractEnvelope(line));
+            }
+
+            using JsonDocument first = JsonDocument.Parse(lines[1]);
+            Assert.Equal("billing-api", first.RootElement.GetProperty("application").GetProperty("name").GetString());
+            Assert.Equal("staging", first.RootElement.GetProperty("application").GetProperty("environment").GetString());
+            using JsonDocument second = JsonDocument.Parse(lines[2]);
+            Assert.Equal("orders-api", second.RootElement.GetProperty("application").GetProperty("name").GetString());
+            Assert.NotEqual(first.RootElement.GetProperty("eventId").GetString(), second.RootElement.GetProperty("eventId").GetString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    private static async Task RunEmitEvent(string python, params string[] arguments)
+    {
+        System.Diagnostics.ProcessStartInfo start = new(python)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (string argument in (string[])["-I", Path.Combine(Examples, "emit_event.py"), .. arguments])
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)!;
+        Task<string> output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        string error = await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        Assert.True(process.ExitCode == 0, $"emit_event.py exited {process.ExitCode}: {error}");
+        Assert.StartsWith("appended event ", await output, StringComparison.Ordinal);
+    }
+
+    private static string? FindOnPath(string executable) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => Path.Combine(directory, executable))
+            .FirstOrDefault(File.Exists);
+
     private static string[] StreamColumnNames(string bicep)
     {
         int start = bicep.IndexOf("'Custom-BowerSecurity': {", StringComparison.Ordinal);
