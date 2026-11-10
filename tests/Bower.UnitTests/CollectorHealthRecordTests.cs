@@ -863,6 +863,36 @@ public sealed class CollectorHealthRecordTests
         Assert.Same(third, CollectorHealthRecord.NextBaseline(third, baseline));
     }
 
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(3, true)]
+    [InlineData(4, false)]
+    public void RecordSize_AgainstTheSyslogOutputJsonLimit(int listed, bool fits)
+    {
+        // #230, measured: collector_health travels every output, and BOWER_OUTPUT=syslog fits
+        // 5,730 bytes of envelope JSON at its default. With every problem set and 8-character
+        // names, a candidate is 2,361 bytes with nothing listed and grows by about 920 bytes for
+        // each overdue source plus syslog listener. From four of each it no longer fits and is
+        // dead-lettered on that output (payload-too-large). This pins the measured boundary so
+        // a change to either side is seen; what to do about it is an open decision on #230.
+        string name = new('a', 8);
+        CollectorHealthSample sample = Sample(TestEvents.Now, sequence: 9_999_999) with
+        {
+            Queue = new QueueSnapshot(9_999_999, 9_999_999, 9_999_999, 9_999_999, 9_999_999, 9_999_999_999, TestEvents.Now.AddDays(-400), 9_999_999_999),
+            Intake = Intake(capacityRefusals: 9_999_999),
+            SourcesConfigured = listed > 0,
+            Sources = [.. Enumerable.Range(0, listed).Select(index =>
+                new SourceSilenceStatus($"{name}{index}", "production", "silent", TestEvents.Now.AddDays(-1), 9_999_999, 300))],
+            Syslog = [.. Enumerable.Range(0, listed).Select(index => Listener(9_999_999, 9_999_999) with { Id = $"{name}{index}" })],
+            LastDeliveryFailure = new DeliveryFailureActivity("destination-azure-credential-failed", TestEvents.Now),
+            Storage = Volume("critical", intakePaused: true, freeBytes: 1, refusals: 9_999_999, purged: 9_999_999)
+        };
+
+        int bytes = System.Text.Encoding.UTF8.GetByteCount(CollectorHealthRecord.CreateJson(sample, "edge-01", "production"));
+
+        Assert.True(fits == bytes <= 5_730, $"{listed} listed: {bytes} bytes.");
+    }
+
     private static QueueStorageStatus Volume(string state, bool intakePaused, long freeBytes, long refusals, long purged) =>
         new(state, intakePaused, TestEvents.Now, freeBytes, 2_048L * 1_048_576, Math.Round(freeBytes * 100.0 / (2_048L * 1_048_576), 2),
             1_024L * 1_048_576, 256L * 1_048_576, TestEvents.Now, 1, intakePaused ? 1 : 0,
