@@ -69,6 +69,10 @@ class SelectionTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertTrue({"dotnet", "platforms", "packaging", "powershell"} <= self.enabled([path]))
 
+    def test_syslog_output_changes_run_the_installer_syslog_test(self):
+        # tests/installers/syslog-output-linux.sh runs it under the packaged unit (#245).
+        self.assertTrue({"dotnet", "platforms", "packaging"} <= self.enabled(["src/Bower.Output.Syslog/SyslogOutput.cs"]))
+
     def test_relay_and_enrolment_keep_container_integration(self):
         for path in ("src/Bower.Collector/Relay/Listener.cs", "src/Bower.Forwarding/Client.cs",
                      "tests/e2e/enrolment.sh"):
