@@ -1,0 +1,30 @@
+// Bower: collector_health records lost after the collector sent them, per CollectorId and run.
+// Each record carries a sequence number that rises by one per record within one collector run
+// (collectorStartedAt). A missing number means a record Bower queued never reached the table,
+// so the events delivered around it may have been lost too. This is the loss signal for
+// outputs that cannot confirm arrival (BOWER_OUTPUT=syslog: the daemon, Azure Monitor Agent
+// and the collection rule's transform can each drop an event after Bower counted it
+// delivered). delivery-reconciliation.kql compares event counts; a loss that also takes the
+// record reporting those events hides from it, but not from this query.
+// Live (#249): a deliberate loss of 100 events (journal vacuumed with rsyslog stopped, Oracle
+// Linux 9.8, agent 1.45.1) also lost one health record; this query returned MissingRecords 1
+// for that collector and 0 for a clean one. delivery-reconciliation.kql returned nothing.
+// Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy.
+let lookback = 24h;
+let lag = 30m;                 // allowance for queue, agent and ingestion delay
+let windowEnd = now() - lag;
+let windowStart = windowEnd - lookback;
+BowerSecurity_CL
+| where EventType == "collector_health" and isnotempty(CollectorId)
+| where TimeGenerated between (windowStart .. windowEnd)
+| extend Started = tostring(Attributes.collectorStartedAt), Sequence = tolong(Attributes.sequence)
+| where isnotnull(Sequence)
+// Delivery is at least once: count each sequence number once.
+| summarize Records = dcount(Sequence), FirstSequence = min(Sequence), LastSequence = max(Sequence),
+    Output = take_any(tostring(Attributes.delivery.output)), LastSeen = max(TimeGenerated)
+    by CollectorId, Started
+| extend MissingRecords = LastSequence - FirstSequence + 1 - Records
+| where MissingRecords > 0
+| project CollectorId, Output, CollectorStartedAt = Started, FirstSequence, LastSequence, Records,
+    MissingRecords, LastSeen
+| order by MissingRecords desc

@@ -1,7 +1,9 @@
 // Bower: events each collector queued against rows that arrived in BowerSecurity_CL, per CollectorId.
 // For outputs that cannot confirm arrival (BOWER_OUTPUT=syslog: the daemon, Azure Monitor Agent
 // and the collection rule's transform can each drop an event after Bower counted it delivered).
-// Not run against a workspace yet (#231, #249). Not wired into monitoring.bicep.
+// Run live on 10-11-2026 (#249): no false alarm (304 reported, 306 arrived), but a loss of 100
+// events that also lost the health record covering them did not show here.
+// delivery-sequence-gaps.kql catches that case. Not wired into monitoring.bicep.
 //
 // Reported: sum of pipeline.eventsQueued from collector_health records in the window. That counter
 // is events queued since the previous queued record (duplicates and suppressed events excluded),
