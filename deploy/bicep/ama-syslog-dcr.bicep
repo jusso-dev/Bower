@@ -11,7 +11,7 @@
 // white space, is the marker and one base64 value. Any local account can still send such a
 // message (docs/deployment/syslog-output.md, trust boundary). schemaVersion is pinned to 1.0.0,
 // as in main.bicep: when the envelope version changes, deploy the new rule first, then
-// upgrade collectors. None of this has run against a live agent yet (#249).
+// upgrade collectors. Deployed and run with Azure Monitor Agent 1.45.1 on 10-11-2026 (#249).
 targetScope = 'resourceGroup'
 
 @description('Existing Log Analytics workspace name, already holding BowerSecurity_CL from main.bicep.')

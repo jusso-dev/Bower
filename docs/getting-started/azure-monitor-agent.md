@@ -99,7 +99,8 @@ ls /etc/rsyslog.d/ | grep azuremonitoragent  # the agent's forwarding file
 
 If rsyslog is not installed, install it (`sudo dnf install rsyslog` or `sudo apt install
 rsyslog`) and enable it, then wait for the agent to write its file. Microsoft documents the file
-as `10-azuremonitoragent-omfwd.conf`; the exact name on your server is to be confirmed (#249).
+as `10-azuremonitoragent-omfwd.conf`, and that is the name agent 1.45.1 wrote on Oracle Linux
+9.8 and Ubuntu 24.04 in the live run (#249). It appears a few minutes after the association.
 Do not go on until it exists.
 
 Then raise the limits that drop bursts and, if you want them, install the filters. Copy the
@@ -213,6 +214,7 @@ Rows already in `BowerSecurity_CL` stay until the table's retention removes them
 ## Limits
 
 - Linux with rsyslog only. See the [reference](../deployment/syslog-output.md#limits).
-- This path has been checked by Bower's tests, by building and linting the Bicep, and in local
-  containers with journald, rsyslog and a stand-in for the agent. It has not been run with a
-  real Azure Monitor Agent or workspace (#249).
+- This path was run once end to end with real Azure Monitor Agents (1.45.1) on Oracle Linux
+  9.8 and Ubuntu 24.04 (#249): test events, 5,000-event bursts and the shipped filters. The
+  results are in the [reference](../deployment/syslog-output.md). Private Link, Arc machines,
+  syslog-ng and other agent versions were not run.

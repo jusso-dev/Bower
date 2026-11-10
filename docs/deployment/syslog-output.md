@@ -12,9 +12,10 @@ matching collection rule
 reads. To receive syslog from other systems, see the [syslog source](syslog-source.md), which
 works in the other direction. The pipeline builder's `syslog` output type is this same output.
 
-Nothing after `/dev/log` has been run with a real Azure Monitor Agent or workspace. The
-checks for that run are in [#249](https://github.com/jusso-dev/Bower/issues/249). Facts on
-this page marked "tested" come from local containers with journald and rsyslog and a
+The whole path was run once with real Azure Monitor Agents on 10-11-2026 (agent 1.45.1, on
+Oracle Linux 9.8 with SELinux enforcing and Ubuntu 24.04, both from the Bower packages): see
+[#249](https://github.com/jusso-dev/Bower/issues/249). Facts on this page marked "live" come
+from that run. Facts marked "tested" come from local containers with journald, rsyslog and a
 stand-in for the agent.
 
 ## Which Azure path
@@ -78,6 +79,18 @@ rsyslog and the agent's documented forwarding template, sending to a local TCP l
 | 7,680 bytes (the default limit) | 7,696 characters (Rocky), 7,691 (Debian) | whole, decodes |
 | 8,190 bytes (the old default) | 8,096 characters | cut short; rsyslog logs `message too long (8162) with configured size 8096` |
 
+Live, through the real agent into `BowerSecurity_CL` (raw datagrams of exact sizes):
+
+| Datagram | Oracle Linux 9.8 (imjournal) | Ubuntu 24.04 (imuxsock) |
+|---|---|---|
+| 7,678 bytes | row arrives and decodes | row arrives and decodes |
+| 8,058 bytes | row arrives | row arrives |
+| 8,078 bytes | no row | row arrives |
+| 8,090 bytes and over | no row | no row |
+
+The cap is rsyslog's 8,096-character line, header included, and the header differs by
+distribution (Oracle Linux's is longer). Bower's default of 7,680 is under both with room to
+spare. The agent added no cap of its own below rsyslog's.
 The usable size at the default is **5,730 bytes of envelope JSON**: 7,680 minus the 38-byte
 header leaves 7,642 base64 characters, rounded down to whole groups of four and times 3/4.
 That leaves 444 characters for the header rsyslog or the agent writes in front of the message.
@@ -85,12 +98,15 @@ A larger envelope is refused with `payload-too-large` and dead-lettered.
 
 If you raise rsyslog's limit (`global(maxMessageSize="32k")` or `$MaxMessageSize 32k` at the
 top of `/etc/rsyslog.conf`, before any input), you can raise `BOWER_SYSLOG_OUTPUT_MAX_BYTES`,
-keeping it at least 512 below. Whether the agent has its own cap is not known (#249).
+keeping it at least 512 below. The agent did not truncate below rsyslog's cap in the live run;
+messages over 8,096 characters were not tested with a raised rsyslog limit.
 Compression is not possible: the rule's transform language has no decompression function
 ([supported functions](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/data-collection-transformations-kql)).
 
 `collector_health` records travel this output too. Their size grows with the number of
-sources listed (at most 25 of each kind).
+sources listed (at most 25 of each kind). At the default limit a record fits with up to three
+overdue sources plus syslog listeners; from four it is refused with `payload-too-large`
+(measured, #230).
 
 ## Rate limits
 
@@ -153,12 +169,28 @@ it from its queue. The later hops do not report back:
 | Azure Monitor Agent | Its queue (rsyslog's `omfwd` queue, 1 GB on disk in the agent's file) full during a long outage | Agent log |
 | Collection rule transform | A message that does not decode (cut short, extra characters, other `schemaVersion`) | **None**: no row, no error |
 
-So only a Sentinel query proves arrival. Two queries help:
+Live (#249), counted in `BowerSecurity_CL` with 400 events sent per phase on each host:
+restarting rsyslog, journald or the agent mid-stream lost nothing, and stopping the agent for
+ten minutes lost nothing either (rsyslog's disk-assisted queue held the events and sent them
+when it came back). Each phase arrived 400 of 400; one event arrived twice, which the
+deduplication below removes. A deliberate loss (journal emptied while rsyslog was stopped)
+lost every event in it, with no error anywhere.
+
+So only a Sentinel query proves arrival. Three queries help:
 
 - [`delivery-reconciliation.kql`](https://github.com/jusso-dev/Bower/blob/main/deploy/sentinel/monitoring/queries/delivery-reconciliation.kql)
   compares the events each collector's `collector_health` records say it queued with the rows
-  that arrived for that `CollectorId`, and returns collectors with a gap. It has not been run
-  against a workspace.
+  that arrived for that `CollectorId`, and returns collectors with a gap. Live: with health
+  records every 60 s and 300 events per host it reported 304 queued against 306 arrived
+  (health records counted on both sides), so it does not raise a false alarm. It did not catch
+  a deliberate loss of 100 events: the loss happened inside a short window, and a single
+  `collector_health` record lost with them hides the gap. See
+  [`delivery-sequence-gaps.kql`](https://github.com/jusso-dev/Bower/blob/main/deploy/sentinel/monitoring/queries/delivery-sequence-gaps.kql),
+  which caught that loss.
+- [`delivery-sequence-gaps.kql`](https://github.com/jusso-dev/Bower/blob/main/deploy/sentinel/monitoring/queries/delivery-sequence-gaps.kql)
+  returns collectors whose `collector_health` sequence numbers have a gap. Live, it caught the
+  deliberate loss above, which the reconciliation query missed because the record covering
+  those events was lost with them.
 - Delivery is at least once (a retried batch can send an event twice), so deduplicate on
   `EventId`:
 
@@ -185,12 +217,21 @@ An rsyslog filter on a field the sender cannot set closes most of this. Install 
 - Debian family (`imuxsock`):
   [`rsyslog-bower-origin-imuxsock.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/rsyslog-bower-origin-imuxsock.conf)
   keeps only messages from the `bower` account's user ID (needs `SysSock.Annotate` and
-  `SysSock.ParseTrusted`, see the file).
+  `SysSock.ParseTrusted`, see the file). The file says `999`; put in the real ID, or every
+  Bower event is dropped too (it was 995 on the Ubuntu 24.04 lab VM):
+
+    ```bash
+    sed "s/\$!uid == \"999\"/\$!uid == \"$(id -u bower)\"/" rsyslog-bower-origin-imuxsock.conf \
+      | sudo tee /etc/rsyslog.d/09-bower-origin.conf >/dev/null
+    ```
 
 Tested on both: 50 messages from `bower.service` forwarded, 50 forged by another account and
 5 sent by root outside the unit stopped, ordinary messages unaffected. Without the filter all
-50 forged messages were forwarded. Root can still forge, and anything running as `bower` can.
-A forged message stays in the journal.
+50 forged messages were forwarded. Live with the real agent (#249), counted in
+`BowerSecurity_CL`: 20 of 20 genuine events arrived on each host, and 0 of 20 forged by
+`nobody` and 0 of 5 sent by root. Before the filter, a row forged by `nobody` arrived with the
+`CollectorId` it chose. Root can still forge, and anything running as `bower` can. A forged
+message stays in the journal.
 
 ## What stays on the server
 
@@ -239,11 +280,14 @@ that each machine is associated with a data collection endpoint through an assoc
 That is a step per machine, separate from the rule. Microsoft also says a rule that uses an
 endpoint must have that endpoint in the scope
 ([Microsoft](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/data-collection-endpoint-overview)).
-Whether this rule also needs `dataCollectionEndpointId` set is not stated there and has not
-been tested (#249). Without Private Link, leave both out.
+Whether this rule also needs `dataCollectionEndpointId` set is not stated there. Live, the
+template accepts an endpoint (`what-if` shows only that property changing), and without Private
+Link the agents uploaded with no endpoint at all. Behind Private Link it has not been tested.
+Without Private Link, leave both out.
 
 A second rule that collects the same facility into the `Syslog` table stores each event again
-there, as base64. To see whether that is happening:
+there, as base64 (live: the same event arrived in both tables on both hosts, as `local4`,
+`notice`). To see whether that is happening:
 
 ```kusto
 Syslog
@@ -262,6 +306,8 @@ applies to the relay host, including the trust boundary.
 
 - Linux with rsyslog only. syslog-ng also reads `/dev/log`, but these limits and snippets are
   for rsyslog.
-- Hosts where the agent forwards over its Unix socket file (`10-azuremonitoragent.conf`, used
-  with SELinux) were not tested.
-- Not run with a real agent or workspace (#249).
+- Live on Oracle Linux 9.8 with SELinux enforcing, agent 1.45.1 wrote the TCP file
+  (`10-azuremonitoragent-omfwd.conf`, port 28330), not the Unix-socket variant
+  (`10-azuremonitoragent.conf`). Hosts where it uses the socket file were not tested.
+- Live on two distributions and one agent version, once. Private Link, syslog-ng, Arc
+  machines and other agent versions were not run.
