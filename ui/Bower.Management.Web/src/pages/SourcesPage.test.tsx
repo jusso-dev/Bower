@@ -121,7 +121,7 @@ const types: SourceTypeDefinition[] = [
     why: "Some estates allow only AMA.",
     needs: ["AMA on the collector host."],
     fields: [],
-    checkDescription: "Bower watches the output you chose (syslog or ama-spool).",
+    checkDescription: "Bower watches the output you chose (ama-syslog or ama-spool).",
     guide: "docs/getting-started/azure-monitor-agent.md"
   }
 ];

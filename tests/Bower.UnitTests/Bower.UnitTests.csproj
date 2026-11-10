@@ -26,7 +26,7 @@
     <ProjectReference Include="../../src/Bower.Integrity/Bower.Integrity.csproj" />
     <ProjectReference Include="../../src/Bower.Packs/Bower.Packs.csproj" />
     <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
-    <ProjectReference Include="../../src/Bower.Output.Syslog/Bower.Output.Syslog.csproj" />
+    <ProjectReference Include="../../src/Bower.Output.AmaSyslog/Bower.Output.AmaSyslog.csproj" />
     <ProjectReference Include="../../src/Bower.Management.Api/Bower.Management.Api.csproj" />
     <ProjectReference Include="../../src/Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../../src/Bower.Sdk/Bower.Sdk.csproj" />

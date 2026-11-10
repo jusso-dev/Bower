@@ -8,14 +8,14 @@ server; AMA's managed identity does the upload.
 
 ```mermaid
 flowchart LR
-    APP[App on the server] -->|POST /v1/events| B[Bower collector<br/>BOWER_OUTPUT=syslog]
+    APP[App on the server] -->|POST /v1/events| B[Bower collector<br/>BOWER_OUTPUT=ama-syslog]
     SRC[File tail and syslog sources] --> B
     B -->|local4, redacted| L["/dev/log (rsyslog)"]
     L --> AMA[Azure Monitor Agent] --> DCR[DCR: Linux syslog<br/>decode + map] --> S[BowerSecurity_CL]
 ```
 
 Settings, sizes, failure codes and limits are in the
-[syslog output reference](../deployment/syslog-output.md). This page is the steps.
+[syslog output reference](../deployment/ama-syslog-output.md). This page is the steps.
 
 **Moving a server from `azure-logs-ingestion` or `ama-spool`?** Do the steps in order. Bower
 counts an event delivered as soon as the local daemon takes it, so if you switch the output
@@ -29,7 +29,7 @@ before the rule is associated, those events are removed from Bower's queue and n
   `BOWER_OUTPUT=azure-logs-ingestion` ([Azure ingestion API](../deployment/logs-ingestion-api.md)).
 - Bower cannot confirm arrival here: only a Sentinel query can. Events larger than 5,730 bytes
   of JSON are refused. Compare the three Azure paths in
-  [Which Azure path](../deployment/syslog-output.md#which-azure-path).
+  [Which Azure path](../deployment/ama-syslog-output.md#which-azure-path).
 - Windows servers: use `azure-logs-ingestion`; this output is refused on Windows.
 
 ## Before you begin
@@ -61,7 +61,7 @@ Add `workspaceResourceGroup=...` if the workspace is in another resource group, 
 `facility=local5` (for example) if you will not use `local4`. The rule must be in the
 workspace's region: add `location=<workspace region>` when the resource group is in another
 region. For Private Link, see
-[the collection rule](../deployment/syslog-output.md#the-collection-rule) first: each machine
+[the collection rule](../deployment/ama-syslog-output.md#the-collection-rule) first: each machine
 also needs its own endpoint association.
 
 ## 2. Associate the rule with each server
@@ -110,11 +110,11 @@ each file says where it goes and how it was tested.
 
 | File | Where | Why |
 |---|---|---|
-| `bower-syslog-ratelimit.conf` | `/etc/systemd/system/bower.service.d/syslog-output.conf` | journald's limit for `bower.service` only |
+| `bower-ama-syslog-ratelimit.conf` | `/etc/systemd/system/bower.service.d/ama-syslog-output.conf` | journald's limit for `bower.service` only |
 | `rsyslog-imjournal-ratelimit.conf` | edit `/etc/rsyslog.conf` (RHEL, Rocky, AlmaLinux) | rsyslog's host-wide limit of about 33 events per second |
 | `sysctl-bower-syslog.conf` | `/etc/sysctl.d/60-bower-syslog.conf` (Debian, Ubuntu) | journald's forward to rsyslog drops messages in a burst |
-| `rsyslog-bower-origin-imjournal.conf` or `rsyslog-bower-origin-imuxsock.conf` | `/etc/rsyslog.d/09-bower-origin.conf` | Only `bower.service` can write rows ([why](../deployment/syslog-output.md#who-can-write-to-the-table)) |
-| `rsyslog-bower-local-copies.conf` | `/etc/rsyslog.d/11-bower-local-copies.conf` | Keeps Bower events out of `/var/log/messages` and `/var/log/syslog` ([why](../deployment/syslog-output.md#what-stays-on-the-server)) |
+| `rsyslog-bower-origin-imjournal.conf` or `rsyslog-bower-origin-imuxsock.conf` | `/etc/rsyslog.d/09-bower-origin.conf` | Only `bower.service` can write rows ([why](../deployment/ama-syslog-output.md#who-can-write-to-the-table)) |
+| `rsyslog-bower-local-copies.conf` | `/etc/rsyslog.d/11-bower-local-copies.conf` | Keeps Bower events out of `/var/log/messages` and `/var/log/syslog` ([why](../deployment/ama-syslog-output.md#what-stays-on-the-server)) |
 
 ```bash
 sudo rsyslogd -N1                              # the configuration is valid
@@ -127,9 +127,9 @@ sudo systemctl restart rsyslog
 **On the server**, in `/etc/bower/bower.env`, uncomment the syslog block (or add these lines):
 
 ```bash
-BOWER_OUTPUT=syslog
-#BOWER_SYSLOG_OUTPUT_FACILITY=local4          # match the rule's facility parameter
-#BOWER_SYSLOG_OUTPUT_MAX_BYTES=7680           # at least 512 below rsyslog's MaxMessageSize
+BOWER_OUTPUT=ama-syslog
+#BOWER_AMA_SYSLOG_FACILITY=local4          # match the rule's facility parameter
+#BOWER_AMA_SYSLOG_MAX_BYTES=7680           # at least 512 below rsyslog's MaxMessageSize
 ```
 
 ```bash
@@ -213,8 +213,8 @@ Rows already in `BowerSecurity_CL` stay until the table's retention removes them
 
 ## Limits
 
-- Linux with rsyslog only. See the [reference](../deployment/syslog-output.md#limits).
+- Linux with rsyslog only. See the [reference](../deployment/ama-syslog-output.md#limits).
 - This path was run once end to end with real Azure Monitor Agents (1.45.1) on Oracle Linux
   9.8 and Ubuntu 24.04 (#249): test events, 5,000-event bursts and the shipped filters. The
-  results are in the [reference](../deployment/syslog-output.md). Private Link, Arc machines,
+  results are in the [reference](../deployment/ama-syslog-output.md). Private Link, Arc machines,
   syslog-ng and other agent versions were not run.

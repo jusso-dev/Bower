@@ -2,7 +2,7 @@
 // Each record carries a sequence number that rises by one per record within one collector run
 // (collectorStartedAt). A missing number means a record Bower queued never reached the table,
 // so the events delivered around it may have been lost too. This is the loss signal for
-// outputs that cannot confirm arrival (BOWER_OUTPUT=syslog: the daemon, Azure Monitor Agent
+// outputs that cannot confirm arrival (BOWER_OUTPUT=ama-syslog: the daemon, Azure Monitor Agent
 // and the collection rule's transform can each drop an event after Bower counted it
 // delivered). delivery-reconciliation.kql compares event counts; a loss that also takes the
 // record reporting those events hides from it, but not from this query.

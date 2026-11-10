@@ -124,7 +124,7 @@ public static class CollectorHealthRecord
 
     /// <summary>
     /// The record as JSON within <paramref name="maximumBytes"/> (UTF-8) where it can be. An
-    /// output with a small message limit (BOWER_OUTPUT=syslog) would otherwise refuse a record
+    /// output with a small message limit (BOWER_OUTPUT=ama-syslog) would otherwise refuse a record
     /// that lists many sources, and a missing health record looks like a stopped collector. The
     /// lists (overdue sources, syslog listeners, Windows subscriptions) are shortened, worst
     /// first, until it fits; every count and problem code stays complete, and

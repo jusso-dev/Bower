@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Bower.Dcr;
-using Bower.Output.Syslog;
+using Bower.Output.AmaSyslog;
 using Bower.Source.Aws;
 
 namespace Bower.UnitTests;
@@ -55,7 +55,7 @@ public sealed partial class CloudAgentQuickStartTests
     {
         // #236: one definition. Adding a column to SentinelSchema changes both rules or fails here.
         string syslog = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
-        string expected = SentinelSchema.Default.SyslogTransformKql(SyslogOutput.MessagePrefix, new SyslogOutputOptions { Id = "syslog" }.AppName);
+        string expected = SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, new AmaSyslogOutputOptions { Id = "ama-syslog" }.AppName);
 
         Assert.True(
             Normalise(expected) == Normalise(Transform(syslog)),
@@ -72,7 +72,7 @@ public sealed partial class CloudAgentQuickStartTests
     {
         // The generated projection reads each main.bicep column from the decoded envelope e.
         string main = Normalise(Transform(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"))));
-        string syslog = Normalise(SentinelSchema.Default.SyslogTransformKql(SyslogOutput.MessagePrefix, "bower"));
+        string syslog = Normalise(SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, "bower"));
         string[] Columns(string kql) => [.. Regex.Matches(kql.Split("| project ", 2)[1], @"(?:^|, )(?<name>\w+) = ").Select(match => match.Groups["name"].Value)];
 
         Assert.Equal(Columns(main), Columns(syslog));
@@ -94,16 +94,16 @@ public sealed partial class CloudAgentQuickStartTests
     {
         // The extract pattern, read with .NET's regex engine, which matches RE2 for this pattern.
         // Whether Azure accepts and runs it the same way is check 1 of the live run (#249).
-        string transform = SentinelSchema.Default.SyslogTransformKql(SyslogOutput.MessagePrefix, "bower");
+        string transform = SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, "bower");
         string pattern = Regex.Match(transform, "extract\\(@\"(?<pattern>[^\"]+)\"").Groups["pattern"].Value;
 
         Assert.Equal(kept, Regex.IsMatch(message, pattern.Replace("$", @"\n?\z", StringComparison.Ordinal)));
     }
 
     [Fact]
-    public void SyslogOutputDefaults_MatchTheRule()
+    public void AmaSyslogOutputDefaults_MatchTheRule()
     {
-        SyslogOutputOptions options = new() { Id = "syslog" };
+        AmaSyslogOutputOptions options = new() { Id = "ama-syslog" };
 
         Assert.Equal((20, 5, "/dev/log"), (options.Facility, options.Severity, options.SocketPath));
     }

@@ -1,10 +1,10 @@
-# Local syslog output instructions
+# AMA syslog output instructions (`BOWER_OUTPUT=ama-syslog`)
 
 Hand each policy-approved, redacted envelope to the host's local syslog daemon (`/dev/log`, a
 Unix datagram socket). Azure Monitor Agent's syslog collection ships it from there into
-`BowerSecurity_CL`. Reference: `docs/deployment/syslog-output.md`.
+`BowerSecurity_CL`. Reference: `docs/deployment/ama-syslog-output.md`.
 
-## Wire format (`SyslogOutput.TryFormat`)
+## Wire format (`AmaSyslogOutput.TryFormat`)
 
 - The local `syslog(3)` format, not RFC 5424: `<PRI>Mmm dd hh:mm:ss bower: bower-b64:<base64>`.
   rsyslog's socket input and journald both parse it. The timestamp only keeps it well formed;
@@ -34,17 +34,17 @@ Unix datagram socket). Azure Monitor Agent's syslog collection ships it from the
 - The socket is non-blocking, so no thread ever blocks on the daemon. When the queue is full,
   one datagram waits for room with `SendAsync`, at most `BusyWait` (default 2 s, below the
   worker's delivery timeout). Past that the rest of the batch is retried as
-  `destination-syslog-busy` (5 s retry).
+  `destination-ama-syslog-busy` (5 s retry).
 - Each socket error is classified, never lumped together:
   - `MessageSize` (EMSGSIZE): this event cannot be sent. `payload-too-large`, carry on with the
     batch. Not a destination fault, so it dead-letters.
   - `WouldBlock` (Linux EAGAIN): wait as above. `NoBufferSpaceAvailable` (macOS ENOBUFS)
     cannot be waited on: retry in 10 ms steps within the same budget.
-  - `AccessDenied`: `destination-syslog-access-denied`, stop the batch.
+  - `AccessDenied`: `destination-ama-syslog-access-denied`, stop the batch.
   - Connection refused, missing path, reset and anything else:
-    `destination-syslog-unavailable`, reset the socket, stop the batch (30 s retry).
+    `destination-ama-syslog-unavailable`, reset the socket, stop the batch (30 s retry).
 - Cancellation (shutdown or the delivery deadline) stops the loop and returns what was sent as
-  acknowledged; only the unsent rest is retried as `destination-syslog-cancelled`. Never throw
+  acknowledged; only the unsent rest is retried as `destination-ama-syslog-cancelled`. Never throw
   away acknowledgements: the worker would send them again.
 - Every code above must be on both allow-lists in `QueueDeliveryWorker`
   (`SafeFailureCode`, `SafePersistedFailureCode`).

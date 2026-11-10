@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Runs as root in the Rocky Linux 9 systemd container after the rpm is installed (#245).
-# Switches the packaged service to BOWER_OUTPUT=syslog and checks, with the real collector,
+# Switches the packaged service to BOWER_OUTPUT=ama-syslog and checks, with the real collector,
 # the packaged unit's sandbox and journald on /dev/log:
 #   1. bower test emit: one bower-b64: line in the journal that decodes to the event;
 #   2. a burst of 2,000 events: every one is acknowledged by the collector and every one is
@@ -18,7 +18,7 @@ restore() {
   [ -z "$listener" ] || kill "$listener" 2>/dev/null || true
   [ -z "$test_rsyslog" ] || kill "$test_rsyslog" 2>/dev/null || true
   cp -p /root/bower.env.before "$env_file"
-  rm -f /etc/bower/producer-scopes.json /etc/systemd/system/bower.service.d/syslog-output.conf
+  rm -f /etc/bower/producer-scopes.json /etc/systemd/system/bower.service.d/ama-syslog-output.conf
   systemctl daemon-reload
   systemctl restart bower.service || true
 }
@@ -27,7 +27,7 @@ trap restore EXIT
 # journald's per-unit limit would otherwise drop part of the burst (the guide's drop-in).
 install -d /etc/systemd/system/bower.service.d
 printf '[Service]\nLogRateLimitIntervalSec=30s\nLogRateLimitBurst=50000\n' \
-  > /etc/systemd/system/bower.service.d/syslog-output.conf
+  > /etc/systemd/system/bower.service.d/ama-syslog-output.conf
 # Producer scopes are default deny: grant the loopback producer the canary and burst identities,
 # as the quick start's step 5 does.
 host="$(cat /proc/sys/kernel/hostname)"
@@ -41,15 +41,15 @@ cat > /etc/bower/producer-scopes.json <<JSON
 JSON
 chown root:bower /etc/bower/producer-scopes.json
 chmod 0640 /etc/bower/producer-scopes.json
-printf 'BOWER_OUTPUT=syslog\nBOWER_SYSLOG_OUTPUT_FACILITY=local4\nBOWER_PRODUCER_SCOPES_FILE=/etc/bower/producer-scopes.json\n' >> "$env_file"
+printf 'BOWER_OUTPUT=ama-syslog\nBOWER_AMA_SYSLOG_FACILITY=local4\nBOWER_PRODUCER_SCOPES_FILE=/etc/bower/producer-scopes.json\n' >> "$env_file"
 systemctl daemon-reload
 systemctl restart bower.service
 for _ in $(seq 1 60); do
   curl -sf http://127.0.0.1:4319/health >/dev/null && break
   sleep 1
 done
-curl -sf http://127.0.0.1:4319/health >/dev/null || fail "collector did not come back with BOWER_OUTPUT=syslog"
-bower doctor --syslog-socket /dev/log --policy-directory /etc/bower/policies | grep -q '^PASS  syslog' \
+curl -sf http://127.0.0.1:4319/health >/dev/null || fail "collector did not come back with BOWER_OUTPUT=ama-syslog"
+bower doctor --syslog-socket /dev/log --policy-directory /etc/bower/policies | grep -q '^PASS  ama-syslog' \
   || fail "bower doctor did not pass the syslog socket check"
 
 decoded_ids() {
@@ -101,7 +101,7 @@ python3 - "$status" <<'PYTHON' || fail "collector status after the burst is not 
 import json, sys
 status = json.loads(sys.argv[1])
 queue = status["queue"]
-assert status["output"] == "syslog", status["output"]
+assert status["output"] == "ama-syslog", status["output"]
 assert queue["deadLettered"] == 0, queue
 assert queue["retrying"] == 0, queue
 PYTHON
@@ -156,7 +156,7 @@ test_rsyslog=$!
 echo "confinement: test rsyslogd $(cat "/proc/$test_rsyslog/attr/current" 2>/dev/null || echo unknown); system rsyslogd $(cat "/proc/$(pgrep -xo rsyslogd || echo 0)/attr/current" 2>/dev/null || echo 'not running')"
 for _ in $(seq 1 60); do [ -S /run/bower-rsyslog-test.sock ] && break; sleep 0.5; done
 [ -S /run/bower-rsyslog-test.sock ] || { cat /var/log/rsyslog-bower-test.log >&2; fail "rsyslog did not create the test socket"; }
-printf 'BOWER_SYSLOG_OUTPUT_SOCKET=/run/bower-rsyslog-test.sock\n' >> "$env_file"
+printf 'BOWER_AMA_SYSLOG_SOCKET=/run/bower-rsyslog-test.sock\n' >> "$env_file"
 systemctl restart bower.service
 for _ in $(seq 1 60); do curl -sf http://127.0.0.1:4319/health >/dev/null && break; sleep 1; done
 # The collector adds its own context to the envelope (its size depends on the collector id

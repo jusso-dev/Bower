@@ -241,8 +241,8 @@ public sealed class SourceSetupApiTests
                     Assert.Contains(output, plan.Verification.Description, StringComparison.Ordinal);
                     if (values.GetValueOrDefault("delivery") == "syslog")
                     {
-                        Assert.Equal("syslog", output);
-                        Assert.Contains(plan.Variables, variable => variable is { Name: "BOWER_SYSLOG_OUTPUT_FACILITY", Value: "local5" });
+                        Assert.Equal("ama-syslog", output);
+                        Assert.Contains(plan.Variables, variable => variable is { Name: "BOWER_AMA_SYSLOG_FACILITY", Value: "local5" });
                         Assert.DoesNotContain(plan.Variables, variable => variable.Name == "BOWER_AMA_SPOOL_PATH");
                         Assert.Contains("facility=local5", plan.Snippets[0].Content, StringComparison.Ordinal);
                     }

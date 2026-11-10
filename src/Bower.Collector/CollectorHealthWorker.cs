@@ -111,7 +111,7 @@ public sealed partial class CollectorHealthWorker(
             storage);
         // The collector adds its policy and collector context (about 600 bytes) before the
         // record reaches the output, so leave room for it within the output's JSON limit.
-        int? recordLimit = output is Bower.Output.Syslog.SyslogOutput syslogOutput
+        int? recordLimit = output is Bower.Output.AmaSyslog.AmaSyslogOutput syslogOutput
             ? syslogOutput.MaximumJsonBytes - ProcessorContextAllowance
             : null;
         string record = CollectorHealthRecord.CreateJson(sample, identity.Id, settings.Environment, previous, recordLimit);

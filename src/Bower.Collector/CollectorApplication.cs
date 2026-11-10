@@ -10,10 +10,10 @@ using Bower.Core;
 using Bower.Forwarding;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
+using Bower.Output.AmaSyslog;
 using Bower.Output.AzureLogsIngestion;
 using Bower.Output.Http;
 using Bower.Output.S3;
-using Bower.Output.Syslog;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
@@ -333,17 +333,17 @@ public static partial class CollectorApplication
             LogUnauthenticatedIngest(app.Logger);
         }
 
-        if (app.Services.GetService<IOutputAdapter>() is SyslogOutput syslog)
+        if (app.Services.GetService<IOutputAdapter>() is AmaSyslogOutput syslog)
         {
             // Do not stop start-up: the daemon may come up later and the queue is durable. Say
             // once, by path and error class, what delivery will report as unavailable.
             if (syslog.Probe() is { } problem)
             {
-                LogSyslogSocketUnavailable(app.Logger, settings.SyslogOutputSocket, problem);
+                LogSyslogSocketUnavailable(app.Logger, settings.AmaSyslogSocket, problem);
             }
 
-            string facility = SyslogOutputOptions.FacilityName(settings.SyslogOutputFacility!.Value);
-            LogSyslogOutput(app.Logger, settings.SyslogOutputSocket, facility, settings.SyslogOutputMaximumBytes);
+            string facility = AmaSyslogOutputOptions.FacilityName(settings.AmaSyslogFacility!.Value);
+            LogSyslogOutput(app.Logger, settings.AmaSyslogSocket, facility, settings.AmaSyslogMaximumBytes);
         }
 
         IDurableEventStore queue = app.Services.GetRequiredService<IDurableEventStore>();
@@ -702,13 +702,13 @@ public static partial class CollectorApplication
                 },
                 settings.CollectorId),
             "s3" => new S3Output(settings.S3Output! with { CollectorId = settings.CollectorId }),
-            "syslog" => new SyslogOutput(new SyslogOutputOptions
+            "ama-syslog" => new AmaSyslogOutput(new AmaSyslogOutputOptions
             {
-                Id = "syslog",
-                SocketPath = settings.SyslogOutputSocket,
-                Facility = settings.SyslogOutputFacility!.Value,
-                MaximumMessageBytes = settings.SyslogOutputMaximumBytes,
-                BusyWait = settings.SyslogOutputBusyWait
+                Id = "ama-syslog",
+                SocketPath = settings.AmaSyslogSocket,
+                Facility = settings.AmaSyslogFacility!.Value,
+                MaximumMessageBytes = settings.AmaSyslogMaximumBytes,
+                BusyWait = settings.AmaSyslogBusyWait
             }),
             // The token and CA bundle are read here, so a bad file stops start-up.
             HttpOutput.OutputId => new HttpOutput(
@@ -727,12 +727,12 @@ public static partial class CollectorApplication
     [LoggerMessage(
         EventId = 1010,
         Level = LogLevel.Warning,
-        Message = "Syslog output socket {SocketPath} does not accept connections ({SocketError}). Events stay queued and are retried; check that the syslog daemon is running and the path is right.")]
+        Message = "AMA syslog output socket {SocketPath} does not accept connections ({SocketError}). Events stay queued and are retried; check that the syslog daemon is running and the path is right.")]
     private static partial void LogSyslogSocketUnavailable(ILogger logger, string socketPath, string socketError);
 
     [LoggerMessage(
         EventId = 1011,
         Level = LogLevel.Information,
-        Message = "Syslog output writes to {SocketPath} on facility {Facility}, at most {MaximumBytes} bytes per message. The collection rule's facility must match.")]
+        Message = "AMA syslog output writes to {SocketPath} on facility {Facility}, at most {MaximumBytes} bytes per message. The collection rule's facility must match.")]
     private static partial void LogSyslogOutput(ILogger logger, string socketPath, string facility, int maximumBytes);
 }

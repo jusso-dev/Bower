@@ -881,7 +881,7 @@ public sealed class CollectorHealthRecordTests
         await store.InitializeAsync(cancellationToken);
         SecurityEventProcessor processor = new(
             new JsonEventRedactor(), new DeterministicPolicyEvaluator([PolicyLoader.LoadFile(HealthPolicyFile)]), store, clock);
-        using Bower.Output.Syslog.SyslogOutput output = new(new Bower.Output.Syslog.SyslogOutputOptions { Id = "syslog" });
+        using Bower.Output.AmaSyslog.AmaSyslogOutput output = new(new Bower.Output.AmaSyslog.AmaSyslogOutputOptions { Id = "ama-syslog" });
         CollectorHealthSample sample = LargeSample(listed);
         int limit = output.MaximumJsonBytes - CollectorHealthWorker.ProcessorContextAllowance;
 

@@ -1,5 +1,5 @@
 // Azure Monitor Agent collection of Bower events from local syslog on Linux
-// (docs/getting-started/azure-monitor-agent.md). A collector with BOWER_OUTPUT=syslog writes each
+// (docs/getting-started/azure-monitor-agent.md). A collector with BOWER_OUTPUT=ama-syslog writes each
 // policy-approved, redacted envelope to /dev/log as "bower: bower-b64:<base64 JSON>" on local4.
 // This rule collects that facility, decodes the envelope and maps it into BowerSecurity_CL with
 // the same columns as main.bicep's Logs Ingestion rule (tests derive one from the other).
@@ -9,7 +9,7 @@
 // CloudAgentQuickStartTests renders it and fails, naming this file, when it differs.
 // It keeps only messages tagged "bower" (ProcessName) whose whole text, apart from surrounding
 // white space, is the marker and one base64 value. Any local account can still send such a
-// message (docs/deployment/syslog-output.md, trust boundary). schemaVersion is pinned to 1.0.0,
+// message (docs/deployment/ama-syslog-output.md, trust boundary). schemaVersion is pinned to 1.0.0,
 // as in main.bicep: when the envelope version changes, deploy the new rule first, then
 // upgrade collectors. Deployed and run with Azure Monitor Agent 1.45.1 on 10-11-2026 (#249).
 targetScope = 'resourceGroup'
@@ -33,7 +33,7 @@ param tags object = {}
 @maxLength(40)
 param namePrefix string = 'bower'
 
-@description('Syslog facility Bower writes to (BOWER_SYSLOG_OUTPUT_FACILITY 20 is local4).')
+@description('Syslog facility Bower writes to (BOWER_AMA_SYSLOG_FACILITY 20 is local4).')
 @allowed(['local0', 'local1', 'local2', 'local3', 'local4', 'local5', 'local6', 'local7'])
 param facility string = 'local4'
 

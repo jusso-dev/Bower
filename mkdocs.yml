@@ -103,7 +103,7 @@ nav:
           - Relay networks: deployment/relay.md
           - Amazon S3 output: deployment/s3-output.md
           - Splunk HEC and NDJSON output: deployment/http-splunk-hec-output.md
-          - Syslog output for Azure Monitor Agent: deployment/syslog-output.md
+          - Syslog output for Azure Monitor Agent: deployment/ama-syslog-output.md
           - Azure Arc extension: deployment/azure-arc-extension.md
       - Connect a source:
           - Syslog source: deployment/syslog-source.md

@@ -5,7 +5,7 @@ using Bower.Abstractions;
 using Bower.Contracts;
 using Bower.Dcr;
 using Bower.Evidence;
-using Bower.Output.Syslog;
+using Bower.Output.AmaSyslog;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
@@ -145,7 +145,7 @@ internal static class DoctorCommand
             await CheckCollectorAsync(collectorUrl, CollectorTimeout, Pass, Warn, Fail);
         }
 
-        // Local syslog output (BOWER_OUTPUT=syslog): the socket the collector will write to.
+        // Local syslog output (BOWER_OUTPUT=ama-syslog): the socket the collector will write to.
         if (CliOptions.Get(args, "--syslog-socket") is { } syslogSocket)
         {
             CheckSyslogSocket(syslogSocket, Pass, Fail);
@@ -292,32 +292,32 @@ internal static class DoctorCommand
     {
         if (OperatingSystem.IsWindows())
         {
-            fail("syslog", "BOWER_OUTPUT=syslog runs on Linux only; use azure-logs-ingestion on Windows.");
+            fail("ama-syslog", "BOWER_OUTPUT=ama-syslog runs on Linux only; use azure-logs-ingestion on Windows.");
             return;
         }
 
-        if (SyslogOutputOptions.SocketPathProblem(path) is { } problem)
+        if (AmaSyslogOutputOptions.SocketPathProblem(path) is { } problem)
         {
-            fail("syslog", $"{path} {problem}.");
+            fail("ama-syslog", $"{path} {problem}.");
             return;
         }
 
         // File.Exists follows /dev/log's symbolic link and is false for a dangling one.
         if (!File.Exists(path))
         {
-            fail("syslog", $"{path} does not exist. Is the syslog daemon running? In a container, mount the host's /dev/log.");
+            fail("ama-syslog", $"{path} does not exist. Is the syslog daemon running? In a container, mount the host's /dev/log.");
             return;
         }
 
         // Connecting to a path that is not a socket fails with ConnectionRefused on Linux and
         // macOS, the same as a socket nobody listens on, so both are reported together.
-        if (SyslogOutput.Probe(path) is { } error)
+        if (AmaSyslogOutput.Probe(path) is { } error)
         {
-            fail("syslog", $"{path} is not a listening syslog socket ({error}).");
+            fail("ama-syslog", $"{path} is not a listening syslog socket ({error}).");
             return;
         }
 
-        pass("syslog", $"{path} is a socket and accepts connections.");
+        pass("ama-syslog", $"{path} is a socket and accepts connections.");
     }
 
     private static void Report(

@@ -1,8 +1,8 @@
 # Syslog output for Azure Monitor Agent
 
-`BOWER_OUTPUT=syslog` hands each redacted, policy-approved envelope to the local syslog
+`BOWER_OUTPUT=ama-syslog` hands each redacted, policy-approved envelope to the local syslog
 daemon on a Linux server, for Azure Monitor Agent (AMA) to collect
-(`Bower.Output.Syslog`). The steps are in
+(`Bower.Output.AmaSyslog`). The steps are in
 [Quick start: Azure Monitor Agent](../getting-started/azure-monitor-agent.md); this page is
 the reference.
 
@@ -10,7 +10,7 @@ It is not a network syslog sink. It writes only to a local Unix socket, in a for
 matching collection rule
 ([`deploy/bicep/ama-syslog-dcr.bicep`](https://github.com/jusso-dev/Bower/blob/main/deploy/bicep/ama-syslog-dcr.bicep))
 reads. To receive syslog from other systems, see the [syslog source](syslog-source.md), which
-works in the other direction. The pipeline builder's `syslog` output type is this same output.
+works in the other direction. The pipeline builder's `ama-syslog` output type is this same output.
 
 The whole path was run once with real Azure Monitor Agents on 10-11-2026 (agent 1.45.1, on
 Oracle Linux 9.8 with SELinux enforcing and Ubuntu 24.04, both from the Bower packages): see
@@ -20,7 +20,7 @@ stand-in for the agent.
 
 ## Which Azure path
 
-| | `azure-logs-ingestion` | `syslog` (this page) | `ama-spool` |
+| | `azure-logs-ingestion` | `ama-syslog` (this page) | `ama-spool` |
 |---|---|---|---|
 | Credential on the server | Managed identity or workload identity with the Monitoring Metrics Publisher role on the rule | None (the agent's managed identity uploads) | None (the agent uploads) |
 | Delivery confirmation | Each upload is confirmed by the API; refusals are dead-lettered by name | Only that the local daemon took the datagram; arrival is proved only by a Sentinel query | Only that the file was written; arrival is proved only by a Sentinel query |
@@ -34,14 +34,14 @@ arrival per upload, or for events larger than 5,730 bytes.
 
 ## What is written
 
-One datagram per event to `BOWER_SYSLOG_OUTPUT_SOCKET`, in the local format `syslog(3)` uses:
+One datagram per event to `BOWER_AMA_SYSLOG_SOCKET`, in the local format `syslog(3)` uses:
 
 ```text
 <165>Nov 10 01:02:03 bower: bower-b64:eyJzY2hlbWFWZXJzaW9uIjoiMS4wLjAiLCJldmVudElkIjoi...
 ```
 
 - `<165>` is facility `local4` (20) times 8 plus severity `notice` (5). The facility follows
-  `BOWER_SYSLOG_OUTPUT_FACILITY`; the severity is always `notice`.
+  `BOWER_AMA_SYSLOG_FACILITY`; the severity is always `notice`.
 - The timestamp keeps the format well formed; the daemon stamps its own receive time.
 - The tag is `bower`. The rule keeps only rows whose process name is `bower`.
 - After `bower-b64:` comes the compact envelope JSON in standard base64, with nothing after it.
@@ -54,11 +54,11 @@ A datagram is all or nothing: an event is never split or truncated by Bower.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `BOWER_OUTPUT` | `none` | `syslog` selects this output. Refused at start-up on Windows. |
-| `BOWER_SYSLOG_OUTPUT_SOCKET` | `/dev/log` | The daemon's datagram socket. Absolute path, at most 107 bytes. |
-| `BOWER_SYSLOG_OUTPUT_FACILITY` | `local4` | `local0` to `local7`; the numbers 16 to 23 are accepted as aliases. Anything else is refused at start-up. Must match the rule's `facility` parameter. |
-| `BOWER_SYSLOG_OUTPUT_MAX_BYTES` | `7680` | The whole datagram, header included, 1024 to 65507. Keep it at least 512 below rsyslog's `MaxMessageSize` (see [Size](#size)). |
-| `BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS` | `2` | How long one datagram may wait for the daemon to make room before the rest of the batch is retried. 1 to 30, and below `BOWER_DELIVERY_TIMEOUT_SECONDS`. |
+| `BOWER_OUTPUT` | `none` | `ama-syslog` selects this output. Refused at start-up on Windows. |
+| `BOWER_AMA_SYSLOG_SOCKET` | `/dev/log` | The daemon's datagram socket. Absolute path, at most 107 bytes. |
+| `BOWER_AMA_SYSLOG_FACILITY` | `local4` | `local0` to `local7`; the numbers 16 to 23 are accepted as aliases. Anything else is refused at start-up. Must match the rule's `facility` parameter. |
+| `BOWER_AMA_SYSLOG_MAX_BYTES` | `7680` | The whole datagram, header included, 1024 to 65507. Keep it at least 512 below rsyslog's `MaxMessageSize` (see [Size](#size)). |
+| `BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS` | `2` | How long one datagram may wait for the daemon to make room before the rest of the batch is retried. 1 to 30, and below `BOWER_DELIVERY_TIMEOUT_SECONDS`. |
 
 At start-up the collector tries the socket once and logs one warning if it cannot connect. It
 still starts: events wait in the durable queue. To check the socket yourself:
@@ -97,7 +97,7 @@ That leaves 444 characters for the header rsyslog or the agent writes in front o
 A larger envelope is refused with `payload-too-large` and dead-lettered.
 
 If you raise rsyslog's limit (`global(maxMessageSize="32k")` or `$MaxMessageSize 32k` at the
-top of `/etc/rsyslog.conf`, before any input), you can raise `BOWER_SYSLOG_OUTPUT_MAX_BYTES`,
+top of `/etc/rsyslog.conf`, before any input), you can raise `BOWER_AMA_SYSLOG_MAX_BYTES`,
 keeping it at least 512 below. The agent did not truncate below rsyslog's cap in the live run;
 messages over 8,096 characters were not tested with a raised rsyslog limit.
 Compression is not possible: the rule's transform language has no decompression function
@@ -115,7 +115,7 @@ Three local limits can drop messages in a burst. All are on the server, before t
 
 | Limit | Default | Tested burst, default | Fix (tested) |
 |---|---|---|---|
-| journald, per service | 10,000 per 30 s, scaled up by free disk space | 150,000 sent in 1.5 s: 32,500 kept (Rocky), 37,500 (Debian) | [`bower-syslog-ratelimit.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/bower-syslog-ratelimit.conf) in `/etc/systemd/system/bower.service.d/`: 150,000 kept on both |
+| journald, per service | 10,000 per 30 s, scaled up by free disk space | 150,000 sent in 1.5 s: 32,500 kept (Rocky), 37,500 (Debian) | [`bower-ama-syslog-ratelimit.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/bower-ama-syslog-ratelimit.conf) in `/etc/systemd/system/bower.service.d/`: 150,000 kept on both |
 | rsyslog `imjournal` (RHEL family) | 20,000 per 600 s for the whole host, about 33 per second sustained | 19,988 of 150,000 forwarded | [`rsyslog-imjournal-ratelimit.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/rsyslog-imjournal-ratelimit.conf): 150,000 forwarded |
 | journald to rsyslog socket (Debian family) | kernel queue of 512 datagrams | 149,529 to 149,830 of 150,000 forwarded | [`sysctl-bower-syslog.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/sysctl-bower-syslog.conf): 150,000 forwarded |
 
@@ -143,11 +143,11 @@ Rocky 9 and Debian 12 container images used here): check with `systemctl is-acti
 
 | Code | Cause | What happens | What to do |
 |---|---|---|---|
-| `destination-syslog-unavailable` | Socket missing or refusing | Retried every 30 s | Start journald or rsyslog; check `BOWER_SYSLOG_OUTPUT_SOCKET` |
-| `destination-syslog-busy` | The daemon took nothing during the busy wait | Retried | Usually a burst; check the rate limits above |
-| `destination-syslog-access-denied` | Socket permissions | Retried | Fix the permission on the socket |
-| `destination-syslog-cancelled` | Shutdown or delivery timeout part-way | Events already sent are acknowledged; only the rest are retried | None |
-| `payload-too-large` | Datagram over `BOWER_SYSLOG_OUTPUT_MAX_BYTES` | Dead-lettered | See [Size](#size); use `azure-logs-ingestion` for large events |
+| `destination-ama-syslog-unavailable` | Socket missing or refusing | Retried every 30 s | Start journald or rsyslog; check `BOWER_AMA_SYSLOG_SOCKET` |
+| `destination-ama-syslog-busy` | The daemon took nothing during the busy wait | Retried | Usually a burst; check the rate limits above |
+| `destination-ama-syslog-access-denied` | Socket permissions | Retried | Fix the permission on the socket |
+| `destination-ama-syslog-cancelled` | Shutdown or delivery timeout part-way | Events already sent are acknowledged; only the rest are retried | None |
+| `payload-too-large` | Datagram over `BOWER_AMA_SYSLOG_MAX_BYTES` | Dead-lettered | See [Size](#size); use `azure-logs-ingestion` for large events |
 | `payload-invalid-json`, `payload-event-id-mismatch` | Queued payload is not a valid envelope | Dead-lettered | Report it |
 | `preflight-time-generated-missing`, `preflight-type-mismatch`, `preflight-field-too-large`, `preflight-record-too-large` | The same checks as the Logs Ingestion output | Dead-lettered | See [Azure ingestion API](logs-ingestion-api.md) |
 
@@ -270,7 +270,7 @@ rule first, then upgrade the collectors.
 | `workspaceResourceGroup` | the deployment's resource group | Where that workspace is. |
 | `location` | the resource group's region | The rule must be in the workspace's region ([Microsoft](https://learn.microsoft.com/en-us/azure/azure-monitor/vm/data-collection)). Pass `location=<workspace region>` when the resource group is in another region. |
 | `namePrefix` | `bower` | The rule is named `<namePrefix>-ama-syslog-dcr`. |
-| `facility` | `local4` | Must match `BOWER_SYSLOG_OUTPUT_FACILITY`. |
+| `facility` | `local4` | Must match `BOWER_AMA_SYSLOG_FACILITY`. |
 | `dataCollectionEndpointId` | empty | Only for Private Link; see below. |
 | `tags` | `{}` | Tags for the rule. |
 
@@ -298,7 +298,7 @@ Syslog
 
 ## Relay
 
-A relay collector can use `BOWER_OUTPUT=syslog` as its own output: the relay stores each
+A relay collector can use `BOWER_OUTPUT=ama-syslog` as its own output: the relay stores each
 downstream envelope in its own queue and delivers it through the configured output, and the
 settings do not forbid this one (read from the code, not tested). Everything on this page then
 applies to the relay host, including the trust boundary.

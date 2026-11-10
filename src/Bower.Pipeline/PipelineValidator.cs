@@ -10,13 +10,13 @@ public static class PipelineValidator
 
     // Azure Monitor / Sentinel delivery is the "azure-logs-ingestion" output (Logs
     // Ingestion API). There is no separate "azure-monitor" output type.
-    // "syslog" is the collector's BOWER_OUTPUT=syslog: the local /dev/log output that Azure
+    // "ama-syslog" is the collector's BOWER_OUTPUT=ama-syslog: the local /dev/log output that Azure
     // Monitor Agent collects on Linux (base64 envelope on one facility, decoded by
     // deploy/bicep/ama-syslog-dcr.bicep). It is not a network syslog sink. See
-    // docs/deployment/syslog-output.md.
+    // docs/deployment/ama-syslog-output.md.
     private static readonly string[] OutputTypes =
     [
-        "azure-logs-ingestion", "ama-spool", "http", "kafka", "syslog", "security-lake", "opensearch"
+        "azure-logs-ingestion", "ama-spool", "http", "kafka", "ama-syslog", "security-lake", "opensearch"
     ];
 
     private static readonly HashSet<string> AllowedSourceTypes = new(SourceTypes, StringComparer.OrdinalIgnoreCase);

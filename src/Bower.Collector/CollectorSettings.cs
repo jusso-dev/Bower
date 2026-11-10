@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Net;
 using Bower.Contracts;
 using Bower.Core;
-using Bower.Output.Syslog;
+using Bower.Output.AmaSyslog;
 using Bower.Packs;
 using Bower.Redaction.Privacy;
 
@@ -125,21 +125,21 @@ public sealed record CollectorSettings
 
     public string AmaSpoolPath { get; init; } = Path.Combine(AppContext.BaseDirectory, "spool");
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_SOCKET: the local syslog daemon's datagram socket (BOWER_OUTPUT=syslog).</summary>
-    public string SyslogOutputSocket { get; init; } = "/dev/log";
+    /// <summary>BOWER_AMA_SYSLOG_SOCKET: the local syslog daemon's datagram socket (BOWER_OUTPUT=ama-syslog).</summary>
+    public string AmaSyslogSocket { get; init; } = "/dev/log";
 
     /// <summary>
-    /// BOWER_SYSLOG_OUTPUT_FACILITY: <c>local0</c> to <c>local7</c> (numbers 16 to 23 also
+    /// BOWER_AMA_SYSLOG_FACILITY: <c>local0</c> to <c>local7</c> (numbers 16 to 23 also
     /// accepted), <c>local4</c> by default. The collection rule's <c>facility</c> must match.
     /// Held as the facility number; null when the value was not one of those.
     /// </summary>
-    public int? SyslogOutputFacility { get; init; } = 20;
+    public int? AmaSyslogFacility { get; init; } = 20;
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole datagram limit; keep it at least 512 below rsyslog's MaxMessageSize.</summary>
-    public int SyslogOutputMaximumBytes { get; init; } = SyslogOutputOptions.DefaultMaximumMessageBytes;
+    /// <summary>BOWER_AMA_SYSLOG_MAX_BYTES: whole datagram limit; keep it at least 512 below rsyslog's MaxMessageSize.</summary>
+    public int AmaSyslogMaximumBytes { get; init; } = AmaSyslogOutputOptions.DefaultMaximumMessageBytes;
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS: how long one message may wait for a full daemon queue.</summary>
-    public TimeSpan SyslogOutputBusyWait { get; init; } = SyslogOutputOptions.DefaultBusyWait;
+    /// <summary>BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS: how long one message may wait for a full daemon queue.</summary>
+    public TimeSpan AmaSyslogBusyWait { get; init; } = AmaSyslogOutputOptions.DefaultBusyWait;
 
     public string StreamName { get; init; } = "Custom-BowerSecurity";
 
@@ -375,12 +375,12 @@ public sealed record CollectorSettings
             HttpOutput = HttpOutputSettings.FromEnvironment(read),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
-            SyslogOutputSocket = Blank(read("BOWER_SYSLOG_OUTPUT_SOCKET")) ?? "/dev/log",
-            SyslogOutputFacility = Blank(read("BOWER_SYSLOG_OUTPUT_FACILITY")) is { } facility
-                ? SyslogOutputOptions.TryParseFacility(facility, out int number) ? number : null
+            AmaSyslogSocket = Blank(read("BOWER_AMA_SYSLOG_SOCKET")) ?? "/dev/log",
+            AmaSyslogFacility = Blank(read("BOWER_AMA_SYSLOG_FACILITY")) is { } facility
+                ? AmaSyslogOutputOptions.TryParseFacility(facility, out int number) ? number : null
                 : 20,
-            SyslogOutputMaximumBytes = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", SyslogOutputOptions.DefaultMaximumMessageBytes),
-            SyslogOutputBusyWait = TimeSpan.FromSeconds(ReadInt32(read, "BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", 2)),
+            AmaSyslogMaximumBytes = ReadInt32(read, "BOWER_AMA_SYSLOG_MAX_BYTES", AmaSyslogOutputOptions.DefaultMaximumMessageBytes),
+            AmaSyslogBusyWait = TimeSpan.FromSeconds(ReadInt32(read, "BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS", 2)),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
             DceEndpoint = string.IsNullOrWhiteSpace(dceEndpoint)
                 ? null
@@ -519,46 +519,46 @@ public sealed record CollectorSettings
                 "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
         }
 
-        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http" or "syslog"))
+        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http" or "ama-syslog"))
         {
             throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {OutputType}");
         }
 
-        if (OutputType == "syslog")
+        if (OutputType == "ama-syslog")
         {
             if (OperatingSystem.IsWindows())
             {
                 // Windows has no datagram Unix sockets and no /dev/log.
                 throw new InvalidOperationException(
-                    "BOWER_OUTPUT=syslog writes to a local syslog socket and runs on Linux only. On Windows use BOWER_OUTPUT=azure-logs-ingestion.");
+                    "BOWER_OUTPUT=ama-syslog writes to a local syslog socket and runs on Linux only. On Windows use BOWER_OUTPUT=azure-logs-ingestion.");
             }
 
-            if (SyslogOutputOptions.SocketPathProblem(SyslogOutputSocket) is { } problem)
+            if (AmaSyslogOutputOptions.SocketPathProblem(AmaSyslogSocket) is { } problem)
             {
-                throw new InvalidOperationException($"BOWER_SYSLOG_OUTPUT_SOCKET {problem}.");
+                throw new InvalidOperationException($"BOWER_AMA_SYSLOG_SOCKET {problem}.");
             }
 
-            if (SyslogOutputFacility is null)
-            {
-                throw new InvalidOperationException(
-                    $"BOWER_SYSLOG_OUTPUT_FACILITY must be one of {string.Join(", ", SyslogOutputOptions.FacilityNames)} (or 16 to 23), the facilities the collection rule can collect.");
-            }
-
-            if (SyslogOutputMaximumBytes < SyslogOutputOptions.MinimumMessageBytes
-                || SyslogOutputMaximumBytes > SyslogOutputOptions.MaximumMessageBytesLimit)
+            if (AmaSyslogFacility is null)
             {
                 throw new InvalidOperationException(
-                    $"BOWER_SYSLOG_OUTPUT_MAX_BYTES must be between {SyslogOutputOptions.MinimumMessageBytes} and {SyslogOutputOptions.MaximumMessageBytesLimit}.");
+                    $"BOWER_AMA_SYSLOG_FACILITY must be one of {string.Join(", ", AmaSyslogOutputOptions.FacilityNames)} (or 16 to 23), the facilities the collection rule can collect.");
+            }
+
+            if (AmaSyslogMaximumBytes < AmaSyslogOutputOptions.MinimumMessageBytes
+                || AmaSyslogMaximumBytes > AmaSyslogOutputOptions.MaximumMessageBytesLimit)
+            {
+                throw new InvalidOperationException(
+                    $"BOWER_AMA_SYSLOG_MAX_BYTES must be between {AmaSyslogOutputOptions.MinimumMessageBytes} and {AmaSyslogOutputOptions.MaximumMessageBytesLimit}.");
             }
 
             // One message may wait this long, and the batch must still settle inside the
             // delivery timeout and lease: keep it well below BOWER_DELIVERY_TIMEOUT_SECONDS.
-            if (SyslogOutputBusyWait < TimeSpan.FromSeconds(1)
-                || SyslogOutputBusyWait > SyslogOutputOptions.MaximumBusyWait
-                || SyslogOutputBusyWait >= DeliveryTimeout)
+            if (AmaSyslogBusyWait < TimeSpan.FromSeconds(1)
+                || AmaSyslogBusyWait > AmaSyslogOutputOptions.MaximumBusyWait
+                || AmaSyslogBusyWait >= DeliveryTimeout)
             {
                 throw new InvalidOperationException(
-                    "BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS must be between 1 and 30 and below BOWER_DELIVERY_TIMEOUT_SECONDS.");
+                    "BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS must be between 1 and 30 and below BOWER_DELIVERY_TIMEOUT_SECONDS.");
             }
         }
 

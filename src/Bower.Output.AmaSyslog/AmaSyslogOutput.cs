@@ -6,7 +6,7 @@ using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Dcr;
 
-namespace Bower.Output.Syslog;
+namespace Bower.Output.AmaSyslog;
 
 /// <summary>
 /// Writes each envelope to the local syslog daemon as one datagram on a Unix socket, in the
@@ -16,24 +16,24 @@ namespace Bower.Output.Syslog;
 /// ingestion, and base64 carries every byte unchanged. The collection rule decodes it.
 /// <para>
 /// The socket is non-blocking. When the daemon's queue is full, one datagram waits up to
-/// <see cref="SyslogOutputOptions.BusyWait"/> for room, then the rest of the batch is retried.
+/// <see cref="AmaSyslogOutputOptions.BusyWait"/> for room, then the rest of the batch is retried.
 /// The delivery worker's timeout bounds the whole batch, and cancellation (shutdown, deadline)
 /// returns what was already sent as acknowledged, so nothing is sent twice by this adapter.
 /// </para>
 /// </summary>
-public sealed class SyslogOutput : IOutputAdapter, IDisposable
+public sealed class AmaSyslogOutput : IOutputAdapter, IDisposable
 {
     /// <summary>The socket is missing, refuses connections or was reset; retried.</summary>
-    public const string SocketUnavailableCode = "destination-syslog-unavailable";
+    public const string SocketUnavailableCode = "destination-ama-syslog-unavailable";
 
-    /// <summary>The daemon took nothing for <see cref="SyslogOutputOptions.BusyWait"/>; retried.</summary>
-    public const string SocketBusyCode = "destination-syslog-busy";
+    /// <summary>The daemon took nothing for <see cref="AmaSyslogOutputOptions.BusyWait"/>; retried.</summary>
+    public const string SocketBusyCode = "destination-ama-syslog-busy";
 
     /// <summary>The collector's account may not write to the socket; retried until fixed.</summary>
-    public const string AccessDeniedCode = "destination-syslog-access-denied";
+    public const string AccessDeniedCode = "destination-ama-syslog-access-denied";
 
     /// <summary>Delivery stopped part-way (shutdown or deadline); the unsent rest is retried.</summary>
-    public const string CancelledCode = "destination-syslog-cancelled";
+    public const string CancelledCode = "destination-ama-syslog-cancelled";
 
     /// <summary>The message does not fit one datagram; never truncated.</summary>
     public const string MessageTooLargeCode = "payload-too-large";
@@ -49,7 +49,7 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
 
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
     private static readonly TimeSpan NoBufferRetry = TimeSpan.FromMilliseconds(10);
-    private readonly SyslogOutputOptions options;
+    private readonly AmaSyslogOutputOptions options;
     private readonly TimeProvider clock;
     private readonly string priority;
     private readonly SemaphoreSlim gate = new(1, 1);
@@ -62,7 +62,7 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
     /// Only writes the header timestamp. journald and rsyslog stamp their own receive time, so
     /// the value keeps the format well formed and lets tests pin the exact datagram.
     /// </param>
-    public SyslogOutput(SyslogOutputOptions options, TimeProvider? clock = null)
+    public AmaSyslogOutput(AmaSyslogOutputOptions options, TimeProvider? clock = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         options.Validate();
@@ -217,7 +217,7 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
     internal int MessageBytes(int jsonBytes) => HeaderBytes + Base64.GetMaxEncodedToUtf8Length(jsonBytes);
 
     /// <summary>
-    /// The largest envelope JSON, in UTF-8 bytes, that fits <see cref="SyslogOutputOptions.MaximumMessageBytes"/>
+    /// The largest envelope JSON, in UTF-8 bytes, that fits <see cref="AmaSyslogOutputOptions.MaximumMessageBytes"/>
     /// (5,730 at the defaults). The collector keeps its own records, such as collector_health,
     /// within it.
     /// </summary>
@@ -404,7 +404,7 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
 
     /// <summary>
     /// Cancels a delivery in progress (it returns within one send), then closes the socket.
-    /// Waits at most <see cref="SyslogOutputOptions.BusyWait"/> for that delivery to let go.
+    /// Waits at most <see cref="AmaSyslogOutputOptions.BusyWait"/> for that delivery to let go.
     /// </summary>
     public void Dispose()
     {
@@ -441,7 +441,7 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
     }
 }
 
-public sealed record SyslogOutputOptions
+public sealed record AmaSyslogOutputOptions
 {
     /// <summary>Smallest accepted <see cref="MaximumMessageBytes"/>.</summary>
     public const int MinimumMessageBytes = 1_024;

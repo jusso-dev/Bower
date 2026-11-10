@@ -60,7 +60,7 @@ def select(paths, full=False):
             selected.update(("infrastructure", "dotnet"))
         elif path.startswith("deploy/"):
             selected.add("infrastructure")
-        elif path.startswith("src/Bower.Output.Syslog/"):
+        elif path.startswith("src/Bower.Output.AmaSyslog/"):
             # The installer test runs this output under the packaged unit and journald (#245).
             selected.update(("dotnet", "windows", "e2e", "platforms", "packaging"))
         elif path.startswith(("src/", "tests/")):

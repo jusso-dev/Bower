@@ -696,7 +696,7 @@ internal sealed partial class GcpSourceSetup : SourceSetupType
 
 /// <summary>
 /// Azure Monitor Agent on the collector host. Two deliveries: local syslog with the ready-made
-/// rule (Linux, docs/deployment/syslog-output.md) or ready files AMA collects with a rule the
+/// rule (Linux, docs/deployment/ama-syslog-output.md) or ready files AMA collects with a rule the
 /// operator writes (docs/deployment/ama-companion.md). The output, check and heartbeat output
 /// name follow the choice.
 /// </summary>
@@ -762,7 +762,7 @@ internal sealed partial class AmaSourceSetup : SourceSetupType
     ];
 
     public override string CheckDescription =>
-        "Bower watches the collector's heartbeat for the output you chose (syslog or ama-spool). It turns green when the collector reports it healthy. That proves only the hand-off on the host: AMA's own collection is checked in Azure Monitor, and arrival only by a Sentinel query.";
+        "Bower watches the collector's heartbeat for the output you chose (ama-syslog or ama-spool). It turns green when the collector reports it healthy. That proves only the hand-off on the host: AMA's own collection is checked in Azure Monitor, and arrival only by a Sentinel query.";
 
     public override string Guide => "docs/getting-started/azure-monitor-agent.md";
 
@@ -775,8 +775,8 @@ internal sealed partial class AmaSourceSetup : SourceSetupType
         return new SourceSetupBuild(
             [],
             [
-                new("collector", "BOWER_OUTPUT", "syslog"),
-                new("collector", "BOWER_SYSLOG_OUTPUT_FACILITY", facility)
+                new("collector", "BOWER_OUTPUT", "ama-syslog"),
+                new("collector", "BOWER_AMA_SYSLOG_FACILITY", facility)
             ],
             [new SourceSetupSnippet(
                 "Azure: create the collection rule (before approving)",
@@ -787,8 +787,8 @@ internal sealed partial class AmaSourceSetup : SourceSetupType
                 $"  --parameters workspaceName=<workspace> facility={facility}\n")],
             new SourceSetupVerification(
                 "output",
-                "syslog",
-                "The collector's heartbeat reports the syslog output as healthy (the local daemon accepted events)."));
+                "ama-syslog",
+                "The collector's heartbeat reports the ama-syslog output as healthy (the local daemon accepted events)."));
     }
 
     private static SourceSetupBuild BuildSpool(IReadOnlyDictionary<string, string> values)

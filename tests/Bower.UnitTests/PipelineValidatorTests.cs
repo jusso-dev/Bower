@@ -79,7 +79,7 @@ public sealed class PipelineValidatorTests
         Assert.Equal("Node 'lonely' has no edges; connect it to the pipeline or remove it.", disconnected.Message);
         PipelineValidationIssue output = Assert.Single(result.Issues, issue => issue.Code == "output-type");
         Assert.Equal(
-            "Unknown output type 'azure-monitor'. Supported: azure-logs-ingestion, ama-spool, http, kafka, syslog, security-lake, opensearch.",
+            "Unknown output type 'azure-monitor'. Supported: azure-logs-ingestion, ama-spool, http, kafka, ama-syslog, security-lake, opensearch.",
             output.Message);
         Assert.True(PipelineValidator.Validate(PipelineValidator.CreateTemplate("aws-security")).IsValid);
     }

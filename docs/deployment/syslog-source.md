@@ -5,7 +5,7 @@ appliances, legacy Linux services) and turn selected messages into Bower events.
 a privacy gateway in front of those senders, not a syslog server for the estate:
 broad syslog fan-in stays with the Azure Monitor Agent. This page is about Bower receiving
 syslog; for Bower writing its events to local syslog for Azure Monitor Agent, see the
-[syslog output](syslog-output.md).
+[syslog output](ama-syslog-output.md).
 
 ```
 sender ──RELP or TLS (or loopback TCP/UDP)──▶ listener ──▶ parse ──▶ route ──▶ signed pack parser ──▶ redact + policy ──▶ durable queue

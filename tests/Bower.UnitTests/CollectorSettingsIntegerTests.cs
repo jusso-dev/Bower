@@ -18,7 +18,7 @@ public sealed class CollectorSettingsIntegerTests
     [InlineData("BOWER_TAP_MAX_EVENT_BYTES")]
     [InlineData("BOWER_STORAGE_WARNING_FREE_PERCENT")]
     [InlineData("BOWER_STORAGE_CRITICAL_FREE_PERCENT")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES")]
+    [InlineData("BOWER_AMA_SYSLOG_MAX_BYTES")]
     public void Settings_RefuseA32BitValueThatWouldWrapIntoRange(string name)
     {
         // #243: 2^32 + 20 used to be narrowed to 20 and accepted.

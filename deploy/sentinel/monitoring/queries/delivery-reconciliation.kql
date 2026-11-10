@@ -1,5 +1,5 @@
 // Bower: events each collector queued against rows that arrived in BowerSecurity_CL, per CollectorId.
-// For outputs that cannot confirm arrival (BOWER_OUTPUT=syslog: the daemon, Azure Monitor Agent
+// For outputs that cannot confirm arrival (BOWER_OUTPUT=ama-syslog: the daemon, Azure Monitor Agent
 // and the collection rule's transform can each drop an event after Bower counted it delivered).
 // Run live on 10-11-2026 (#249): no false alarm (304 reported, 306 arrived), but a loss of 100
 // events that also lost the health record covering them did not show here.

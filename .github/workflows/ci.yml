@@ -218,14 +218,14 @@ jobs:
           $results = Join-Path $env:RUNNER_TEMP 'syslog-tests'
           dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj `
             --configuration Release --no-build `
-            --filter-class "Bower.UnitTests.SyslogOutputTests" `
+            --filter-class "Bower.UnitTests.AmaSyslogOutputTests" `
             --report-xunit-ctrf --report-xunit-ctrf-filename syslog.ctrf.json --results-directory $results
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $report = Get-ChildItem -Recurse -Filter syslog.ctrf.json -LiteralPath $results | Select-Object -First 1
           $tests = @((Get-Content -Raw -LiteralPath $report.FullName | ConvertFrom-Json).results.tests)
           $tests | Sort-Object name | ForEach-Object { Write-Output "$($_.status): $($_.name) $($_.message)" }
           $problems = @($tests | Where-Object { $_.status -notin @('passed', 'skipped') -or ($_.status -eq 'skipped' -and -not $_.message) })
-          $refusal = @($tests | Where-Object { $_.name -like '*.Settings_RefuseTheSyslogOutputOnWindowsAndNameThePlatform' -and $_.status -eq 'passed' })
+          $refusal = @($tests | Where-Object { $_.name -like '*.Settings_RefuseTheAmaSyslogOutputOnWindowsAndNameThePlatform' -and $_.status -eq 'passed' })
           if ($tests.Count -eq 0 -or $problems.Count -or $refusal.Count -ne 1) {
             throw "Expected every syslog test to pass or skip with a reason, and the Windows refusal test to pass: $($problems.name -join ', ')"
           }

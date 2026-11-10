@@ -688,7 +688,7 @@
           "Bower.Core": "[1.0.0, )",
           "Bower.Dcr": "[1.0.0, )",
           "Bower.Evidence": "[1.0.0, )",
-          "Bower.Output.Syslog": "[1.0.0, )",
+          "Bower.Output.AmaSyslog": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",
           "Bower.Persistence": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",
@@ -742,10 +742,10 @@
           "Bower.Forwarding": "[1.0.0, )",
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Output.AmaSpool": "[1.0.0, )",
+          "Bower.Output.AmaSyslog": "[1.0.0, )",
           "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
           "Bower.Output.Http": "[1.0.0, )",
           "Bower.Output.S3": "[1.0.0, )",
-          "Bower.Output.Syslog": "[1.0.0, )",
           "Bower.Packs": "[1.0.0, )",
           "Bower.Source.File": "[1.0.0, )",
           "Bower.Source.Syslog": "[1.0.0, )",
@@ -822,6 +822,13 @@
           "Bower.Abstractions": "[1.0.0, )"
         }
       },
+      "bower.output.amasyslog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Dcr": "[1.0.0, )"
+        }
+      },
       "bower.output.azurelogsingestion": {
         "type": "Project",
         "dependencies": {
@@ -843,13 +850,6 @@
           "AWSSDK.S3": "[4.0.104.7, )",
           "AWSSDK.SecurityToken": "[4.0.101.7, )",
           "Bower.Abstractions": "[1.0.0, )"
-        }
-      },
-      "bower.output.syslog": {
-        "type": "Project",
-        "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )"
         }
       },
       "bower.packs": {

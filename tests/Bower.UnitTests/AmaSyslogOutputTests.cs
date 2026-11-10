@@ -7,7 +7,7 @@ using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Collector;
 using Bower.Contracts;
-using Bower.Output.Syslog;
+using Bower.Output.AmaSyslog;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Logging;
@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace Bower.UnitTests;
 
 /// <summary>
-/// BOWER_OUTPUT=syslog: each envelope becomes one local-format datagram on the syslog
+/// BOWER_OUTPUT=ama-syslog: each envelope becomes one local-format datagram on the syslog
 /// socket, with the envelope JSON base64-encoded in MSG, so Azure Monitor Agent's syslog
 /// collection can carry it to BowerSecurity_CL. A real Unix datagram socket stands in for /dev/log.
 /// <para>
@@ -26,13 +26,13 @@ namespace Bower.UnitTests;
 /// Windows has no datagram Unix sockets: those tests are skipped there, with the reason.
 /// </para>
 /// </summary>
-public sealed class SyslogOutputTests
+public sealed class AmaSyslogOutputTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 10, 1, 2, 3, 456, TimeSpan.Zero);
 
     private const string NoDatagramSockets = "Datagram Unix sockets exist only on Linux and macOS.";
 
-    // SyslogOutputOptions takes a Unix path such as /dev/log, which Windows doesn't treat as a full path.
+    // AmaSyslogOutputOptions takes a Unix path such as /dev/log, which Windows doesn't treat as a full path.
     private const string NoUnixSocketPath = "The syslog output takes a Unix socket path; Windows refuses it.";
 
     private static bool DatagramSockets => OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
@@ -44,7 +44,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path }, new FixedClock(Now));
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path }, new FixedClock(Now));
         string first = Envelope("event-1");
         // Semicolons and non-ASCII text are exactly what syslog ingestion would damage.
         string second = Envelope("event-2", """ "actor":{"username":"zoë"},"labels":{"route":"a;b"}, """);
@@ -74,7 +74,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, MaximumMessageBytes = 1_024 });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path, MaximumMessageBytes = 1_024 });
         string large = Envelope("big", $$""" "attributes":{"note":"{{new string('a', 2_000)}}"}, """);
         string small = Envelope("small");
 
@@ -83,7 +83,7 @@ public sealed class SyslogOutputTests
             cancellationToken);
 
         DeliveryFailure failure = Assert.Single(result.Failures);
-        Assert.Equal(("big", SyslogOutput.MessageTooLargeCode, false), (failure.EventId, failure.Code, failure.IsRetryable));
+        Assert.Equal(("big", AmaSyslogOutput.MessageTooLargeCode, false), (failure.EventId, failure.Code, failure.IsRetryable));
         Assert.Equal(["small"], result.AcknowledgedEventIds);
         Assert.Equal(small, Decode(daemon.Receive()));
     }
@@ -92,7 +92,7 @@ public sealed class SyslogOutputTests
     public void Format_PadsSingleDigitDaysWithASpace()
     {
         Assert.SkipWhen(OperatingSystem.IsWindows(), NoUnixSocketPath);
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog" }, new FixedClock(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero)));
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog" }, new FixedClock(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero)));
 
         byte[]? message = output.TryFormat("{}");
 
@@ -106,10 +106,10 @@ public sealed class SyslogOutputTests
         Assert.SkipWhen(OperatingSystem.IsWindows(), NoUnixSocketPath);
         // rsyslog forwards at most 8,096 characters per line, its own header included
         // (measured with stock rsyslog on Rocky Linux 9, #230). The default leaves 416 for it.
-        Assert.Equal(7_680, SyslogOutputOptions.DefaultMaximumMessageBytes);
-        Assert.True(8_096 - SyslogOutputOptions.DefaultMaximumMessageBytes >= 256);
+        Assert.Equal(7_680, AmaSyslogOutputOptions.DefaultMaximumMessageBytes);
+        Assert.True(8_096 - AmaSyslogOutputOptions.DefaultMaximumMessageBytes >= 256);
 
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog" }, new FixedClock(Now));
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog" }, new FixedClock(Now));
         // 38 header bytes, then base64: the largest JSON that fits is 5,730 bytes.
         string Json(int bytes) => "{\"n\":\"" + new string('a', bytes - 8) + "\"}";
         byte[]? largest = output.TryFormat(Json(5_730));
@@ -126,7 +126,7 @@ public sealed class SyslogOutputTests
     {
         Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
         using ShortDirectory directory = new();
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = Path.Combine(directory.Path, "missing.sock") });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = Path.Combine(directory.Path, "missing.sock") });
 
         DeliveryResult result = await output.DeliverAsync(
             [new("a", "sha256:a", Envelope("a"), Now), new("b", "sha256:b", Envelope("b"), Now)],
@@ -135,7 +135,7 @@ public sealed class SyslogOutputTests
         Assert.Empty(result.AcknowledgedEventIds);
         Assert.All(result.Failures, failure =>
         {
-            Assert.Equal(SyslogOutput.SocketUnavailableCode, failure.Code);
+            Assert.Equal(AmaSyslogOutput.SocketUnavailableCode, failure.Code);
             Assert.True(failure.IsRetryable);
             Assert.True(failure.IsDestinationFailure);
         });
@@ -151,7 +151,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path });
         QueuedEvent[] events = Burst(2_000, padding: 1_000);
         using CancellationTokenSource reading = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         Task<int> reader = daemon.DrainAsync(reading.Token);
@@ -175,7 +175,7 @@ public sealed class SyslogOutputTests
         // would wait here for ever. Datagrams under 2,048 bytes, so macOS fills the queue too
         // instead of refusing every message for size.
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
-        SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(1) });
+        AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(1) });
         QueuedEvent[] events = Burst(2_000, padding: 1_000);
 
         // On another thread: DeliverAsync must not hold this one, and the guard below must be
@@ -187,12 +187,12 @@ public sealed class SyslogOutputTests
         // A send stuck in the kernel also blocks Dispose on Linux, so a hung delivery is
         // reported here and the output is left to the daemon's close to wake.
         Assert.True(ReferenceEquals(delivery, finished), "Delivery to a full daemon queue did not return within 10 seconds.");
-        using SyslogOutput disposeAfterDelivery = output;
+        using AmaSyslogOutput disposeAfterDelivery = output;
         DeliveryResult result = await delivery;
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"One busy wait of 1 s took {elapsed.Elapsed}.");
         Assert.NotEmpty(result.AcknowledgedEventIds);
         Assert.NotEmpty(result.Failures);
-        Assert.All(result.Failures, failure => Assert.Equal((SyslogOutput.SocketBusyCode, true), (failure.Code, failure.IsRetryable)));
+        Assert.All(result.Failures, failure => Assert.Equal((AmaSyslogOutput.SocketBusyCode, true), (failure.Code, failure.IsRetryable)));
         // Nothing is lost: every event is either acknowledged or kept for retry, in order.
         Assert.Equal(events.Select(item => item.EventId), result.AcknowledgedEventIds.Concat(result.Failures.Select(failure => failure.EventId)));
     }
@@ -206,7 +206,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(30) });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(30) });
         QueuedEvent[] events = Burst(500, padding: 1_000);
         using CancellationTokenSource cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
@@ -218,7 +218,7 @@ public sealed class SyslogOutputTests
         Assert.InRange(sent, 1, events.Length - 1);
         Assert.Equal(events.Take(sent).Select(item => item.EventId), result.AcknowledgedEventIds);
         Assert.Equal(events.Skip(sent).Select(item => item.EventId), result.Failures.Select(failure => failure.EventId));
-        Assert.All(result.Failures, failure => Assert.Equal((SyslogOutput.CancelledCode, true), (failure.Code, failure.IsRetryable)));
+        Assert.All(result.Failures, failure => Assert.Equal((AmaSyslogOutput.CancelledCode, true), (failure.Code, failure.IsRetryable)));
         Assert.Equal(sent, daemon.ReceiveAll());
     }
 
@@ -231,9 +231,9 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
-        using SyslogOutput output = new(new SyslogOutputOptions
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions
         {
-            Id = "syslog",
+            Id = "ama-syslog",
             SocketPath = daemon.Path,
             MaximumMessageBytes = 65_507,
             SendBufferBytes = 4_096
@@ -245,7 +245,7 @@ public sealed class SyslogOutputTests
             cancellationToken);
 
         DeliveryFailure failure = Assert.Single(result.Failures);
-        Assert.Equal(("huge", SyslogOutput.MessageTooLargeCode, false), (failure.EventId, failure.Code, failure.IsRetryable));
+        Assert.Equal(("huge", AmaSyslogOutput.MessageTooLargeCode, false), (failure.EventId, failure.Code, failure.IsRetryable));
         Assert.Equal(["after"], result.AcknowledgedEventIds);
         Assert.Equal(Envelope("after"), Decode(daemon.Receive()));
     }
@@ -262,11 +262,11 @@ public sealed class SyslogOutputTests
             File.SetUnixFileMode(daemon.Path, UnixFileMode.UserRead);
         }
 
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path });
 
         DeliveryResult result = await output.DeliverAsync([new("a", "sha256:a", Envelope("a"), Now)], TestContext.Current.CancellationToken);
 
-        Assert.Equal((SyslogOutput.AccessDeniedCode, true), (Assert.Single(result.Failures).Code, result.Failures[0].IsRetryable));
+        Assert.Equal((AmaSyslogOutput.AccessDeniedCode, true), (Assert.Single(result.Failures).Code, result.Failures[0].IsRetryable));
     }
 
     [Theory]
@@ -283,7 +283,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path });
 
         DeliveryResult result = await output.DeliverAsync(
             [new("bad", "sha256:bad", payload, Now), new("good", "sha256:good", Envelope("good"), Now)],
@@ -303,7 +303,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         string path = Path.Combine(directory.Path, "log.sock");
-        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = path });
+        using AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = path });
         using (FakeDaemon first = new(path))
         {
             Assert.Single((await output.DeliverAsync([new("a", "sha256:a", Envelope("a"), Now)], cancellationToken)).AcknowledgedEventIds);
@@ -311,7 +311,7 @@ public sealed class SyslogOutputTests
         }
 
         DeliveryResult whileDown = await output.DeliverAsync([new("b", "sha256:b", Envelope("b"), Now)], cancellationToken);
-        Assert.Equal(SyslogOutput.SocketUnavailableCode, Assert.Single(whileDown.Failures).Code);
+        Assert.Equal(AmaSyslogOutput.SocketUnavailableCode, Assert.Single(whileDown.Failures).Code);
 
         using FakeDaemon restarted = new(path);
         DeliveryResult afterRestart = await output.DeliverAsync([new("b", "sha256:b", Envelope("b"), Now)], cancellationToken);
@@ -326,7 +326,7 @@ public sealed class SyslogOutputTests
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
-        SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(30) });
+        AmaSyslogOutput output = new(new AmaSyslogOutputOptions { Id = "ama-syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(30) });
         Task<DeliveryResult> delivery = Task.Run(() => output.DeliverAsync(Burst(500, padding: 1_000), cancellationToken), cancellationToken);
         await Task.Delay(300, cancellationToken);
 
@@ -335,7 +335,7 @@ public sealed class SyslogOutputTests
         DeliveryResult result = await delivery.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
         Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5));
-        Assert.All(result.Failures, failure => Assert.Equal(SyslogOutput.CancelledCode, failure.Code));
+        Assert.All(result.Failures, failure => Assert.Equal(AmaSyslogOutput.CancelledCode, failure.Code));
         Assert.Equal(500, result.AcknowledgedEventIds.Count + result.Failures.Count);
     }
 
@@ -346,25 +346,25 @@ public sealed class SyslogOutputTests
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
 
-        Assert.Null(SyslogOutput.Probe(daemon.Path));
-        Assert.NotNull(SyslogOutput.Probe(Path.Combine(directory.Path, "missing.sock")));
+        Assert.Null(AmaSyslogOutput.Probe(daemon.Path));
+        Assert.NotNull(AmaSyslogOutput.Probe(Path.Combine(directory.Path, "missing.sock")));
     }
 
     [Theory]
-    [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "relative/log.sock", "must be an absolute path")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "/run/a-socket-path-that-is-far-too-long-for-sun-path-because-it-keeps-going-and-going-and-going-and-on/log.sock", "must be at most")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "1", "local0, local1, local2, local3, local4, local5, local6, local7")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "24", "local0")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "user", "local0")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "4294967316", "local0")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES", "512", "between 1024 and 65507")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES", "4294975488", "must be an integer")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "4294967298", "must be an integer")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "0", "between 1 and 30")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "31", "between 1 and 30")]
+    [InlineData("BOWER_AMA_SYSLOG_SOCKET", "relative/log.sock", "must be an absolute path")]
+    [InlineData("BOWER_AMA_SYSLOG_SOCKET", "/run/a-socket-path-that-is-far-too-long-for-sun-path-because-it-keeps-going-and-going-and-going-and-on/log.sock", "must be at most")]
+    [InlineData("BOWER_AMA_SYSLOG_FACILITY", "1", "local0, local1, local2, local3, local4, local5, local6, local7")]
+    [InlineData("BOWER_AMA_SYSLOG_FACILITY", "24", "local0")]
+    [InlineData("BOWER_AMA_SYSLOG_FACILITY", "user", "local0")]
+    [InlineData("BOWER_AMA_SYSLOG_FACILITY", "4294967316", "local0")]
+    [InlineData("BOWER_AMA_SYSLOG_MAX_BYTES", "512", "between 1024 and 65507")]
+    [InlineData("BOWER_AMA_SYSLOG_MAX_BYTES", "4294975488", "must be an integer")]
+    [InlineData("BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS", "4294967298", "must be an integer")]
+    [InlineData("BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS", "0", "between 1 and 30")]
+    [InlineData("BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS", "31", "between 1 and 30")]
     public void Settings_RefuseAnInvalidSyslogOutput(string name, string value, string message)
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog before these checks.");
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=ama-syslog before these checks.");
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
             () => CollectorSettings.FromEnvironment(Syslog(new() { [name] = value })));
 
@@ -372,13 +372,27 @@ public sealed class SyslogOutputTests
     }
 
     [Fact]
+    public void Settings_RefuseTheOldOutputNameWithNoAlias()
+    {
+        // #242: renamed before release, so BOWER_OUTPUT=syslog is not kept as an alias.
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(name => name switch
+        {
+            "BOWER_COLLECTOR_ID" => "edge-01",
+            "BOWER_OUTPUT" => "syslog",
+            _ => null
+        }));
+
+        Assert.Equal("Unsupported BOWER_OUTPUT value: syslog", error.Message);
+    }
+
+    [Fact]
     public void Settings_BusyWaitMustFitInsideTheDeliveryTimeout()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog before these checks.");
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=ama-syslog before these checks.");
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new()
         {
             ["BOWER_DELIVERY_TIMEOUT_SECONDS"] = "5",
-            ["BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS"] = "5"
+            ["BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS"] = "5"
         })));
 
         Assert.Contains("below BOWER_DELIVERY_TIMEOUT_SECONDS", error.Message, StringComparison.Ordinal);
@@ -387,11 +401,11 @@ public sealed class SyslogOutputTests
     [Fact]
     public void Settings_DefaultToDevLogAndLocal4()
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog.");
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=ama-syslog.");
         CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog([]));
 
-        Assert.Equal(("syslog", "/dev/log", 20, 7_680, TimeSpan.FromSeconds(2)),
-            (settings.OutputType, settings.SyslogOutputSocket, settings.SyslogOutputFacility, settings.SyslogOutputMaximumBytes, settings.SyslogOutputBusyWait));
+        Assert.Equal(("ama-syslog", "/dev/log", 20, 7_680, TimeSpan.FromSeconds(2)),
+            (settings.OutputType, settings.AmaSyslogSocket, settings.AmaSyslogFacility, settings.AmaSyslogMaximumBytes, settings.AmaSyslogBusyWait));
     }
 
     [Fact]
@@ -400,12 +414,12 @@ public sealed class SyslogOutputTests
         Assert.SkipUnless(OperatingSystem.IsLinux(), "sun_path is 108 bytes on Linux and 104 on macOS.");
         string path = "/" + new string('a', 106);
 
-        Assert.Equal(path, CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_SOCKET"] = path })).SyslogOutputSocket);
-        Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_SOCKET"] = path + "a" })));
+        Assert.Equal(path, CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_AMA_SYSLOG_SOCKET"] = path })).AmaSyslogSocket);
+        Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_AMA_SYSLOG_SOCKET"] = path + "a" })));
     }
 
     [Fact]
-    public void Settings_RefuseTheSyslogOutputOnWindowsAndNameThePlatform()
+    public void Settings_RefuseTheAmaSyslogOutputOnWindowsAndNameThePlatform()
     {
         Assert.SkipUnless(OperatingSystem.IsWindows(), "Checks the Windows start-up message.");
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog([])));
@@ -428,16 +442,16 @@ public sealed class SyslogOutputTests
     [InlineData("23", 23)]
     public void Settings_AcceptEveryFacilityTheRuleCanCollectByName(string value, int number)
     {
-        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=syslog.");
-        CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_FACILITY"] = value }));
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Windows refuses BOWER_OUTPUT=ama-syslog.");
+        CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_AMA_SYSLOG_FACILITY"] = value }));
 
-        Assert.Equal(number, settings.SyslogOutputFacility);
+        Assert.Equal(number, settings.AmaSyslogFacility);
         // The name Bower reports is one the rule's facility parameter allows.
         string bicep = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
         string allowed = bicep[bicep.IndexOf("@allowed(", StringComparison.Ordinal)..];
         allowed = allowed[..allowed.IndexOf(')', StringComparison.Ordinal)];
-        Assert.Contains($"'{SyslogOutputOptions.FacilityName(number)}'", allowed, StringComparison.Ordinal);
-        Assert.Equal(SyslogOutputOptions.FacilityNames.Select(name => $"'{name}'"), allowed.Split('[', ']')[1].Split(", "));
+        Assert.Contains($"'{AmaSyslogOutputOptions.FacilityName(number)}'", allowed, StringComparison.Ordinal);
+        Assert.Equal(AmaSyslogOutputOptions.FacilityNames.Select(name => $"'{name}'"), allowed.Split('[', ']')[1].Split(", "));
     }
 
     [Fact]
@@ -465,7 +479,7 @@ public sealed class SyslogOutputTests
             () => StatusAsync(client, cancellationToken),
             static body => body.Contains("\"delivered\":1", StringComparison.Ordinal),
             cancellationToken);
-        Assert.Contains("\"output\":\"syslog\"", status, StringComparison.Ordinal);
+        Assert.Contains("\"output\":\"ama-syslog\"", status, StringComparison.Ordinal);
         await app.StopAsync(cancellationToken);
     }
 
@@ -480,19 +494,19 @@ public sealed class SyslogOutputTests
         await using WebApplication app = await StartCollectorAsync(directory, missing, cancellationToken, logs);
         HttpClient client = app.GetTestClient();
 
-        Assert.Contains(logs.Messages, line => line.Contains($"Syslog output socket {missing} does not accept connections", StringComparison.Ordinal));
+        Assert.Contains(logs.Messages, line => line.Contains($"AMA syslog output socket {missing} does not accept connections", StringComparison.Ordinal));
         Assert.Contains(logs.Messages, line => line.Contains("on facility local4", StringComparison.Ordinal));
         Assert.True((await PostAsync(client, "syslog-e2e-2", cancellationToken)).IsSuccessStatusCode);
         string status = await Polling.UntilAsync(
             () => StatusAsync(client, cancellationToken),
-            static body => body.Contains("destination-syslog-unavailable", StringComparison.Ordinal)
+            static body => body.Contains("destination-ama-syslog-unavailable", StringComparison.Ordinal)
                 && body.Contains("\"retrying\":1", StringComparison.Ordinal),
             cancellationToken);
-        Assert.Contains("\"output\":\"syslog\"", status, StringComparison.Ordinal);
+        Assert.Contains("\"output\":\"ama-syslog\"", status, StringComparison.Ordinal);
         await app.StopAsync(cancellationToken);
     }
 
-    private const string IngestToken = "syslog-output-ingest-token-0123456789abcdef";
+    private const string IngestToken = "ama-syslog-output-ingest-token-0123456789abcdef";
 
     private static async Task<WebApplication> StartCollectorAsync(
         ShortDirectory directory, string socket, CancellationToken cancellationToken, CapturingLoggerProvider? logs = null)
@@ -505,8 +519,8 @@ public sealed class SyslogOutputTests
             CollectorId = "collector-test",
             SingleTrustDomain = true,
             IngestToken = IngestToken,
-            OutputType = "syslog",
-            SyslogOutputSocket = socket
+            OutputType = "ama-syslog",
+            AmaSyslogSocket = socket
         };
         WebApplication app = CollectorApplication.Build(settings, builder =>
         {
@@ -580,9 +594,9 @@ public sealed class SyslogOutputTests
     /// <summary>The transform: base64_decodestring of what follows the marker.</summary>
     private static string Decode(string message)
     {
-        int start = message.IndexOf(SyslogOutput.MessagePrefix, StringComparison.Ordinal);
+        int start = message.IndexOf(AmaSyslogOutput.MessagePrefix, StringComparison.Ordinal);
         Assert.True(start >= 0, message);
-        return Encoding.UTF8.GetString(Convert.FromBase64String(message[(start + SyslogOutput.MessagePrefix.Length)..]));
+        return Encoding.UTF8.GetString(Convert.FromBase64String(message[(start + AmaSyslogOutput.MessagePrefix.Length)..]));
     }
 
     private static Func<string, string?> Syslog(Dictionary<string, string> overrides)
@@ -590,7 +604,7 @@ public sealed class SyslogOutputTests
         Dictionary<string, string> values = new(StringComparer.Ordinal)
         {
             ["BOWER_COLLECTOR_ID"] = "edge-01",
-            ["BOWER_OUTPUT"] = "syslog"
+            ["BOWER_OUTPUT"] = "ama-syslog"
         };
         foreach ((string name, string value) in overrides)
         {

@@ -15,8 +15,8 @@ public sealed class OutputNameListTests
     // must be added here (and so to one of the classifications below) for these tests to see it.
     private static readonly string[] Candidates =
     [
-        "none", "ama-spool", "azure-logs-ingestion", "relay", "s3", "http", "syslog",
-        "kafka", "security-lake", "opensearch", "azure-monitor", "ama-syslog", "local-syslog", "splunk"
+        "none", "ama-spool", "azure-logs-ingestion", "relay", "s3", "http", "ama-syslog",
+        "kafka", "security-lake", "opensearch", "azure-monitor", "syslog", "local-syslog", "splunk"
     ];
 
     // Accepted outputs that never deliver to Microsoft Sentinel: no evidence probe is sent.
