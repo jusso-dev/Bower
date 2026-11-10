@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -11,26 +12,33 @@ namespace Bower.UnitTests;
 /// BOWER_OUTPUT=syslog: each envelope becomes one local-format datagram on the syslog
 /// socket, with the envelope JSON base64-encoded in MSG, so Azure Monitor Agent's syslog
 /// collection can carry it to BowerSecurity_CL. A real Unix datagram socket stands in for /dev/log.
+/// <para>
+/// Datagram sockets behave differently by platform, exactly where this adapter is sensitive:
+/// macOS refuses a Unix datagram over 2,048 bytes (EMSGSIZE) and reports a full queue as
+/// ENOBUFS; Linux accepts 64 KiB and reports a full queue as EAGAIN. Tests that fill a queue
+/// use datagrams under 2,048 bytes so both platforms exercise back-pressure, not size.
+/// Windows has no datagram Unix sockets: those tests are skipped there, with the reason.
+/// </para>
 /// </summary>
 public sealed class SyslogOutputTests
 {
     private static readonly DateTimeOffset Now = new(2026, 11, 10, 1, 2, 3, 456, TimeSpan.Zero);
 
+    private const string NoDatagramSockets = "Datagram Unix sockets exist only on Linux and macOS.";
+
+    private static bool DatagramSockets => OperatingSystem.IsLinux() || OperatingSystem.IsMacOS();
+
     [Fact]
     public async Task Deliver_SendsOneDatagramPerEnvelopeWithTheJsonEncodedInTheMessage()
     {
-        if (!Socket.OSSupportsUnixDomainSockets)
-        {
-            return;
-        }
-
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path }, new FixedClock(Now));
-        string first = """{"schemaVersion":"1.0.0","eventId":"event-1","eventType":"authentication_failure"}""";
+        string first = Envelope("event-1");
         // Semicolons and non-ASCII text are exactly what syslog ingestion would damage.
-        string second = """{"schemaVersion":"1.0.0","eventId":"event-2","actor":{"username":"zoë"},"labels":{"route":"a;b"}}""";
+        string second = Envelope("event-2", """ "actor":{"username":"zoë"},"labels":{"route":"a;b"}, """);
 
         DeliveryResult result = await output.DeliverAsync(
             [new("event-1", "sha256:one", first, Now), new("event-2", "sha256:two", second, Now)],
@@ -53,25 +61,22 @@ public sealed class SyslogOutputTests
     [Fact]
     public async Task Deliver_RefusesAnEnvelopeThatDoesNotFitOneMessageAndSendsTheRest()
     {
-        if (!Socket.OSSupportsUnixDomainSockets)
-        {
-            return;
-        }
-
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, MaximumMessageBytes = 1_024 });
-        string large = "{\"eventId\":\"big\",\"attributes\":{\"note\":\"" + new string('a', 2_000) + "\"}}";
+        string large = Envelope("big", $$""" "attributes":{"note":"{{new string('a', 2_000)}}"}, """);
+        string small = Envelope("small");
 
         DeliveryResult result = await output.DeliverAsync(
-            [new("big", "sha256:big", large, Now), new("small", "sha256:small", """{"eventId":"small"}""", Now)],
+            [new("big", "sha256:big", large, Now), new("small", "sha256:small", small, Now)],
             cancellationToken);
 
         DeliveryFailure failure = Assert.Single(result.Failures);
         Assert.Equal(("big", SyslogOutput.MessageTooLargeCode, false), (failure.EventId, failure.Code, failure.IsRetryable));
         Assert.Equal(["small"], result.AcknowledgedEventIds);
-        Assert.Equal("""{"eventId":"small"}""", Decode(daemon.Receive()));
+        Assert.Equal(small, Decode(daemon.Receive()));
     }
 
     [Fact]
@@ -79,23 +84,21 @@ public sealed class SyslogOutputTests
     {
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog" }, new FixedClock(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero)));
 
-        Assert.True(output.TryFormat("{}", out byte[]? message));
+        byte[]? message = output.TryFormat("{}");
+
+        Assert.NotNull(message);
         Assert.StartsWith("<165>Mar  4 05:06:07 bower: ", Encoding.ASCII.GetString(message), StringComparison.Ordinal);
     }
 
     [Fact]
     public async Task Deliver_RetriesEveryEventWhenTheDaemonIsNotListening()
     {
-        if (!Socket.OSSupportsUnixDomainSockets)
-        {
-            return;
-        }
-
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
         using ShortDirectory directory = new();
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = Path.Combine(directory.Path, "missing.sock") });
 
         DeliveryResult result = await output.DeliverAsync(
-            [new("a", "sha256:a", """{"eventId":"a"}""", Now), new("b", "sha256:b", """{"eventId":"b"}""", Now)],
+            [new("a", "sha256:a", Envelope("a"), Now), new("b", "sha256:b", Envelope("b"), Now)],
             TestContext.Current.CancellationToken);
 
         Assert.Empty(result.AcknowledgedEventIds);
@@ -109,65 +112,184 @@ public sealed class SyslogOutputTests
     }
 
     [Fact]
-    public async Task Deliver_DoesNotBlockWhenTheDaemonQueueIsFull()
+    public async Task Deliver_WaitsForADaemonThatDrainsAndDeliversTheWholeBurst()
     {
-        if (!Socket.OSSupportsUnixDomainSockets)
-        {
-            return;
-        }
-
+        // #225: a non-blocking send fills the queue within a few dozen messages even when the
+        // daemon is healthy. The adapter must wait for room, not fail the rest of the batch.
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
-        // A daemon that never reads: its receive queue fills and stays full. On Linux a blocking
-        // send would wait here for ever (macOS fails it at once), so this guards the Linux path CI runs.
         using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
-        string payload = "{\"eventId\":\"x\",\"attributes\":{\"note\":\"" + new string('a', 4_000) + "\"}}";
-        QueuedEvent[] events = [.. Enumerable.Range(0, 2_000).Select(index => new QueuedEvent($"e{index}", $"sha256:{index}", payload, Now))];
+        QueuedEvent[] events = Burst(2_000, padding: 1_000);
+        using CancellationTokenSource reading = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task<int> reader = daemon.DrainAsync(reading.Token);
 
-        Task<DeliveryResult> delivery = output.DeliverAsync(events, cancellationToken);
+        DeliveryResult result = await Task.Run(() => output.DeliverAsync(events, cancellationToken), cancellationToken);
+
+        Assert.Empty(result.Failures);
+        Assert.Equal(events.Select(item => item.EventId), result.AcknowledgedEventIds);
+        await daemon.WaitForAsync(2_000, cancellationToken);
+        await reading.CancelAsync();
+        Assert.Equal(2_000, await reader);
+    }
+
+    [Fact]
+    public async Task Deliver_DoesNotBlockWhenTheDaemonQueueIsFull()
+    {
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        // A daemon that never reads: its receive queue fills and stays full. A blocking send
+        // would wait here for ever. Datagrams under 2,048 bytes, so macOS fills the queue too
+        // instead of refusing every message for size.
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
+        SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(1) });
+        QueuedEvent[] events = Burst(2_000, padding: 1_000);
+
+        // On another thread: DeliverAsync must not hold this one, and the guard below must be
+        // able to fire if it ever blocks.
+        Stopwatch elapsed = Stopwatch.StartNew();
+        Task<DeliveryResult> delivery = Task.Run(() => output.DeliverAsync(events, cancellationToken), cancellationToken);
         Task finished = await Task.WhenAny(delivery, Task.Delay(TimeSpan.FromSeconds(10), cancellationToken));
 
-        Assert.Same(delivery, finished);
+        // A send stuck in the kernel also blocks Dispose on Linux, so a hung delivery is
+        // reported here and the output is left to the daemon's close to wake.
+        Assert.True(ReferenceEquals(delivery, finished), "Delivery to a full daemon queue did not return within 10 seconds.");
+        using SyslogOutput disposeAfterDelivery = output;
         DeliveryResult result = await delivery;
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5), $"One busy wait of 1 s took {elapsed.Elapsed}.");
+        Assert.NotEmpty(result.AcknowledgedEventIds);
         Assert.NotEmpty(result.Failures);
-        Assert.All(result.Failures, failure => Assert.Equal((SyslogOutput.SocketUnavailableCode, true), (failure.Code, failure.IsRetryable)));
+        Assert.All(result.Failures, failure => Assert.Equal((SyslogOutput.SocketBusyCode, true), (failure.Code, failure.IsRetryable)));
         // Nothing is lost: every event is either acknowledged or kept for retry, in order.
         Assert.Equal(events.Select(item => item.EventId), result.AcknowledgedEventIds.Concat(result.Failures.Select(failure => failure.EventId)));
     }
 
     [Fact]
-    public async Task Deliver_ReconnectsAfterTheDaemonRestarts()
+    public async Task Deliver_ReturnsWhatWasSentWhenCancelledPartWay()
     {
-        if (!Socket.OSSupportsUnixDomainSockets)
+        // #229: a cancelled delivery must acknowledge what the daemon already took, so the
+        // worker does not send it again, and keep only the rest for retry, in order.
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
+        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(30) });
+        QueuedEvent[] events = Burst(500, padding: 1_000);
+        using CancellationTokenSource cancel = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        // The queue fills, the adapter waits for room, and the deadline cancels the wait.
+        cancel.CancelAfter(TimeSpan.FromMilliseconds(500));
+        DeliveryResult result = await Task.Run(() => output.DeliverAsync(events, cancel.Token), cancellationToken);
+
+        int sent = result.AcknowledgedEventIds.Count;
+        Assert.InRange(sent, 1, events.Length - 1);
+        Assert.Equal(events.Take(sent).Select(item => item.EventId), result.AcknowledgedEventIds);
+        Assert.Equal(events.Skip(sent).Select(item => item.EventId), result.Failures.Select(failure => failure.EventId));
+        Assert.All(result.Failures, failure => Assert.Equal((SyslogOutput.CancelledCode, true), (failure.Code, failure.IsRetryable)));
+        Assert.Equal(sent, daemon.ReceiveAll());
+    }
+
+    [Fact]
+    public async Task Deliver_DeadLettersADatagramTheKernelRefusesForSizeAndSendsTheRest()
+    {
+        // #227: EMSGSIZE is a property of the event, not an outage. Linux refuses a datagram
+        // larger than the sender's send buffer; macOS refuses any over 2,048 bytes.
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
+        using SyslogOutput output = new(new SyslogOutputOptions
         {
-            return;
+            Id = "syslog",
+            SocketPath = daemon.Path,
+            MaximumMessageBytes = 65_507,
+            SendBufferBytes = 4_096
+        });
+        string huge = Envelope("huge", $$""" "attributes":{"note":"{{new string('a', 40_000)}}"}, """);
+
+        DeliveryResult result = await output.DeliverAsync(
+            [new("huge", "sha256:huge", huge, Now), new("after", "sha256:after", Envelope("after"), Now)],
+            cancellationToken);
+
+        DeliveryFailure failure = Assert.Single(result.Failures);
+        Assert.Equal(("huge", SyslogOutput.MessageTooLargeCode, false), (failure.EventId, failure.Code, failure.IsRetryable));
+        Assert.Equal(["after"], result.AcknowledgedEventIds);
+        Assert.Equal(Envelope("after"), Decode(daemon.Receive()));
+    }
+
+    [Fact]
+    public async Task Deliver_ReportsASocketItMayNotWriteToByName()
+    {
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        Assert.SkipWhen(Environment.UserName == "root", "root can write to any socket.");
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"));
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(daemon.Path, UnixFileMode.UserRead);
         }
 
+        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
+
+        DeliveryResult result = await output.DeliverAsync([new("a", "sha256:a", Envelope("a"), Now)], TestContext.Current.CancellationToken);
+
+        Assert.Equal((SyslogOutput.AccessDeniedCode, true), (Assert.Single(result.Failures).Code, result.Failures[0].IsRetryable));
+    }
+
+    [Fact]
+    public async Task Deliver_ReconnectsAfterTheDaemonRestarts()
+    {
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;
         using ShortDirectory directory = new();
         string path = Path.Combine(directory.Path, "log.sock");
         using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = path });
         using (FakeDaemon first = new(path))
         {
-            Assert.Single((await output.DeliverAsync([new("a", "sha256:a", """{"eventId":"a"}""", Now)], cancellationToken)).AcknowledgedEventIds);
+            Assert.Single((await output.DeliverAsync([new("a", "sha256:a", Envelope("a"), Now)], cancellationToken)).AcknowledgedEventIds);
             first.Receive();
         }
 
-        DeliveryResult whileDown = await output.DeliverAsync([new("b", "sha256:b", """{"eventId":"b"}""", Now)], cancellationToken);
+        DeliveryResult whileDown = await output.DeliverAsync([new("b", "sha256:b", Envelope("b"), Now)], cancellationToken);
         Assert.Equal(SyslogOutput.SocketUnavailableCode, Assert.Single(whileDown.Failures).Code);
 
         using FakeDaemon restarted = new(path);
-        DeliveryResult afterRestart = await output.DeliverAsync([new("b", "sha256:b", """{"eventId":"b"}""", Now)], cancellationToken);
+        DeliveryResult afterRestart = await output.DeliverAsync([new("b", "sha256:b", Envelope("b"), Now)], cancellationToken);
         Assert.Equal(["b"], afterRestart.AcknowledgedEventIds);
-        Assert.Equal("""{"eventId":"b"}""", Decode(restarted.Receive()));
+        Assert.Equal(Envelope("b"), Decode(restarted.Receive()));
+    }
+
+    [Fact]
+    public async Task Dispose_StopsADeliveryThatIsWaitingForTheDaemon()
+    {
+        Assert.SkipUnless(DatagramSockets, NoDatagramSockets);
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
+        SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path, BusyWait = TimeSpan.FromSeconds(30) });
+        Task<DeliveryResult> delivery = Task.Run(() => output.DeliverAsync(Burst(500, padding: 1_000), cancellationToken), cancellationToken);
+        await Task.Delay(300, cancellationToken);
+
+        Stopwatch elapsed = Stopwatch.StartNew();
+        output.Dispose();
+        DeliveryResult result = await delivery.WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+
+        Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(5));
+        Assert.All(result.Failures, failure => Assert.Equal(SyslogOutput.CancelledCode, failure.Code));
+        Assert.Equal(500, result.AcknowledgedEventIds.Count + result.Failures.Count);
     }
 
     [Theory]
-    [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "relative/log.sock", "absolute path")]
-    [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "/run/a-socket-path-that-is-far-too-long-for-sun-path-because-it-keeps-going-and-going-and-going/log.sock", "at most 103 bytes")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "relative/log.sock", "must be an absolute path")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_SOCKET", "/run/a-socket-path-that-is-far-too-long-for-sun-path-because-it-keeps-going-and-going-and-going-and-on/log.sock", "must be at most")]
     [InlineData("BOWER_SYSLOG_OUTPUT_FACILITY", "24", "between 0 and 23")]
     [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES", "512", "between 1024 and 65507")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_MAX_BYTES", "4294975488", "must be an integer")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "4294967298", "must be an integer")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "0", "between 1 and 30")]
+    [InlineData("BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", "31", "between 1 and 30")]
     public void Settings_RefuseAnInvalidSyslogOutput(string name, string value, string message)
     {
         InvalidOperationException error = Assert.Throws<InvalidOperationException>(
@@ -177,16 +299,50 @@ public sealed class SyslogOutputTests
     }
 
     [Fact]
+    public void Settings_BusyWaitMustFitInsideTheDeliveryTimeout()
+    {
+        InvalidOperationException error = Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new()
+        {
+            ["BOWER_DELIVERY_TIMEOUT_SECONDS"] = "5",
+            ["BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS"] = "5"
+        })));
+
+        Assert.Contains("below BOWER_DELIVERY_TIMEOUT_SECONDS", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Settings_DefaultToDevLogAndLocal4()
     {
         CollectorSettings settings = CollectorSettings.FromEnvironment(Syslog([]));
 
-        Assert.Equal(("syslog", "/dev/log", 20, 8_192), (settings.OutputType, settings.SyslogOutputSocket, settings.SyslogOutputFacility, settings.SyslogOutputMaximumBytes));
+        Assert.Equal(("syslog", "/dev/log", 20, 8_192, TimeSpan.FromSeconds(2)),
+            (settings.OutputType, settings.SyslogOutputSocket, settings.SyslogOutputFacility, settings.SyslogOutputMaximumBytes, settings.SyslogOutputBusyWait));
+    }
+
+    [Fact]
+    public void Settings_AcceptALinuxSocketPathOfUpTo107Bytes()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux(), "sun_path is 108 bytes on Linux and 104 on macOS.");
+        string path = "/" + new string('a', 106);
+
+        Assert.Equal(path, CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_SOCKET"] = path })).SyslogOutputSocket);
+        Assert.Throws<InvalidOperationException>(() => CollectorSettings.FromEnvironment(Syslog(new() { ["BOWER_SYSLOG_OUTPUT_SOCKET"] = path + "a" })));
+    }
+
+    /// <summary>A minimal envelope that passes the record checks, with optional extra members.</summary>
+    private static string Envelope(string eventId, string extra = "") =>
+        $$"""{"schemaVersion":"1.0.0","eventId":"{{eventId}}",{{extra.Trim()}}"timeGenerated":"2026-11-10T01:02:03.456Z"}""";
+
+    private static QueuedEvent[] Burst(int count, int padding)
+    {
+        string note = new('a', padding);
+        return [.. Enumerable.Range(0, count).Select(index =>
+            new QueuedEvent($"e{index}", $"sha256:{index}", Envelope($"e{index}", $$""" "attributes":{"note":"{{note}}"}, """), Now))];
     }
 
     private static string Base64(string json) => Convert.ToBase64String(Encoding.UTF8.GetBytes(json));
 
-    /// <summary>The transform: base64_decodestring(substring(SyslogMessage, indexof(...) + 10)).</summary>
+    /// <summary>The transform: base64_decodestring of what follows the marker.</summary>
     private static string Decode(string message)
     {
         int start = message.IndexOf(SyslogOutput.MessagePrefix, StringComparison.Ordinal);
@@ -231,6 +387,7 @@ public sealed class SyslogOutputTests
     private sealed class FakeDaemon : IDisposable
     {
         private readonly Socket socket = new(AddressFamily.Unix, SocketType.Dgram, ProtocolType.Unspecified);
+        private int received;
 
         public FakeDaemon(string path, int? receiveBufferBytes = null)
         {
@@ -252,6 +409,42 @@ public sealed class SyslogOutputTests
             int length = socket.Receive(buffer);
             return Encoding.UTF8.GetString(buffer, 0, length);
         }
+
+        /// <summary>Reads every queued datagram without waiting; returns how many.</summary>
+        public int ReceiveAll()
+        {
+            byte[] buffer = new byte[70_000];
+            int count = 0;
+            while (socket.Poll(TimeSpan.FromMilliseconds(200), SelectMode.SelectRead))
+            {
+                socket.Receive(buffer);
+                count++;
+            }
+
+            return count;
+        }
+
+        /// <summary>Reads continuously, as a healthy daemon does, until cancelled.</summary>
+        public Task<int> DrainAsync(CancellationToken cancellationToken) => Task.Run(async () =>
+        {
+            byte[] buffer = new byte[70_000];
+            try
+            {
+                while (true)
+                {
+                    await socket.ReceiveAsync(buffer, SocketFlags.None, cancellationToken);
+                    Interlocked.Increment(ref received);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            return Volatile.Read(ref received);
+        }, CancellationToken.None);
+
+        public Task WaitForAsync(int count, CancellationToken cancellationToken) =>
+            Polling.UntilAsync(() => Volatile.Read(ref received) >= count, cancellationToken);
 
         public void Dispose()
         {

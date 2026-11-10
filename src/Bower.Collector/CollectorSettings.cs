@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Bower.Contracts;
 using Bower.Core;
+using Bower.Output.Syslog;
 using Bower.Packs;
 using Bower.Redaction.Privacy;
 
@@ -131,7 +132,10 @@ public sealed record CollectorSettings
     public int SyslogOutputFacility { get; init; } = 20;
 
     /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole message limit; match the daemon's MaxMessageSize.</summary>
-    public int SyslogOutputMaximumBytes { get; init; } = 8_192;
+    public int SyslogOutputMaximumBytes { get; init; } = SyslogOutputOptions.DefaultMaximumMessageBytes;
+
+    /// <summary>BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS: how long one message may wait for a full daemon queue.</summary>
+    public TimeSpan SyslogOutputBusyWait { get; init; } = SyslogOutputOptions.DefaultBusyWait;
 
     public string StreamName { get; init; } = "Custom-BowerSecurity";
 
@@ -369,7 +373,8 @@ public sealed record CollectorSettings
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
             SyslogOutputSocket = Blank(read("BOWER_SYSLOG_OUTPUT_SOCKET")) ?? "/dev/log",
             SyslogOutputFacility = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_FACILITY", 20),
-            SyslogOutputMaximumBytes = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", 8_192),
+            SyslogOutputMaximumBytes = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", SyslogOutputOptions.DefaultMaximumMessageBytes),
+            SyslogOutputBusyWait = TimeSpan.FromSeconds(ReadInt32(read, "BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS", 2)),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
             DceEndpoint = string.IsNullOrWhiteSpace(dceEndpoint)
                 ? null
@@ -515,9 +520,9 @@ public sealed record CollectorSettings
 
         if (OutputType == "syslog")
         {
-            if (!Path.IsPathFullyQualified(SyslogOutputSocket) || System.Text.Encoding.UTF8.GetByteCount(SyslogOutputSocket) > 103)
+            if (SyslogOutputOptions.SocketPathProblem(SyslogOutputSocket) is { } problem)
             {
-                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_SOCKET must be an absolute path of at most 103 bytes.");
+                throw new InvalidOperationException($"BOWER_SYSLOG_OUTPUT_SOCKET {problem}.");
             }
 
             if (SyslogOutputFacility is < 0 or > 23)
@@ -525,9 +530,21 @@ public sealed record CollectorSettings
                 throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_FACILITY must be between 0 and 23.");
             }
 
-            if (SyslogOutputMaximumBytes is < 1_024 or > 65_507)
+            if (SyslogOutputMaximumBytes < SyslogOutputOptions.MinimumMessageBytes
+                || SyslogOutputMaximumBytes > SyslogOutputOptions.MaximumMessageBytesLimit)
             {
-                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_MAX_BYTES must be between 1024 and 65507.");
+                throw new InvalidOperationException(
+                    $"BOWER_SYSLOG_OUTPUT_MAX_BYTES must be between {SyslogOutputOptions.MinimumMessageBytes} and {SyslogOutputOptions.MaximumMessageBytesLimit}.");
+            }
+
+            // One message may wait this long, and the batch must still settle inside the
+            // delivery timeout and lease: keep it well below BOWER_DELIVERY_TIMEOUT_SECONDS.
+            if (SyslogOutputBusyWait < TimeSpan.FromSeconds(1)
+                || SyslogOutputBusyWait > SyslogOutputOptions.MaximumBusyWait
+                || SyslogOutputBusyWait >= DeliveryTimeout)
+            {
+                throw new InvalidOperationException(
+                    "BOWER_SYSLOG_OUTPUT_BUSY_WAIT_SECONDS must be between 1 and 30 and below BOWER_DELIVERY_TIMEOUT_SECONDS.");
             }
         }
 

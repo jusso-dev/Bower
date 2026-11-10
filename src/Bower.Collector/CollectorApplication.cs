@@ -224,10 +224,23 @@ public static partial class CollectorApplication
             builder.Services.AddSingleton(relayHttp);
         }
 
+        bool ownsOutput = output is null;
         output ??= CreateOutput(settings, credential, relayHttp);
         if (output is not null)
         {
-            builder.Services.AddSingleton(output);
+            if (ownsOutput)
+            {
+                // A factory registration: the container disposes what it built (the syslog
+                // socket, the S3 and HTTP clients) when the host stops. An instance passed in by
+                // a caller stays the caller's to dispose.
+                IOutputAdapter created = output;
+                builder.Services.AddSingleton(_ => created);
+            }
+            else
+            {
+                builder.Services.AddSingleton(output);
+            }
+
             builder.Services.AddSingleton(settings.DeliveryOptions());
             builder.Services.AddHostedService<QueueDeliveryWorker>();
         }
@@ -680,7 +693,8 @@ public static partial class CollectorApplication
                 Id = "syslog",
                 SocketPath = settings.SyslogOutputSocket,
                 Facility = settings.SyslogOutputFacility,
-                MaximumMessageBytes = settings.SyslogOutputMaximumBytes
+                MaximumMessageBytes = settings.SyslogOutputMaximumBytes,
+                BusyWait = settings.SyslogOutputBusyWait
             }),
             // The token and CA bundle are read here, so a bad file stops start-up.
             HttpOutput.OutputId => new HttpOutput(

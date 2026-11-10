@@ -26,6 +26,36 @@ internal sealed class TemporaryDirectory : IDisposable
 }
 
 /// <summary>
+/// Polls until a condition holds on the last value read, then returns that value. A test
+/// that asserts several fields of one snapshot must poll on all of them: a single
+/// <c>/v1/status</c> body can show a new failure code before the queue row it belongs to
+/// has been settled.
+/// </summary>
+internal static class Polling
+{
+    public static async Task<T> UntilAsync<T>(
+        Func<Task<T>> read,
+        Func<T, bool> settled,
+        CancellationToken cancellationToken,
+        int attempts = 200,
+        int delayMilliseconds = 50)
+    {
+        T last = await read();
+        for (int attempt = 1; attempt < attempts && !settled(last); attempt++)
+        {
+            await Task.Delay(delayMilliseconds, cancellationToken);
+            last = await read();
+        }
+
+        Assert.True(settled(last), $"Never settled after {attempts} reads. Last value: {last}");
+        return last;
+    }
+
+    public static Task UntilAsync(Func<bool> condition, CancellationToken cancellationToken, int attempts = 200, int delayMilliseconds = 25) =>
+        UntilAsync(() => Task.FromResult(condition()), static value => value, cancellationToken, attempts, delayMilliseconds);
+}
+
+/// <summary>
 /// Collectors built by tests see an ample queue volume unless a test supplies its own probe:
 /// the default watermarks (critical below 5%) would otherwise refuse intake on a nearly full
 /// development disk. <see cref="Bower.Persistence.SystemDiskSpaceProbe"/> stays tested directly.

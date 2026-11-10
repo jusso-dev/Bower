@@ -302,6 +302,38 @@ public sealed class QueueDeliveryWorkerTests
         Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
     }
 
+    [Theory]
+    [InlineData("destination-syslog-busy")]
+    [InlineData("destination-syslog-access-denied")]
+    [InlineData("destination-syslog-cancelled")]
+    public async Task DeliveryActivity_ReportsEachSyslogOutputFailureByName(string code)
+    {
+        // #225, #227, #229: every code the adapter returns is on both allow-lists, so status,
+        // logs and the queue show it instead of "destination-output-failure".
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["a"], cancellationToken);
+        FakeOutput output = new(events => new DeliveryResult([], [.. events.Select(item => new DeliveryFailure(item.EventId, code, true, null))], null));
+        DeliveryActivity activity = new();
+        RecordingLogger logger = new();
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), logger, activity);
+
+        await worker.DeliverOnceAsync(cancellationToken);
+
+        Assert.Equal(code, activity.LastFailure?.Code);
+        Assert.Contains(logger.Messages, line => line.Contains(code, StringComparison.Ordinal));
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
+    }
+
+    [Fact]
+    public void DestinationRetryDelay_IsShorterForABusySyslogDaemonThanForAnOutage()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), QueueDeliveryWorker.DestinationRetryDelay("destination-syslog-busy"));
+        Assert.Equal(TimeSpan.FromSeconds(30), QueueDeliveryWorker.DestinationRetryDelay("destination-syslog-unavailable"));
+        Assert.Equal(TimeSpan.FromSeconds(30), QueueDeliveryWorker.DestinationRetryDelay("destination-azure-unavailable"));
+    }
+
     [Fact]
     public async Task DeliveryTelemetry_DoesNotExposeUntrustedFailureCodesOrHideCredentialFailure()
     {
