@@ -9,7 +9,7 @@ for your environment, then return to [your first verified event](first-event.md)
 | Windows hosts | [MSI installer](../deployment/installers.md) and [Windows Event Log](../deployment/windows-event-log-source.md) | The current source has a narrow channel/event allow-list. WEC-first rollout remains planned. |
 | Containers | [Container images](../deployment/container-images.md), [console](../deployment/console-image.md), [Docker sidecar](../deployment/docker-sidecar.md) | Durable volumes and explicit source opt-in. |
 | AWS servers with the CloudWatch agent | [Quick start: CloudWatch agent](aws-cloudwatch-agent.md) | Events reach CloudWatch Logs before Bower redacts them; keep retention short. |
-| Linux Azure VMs or Arc servers with Azure Monitor Agent | [Quick start: Azure Monitor Agent](azure-monitor-agent.md) | journald and rsyslog rate limits, and a free syslog facility. |
+| Linux Azure VMs or Arc servers with Azure Monitor Agent | [Quick start: Azure Monitor Agent](azure-monitor-agent.md) | Any local account can write rows on this path; compare the [three Azure paths](../deployment/syslog-output.md#which-azure-path). Rate limits and a free syslog facility. |
 | AWS | [AWS security sources](../deployment/aws.md) | Queue permissions and least privilege. |
 | Google Cloud | [GCP security sources](../deployment/gcp.md) | Pub/Sub acknowledgement and forwarding configuration. |
 | Azure Functions | [Azure Functions collector](../deployment/azure-function.md) | This path currently has no durable queue; durable ingest is tracked in issue #137. |

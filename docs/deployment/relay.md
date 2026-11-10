@@ -59,7 +59,7 @@ The relay is a normal collector (same image, same `BOWER_*` settings, any output
 | `BOWER_RELAY_CERTIFICATE_FILE` / `BOWER_RELAY_KEY_FILE` | PEM server certificate and private key for that listener. |
 | `BOWER_RELAY_DOWNSTREAMS_FILE` | JSON file of downstream collector ids and client certificate pins (below). Read at start-up; restart to apply a change. |
 | `BOWER_RELAY_MANAGEMENT_TUNNEL` | `true` lets downstreams open a byte tunnel to this relay's `BOWER_MANAGEMENT_ENDPOINT`. Off by default. Cannot be combined with `BOWER_MANAGEMENT_PROXY`: the tunnel connects directly. |
-| `BOWER_OUTPUT` | `azure-logs-ingestion` in production (`ama-spool` also works). Not `relay`. |
+| `BOWER_OUTPUT` | `azure-logs-ingestion` in production (`ama-spool` and, on Linux, [`syslog`](syslog-output.md#relay) also work: the relay delivers through its own output). Not `relay`. |
 
 ```json
 {

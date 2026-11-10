@@ -3,7 +3,9 @@
 The collector can listen for syslog from a few high-value senders (network
 appliances, legacy Linux services) and turn selected messages into Bower events. It is
 a privacy gateway in front of those senders, not a syslog server for the estate:
-broad syslog fan-in stays with the Azure Monitor Agent.
+broad syslog fan-in stays with the Azure Monitor Agent. This page is about Bower receiving
+syslog; for Bower writing its events to local syslog for Azure Monitor Agent, see the
+[syslog output](syslog-output.md).
 
 ```
 sender ──RELP or TLS (or loopback TCP/UDP)──▶ listener ──▶ parse ──▶ route ──▶ signed pack parser ──▶ redact + policy ──▶ durable queue
