@@ -75,7 +75,9 @@ public sealed record SentinelSchema(
             new("EventOutcomeReason", "string", "substring(tostring(eventOutcomeReason), 0, 1024)"),
             new("Target", "dynamic", "target"),
             new("Change", "dynamic", "change"),
-            new("Attributes", "dynamic", "attributes")
+            new("Attributes", "dynamic", "attributes"),
+            // Additive (#228, #253): where the event entered Bower, set by Bower, never the producer.
+            new("Origin", "dynamic", "collector.origin")
         ],
         "1.0.0");
 
@@ -103,6 +105,13 @@ public sealed record SentinelSchema(
         HashSet<string> datetimes = [.. StreamColumns.Where(column => column.Type == "datetime").Select(column => column.Name)];
         IEnumerable<string> projections = TableColumns.Select(column =>
         {
+            // Origin on this path is the machine the agent recorded, never the envelope's:
+            // the agent sets Computer from the host, and a local sender cannot choose it.
+            if (column.Name == "Origin")
+            {
+                return "    Origin = pack(\"kind\", \"ama-syslog\", \"host\", Computer)";
+            }
+
             string expression = column.Expression == "pack_all()"
                 ? "e"
                 : System.Text.RegularExpressions.Regex.Replace(

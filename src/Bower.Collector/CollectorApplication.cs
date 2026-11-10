@@ -472,9 +472,14 @@ public static partial class CollectorApplication
                     ProcessingResult result;
                     try
                     {
+                        // Origin only from a producer the operator trusts to report it (the cloud
+                        // forwarder); never from the event, so an application cannot choose it.
+                        EventOrigin? origin = OriginHeader.Read(
+                            context.Request.Headers[OriginHeader.Name].ToString(), producer,
+                            context.RequestServices.GetRequiredService<CollectorSettings>().OriginProducers);
                         result = await processor.ProcessAsync(
                             candidate.GetRawText(),
-                            identity with { SourceAdapter = $"local-http:{producer}" },
+                            identity with { SourceAdapter = $"local-http:{producer}", Origin = origin },
                             cancellationToken);
                     }
                     catch (QueueCapacityExceededException)

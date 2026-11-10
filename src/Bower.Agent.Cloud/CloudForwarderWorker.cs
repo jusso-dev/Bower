@@ -183,7 +183,7 @@ public sealed partial class CloudForwarderWorker(
 
             skipped += translation.Skipped;
             (int accepted, int refused, SendOutcome? stoppedBy, bool lost) =
-                await ForwardAsync(lease, translation.Events, cancellationToken);
+                await ForwardAsync(lease, translation.Events, cancellationToken, translation.Origins);
             forwarded += accepted;
             rejected += refused;
             if (lost)
@@ -226,18 +226,20 @@ public sealed partial class CloudForwarderWorker(
     private async Task<(int Accepted, int Rejected, SendOutcome? StoppedBy, bool LeaseLost)> ForwardAsync(
         SourceLease lease,
         IReadOnlyList<string> events,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyList<string?>? origins = null)
     {
         int accepted = 0, rejected = 0;
         try
         {
             for (int index = 0; index < events.Count; index++)
             {
-                SendOutcome outcome = await collector.SendAsync(events[index], lease.Token);
+                string? origin = origins is not null && index < origins.Count ? origins[index] : null;
+                SendOutcome outcome = await collector.SendAsync(events[index], origin, lease.Token);
                 for (int retry = 0; outcome is SendOutcome.Throttled && retry < MaximumThrottleRetries; retry++)
                 {
                     await Task.Delay(TimeSpan.FromSeconds(1), clock, lease.Token);
-                    outcome = await collector.SendAsync(events[index], lease.Token);
+                    outcome = await collector.SendAsync(events[index], origin, lease.Token);
                 }
 
                 switch (outcome)

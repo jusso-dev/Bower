@@ -16,8 +16,19 @@ public sealed record FirehoseLogObjectOptions
     public int MaximumEnvelopes { get; init; } = 50_000;
 }
 
-/// <summary>Candidate Bower events found in an object, plus counts of what was skipped.</summary>
-public sealed record FirehoseLogObject(IReadOnlyList<string> Envelopes, int LogEvents, int Skipped);
+/// <summary>
+/// Candidate Bower events found in an object, plus counts of what was skipped.
+/// <see cref="Origins"/> has one entry per envelope (same index): the CloudWatch Logs log group
+/// and stream of the subscription payload it came from, or null when the object was not a
+/// subscription payload (#253).
+/// </summary>
+public sealed record FirehoseLogObject(IReadOnlyList<string> Envelopes, int LogEvents, int Skipped)
+{
+    public IReadOnlyList<CloudWatchLogsOrigin?> Origins { get; init; } = [];
+}
+
+/// <summary>The CloudWatch Logs log group and stream a log event was written to.</summary>
+public sealed record CloudWatchLogsOrigin(string LogGroup, string LogStream);
 
 /// <summary>
 /// Reads CloudWatch Logs data that Amazon Data Firehose delivered to S3 (gzip, possibly
@@ -34,10 +45,11 @@ public static class FirehoseLogObjectReader
         byte[] data = ReadBounded(content, options);
 
         List<string> envelopes = [];
+        List<CloudWatchLogsOrigin?> origins = [];
         int logEvents = 0;
         int skipped = 0;
 
-        void Consider(string message)
+        void Consider(string message, CloudWatchLogsOrigin? origin)
         {
             logEvents++;
             if (Encoding.UTF8.GetByteCount(message) > options.MaximumLogEventBytes
@@ -53,24 +65,27 @@ public static class FirehoseLogObjectReader
             }
 
             envelopes.Add(envelope);
+            origins.Add(origin);
         }
 
         if (!TryReadJsonSequence(data, Consider))
         {
             // Firehose message extraction writes raw messages, which need not be JSON.
             envelopes.Clear();
+            origins.Clear();
             logEvents = 0;
             skipped = 0;
             foreach (string line in Encoding.UTF8.GetString(data).Split('\n'))
             {
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    Consider(line.TrimEnd('\r'));
+                    // Extracted messages carry no log group or stream.
+                    Consider(line.TrimEnd('\r'), null);
                 }
             }
         }
 
-        return new FirehoseLogObject(envelopes, logEvents, skipped);
+        return new FirehoseLogObject(envelopes, logEvents, skipped) { Origins = origins };
     }
 
     /// <summary>
@@ -135,9 +150,9 @@ public static class FirehoseLogObjectReader
         }
     }
 
-    private static bool TryReadJsonSequence(byte[] data, Action<string> consider)
+    private static bool TryReadJsonSequence(byte[] data, Action<string, CloudWatchLogsOrigin?> consider)
     {
-        List<string> messages = [];
+        List<(string Message, CloudWatchLogsOrigin? Origin)> messages = [];
         Utf8JsonReader reader = new(data, new JsonReaderOptions { MaxDepth = 64, AllowMultipleValues = true });
         try
         {
@@ -159,17 +174,23 @@ public static class FirehoseLogObjectReader
                             continue;
                         }
 
+                        // The subscription payload names the log group and stream for all its events.
+                        CloudWatchLogsOrigin? origin =
+                            root.TryGetProperty("logGroup", out JsonElement group) && group.ValueKind == JsonValueKind.String
+                            && root.TryGetProperty("logStream", out JsonElement stream) && stream.ValueKind == JsonValueKind.String
+                                ? new CloudWatchLogsOrigin(group.GetString()!, stream.GetString()!)
+                                : null;
                         foreach (JsonElement logEvent in logEvents.EnumerateArray())
                         {
-                            messages.Add(logEvent.TryGetProperty("message", out JsonElement message)
+                            messages.Add((logEvent.TryGetProperty("message", out JsonElement message)
                                 && message.ValueKind == JsonValueKind.String
                                     ? message.GetString()!
-                                    : string.Empty);
+                                    : string.Empty, origin));
                         }
                     }
                     else
                     {
-                        messages.Add(root.GetRawText());
+                        messages.Add((root.GetRawText(), null));
                     }
                 }
             }
@@ -179,9 +200,9 @@ public static class FirehoseLogObjectReader
             return false;
         }
 
-        foreach (string message in messages)
+        foreach ((string message, CloudWatchLogsOrigin? origin) in messages)
         {
-            consider(message);
+            consider(message, origin);
         }
 
         return true;

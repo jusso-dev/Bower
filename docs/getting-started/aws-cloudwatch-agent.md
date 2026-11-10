@@ -395,15 +395,23 @@ the same group with different `log_stream_name` values, as in step 2.
 ### Trust boundary
 
 The collector sees every event on this path as coming from one producer: the `bower-cloud`
-agent's ingest token. The log group, stream and server that wrote an event are not passed on,
-so [producer scopes](../security/producer-scopes.md) can't tell one server from another here.
-That means **any server or account that can write to the log group can send events that claim
-any application identity**, and the collector accepts them. A compromised low-value server, or
-any local account in its `bower-events` group, could write events in the name of a different
-application. Policy and redaction still run on them. A Sentinel row is tied to a server only
-if the application put the host in the event itself (for example `source.hostname`).
+agent's ingest token, so [producer scopes](../security/producer-scopes.md) can't tell one
+server from another here. That means **any server or account that can write to the log group
+can send events that claim any application identity**, and the collector accepts them. A
+compromised low-value server, or any local account in its `bower-events` group, could write
+events in the name of a different application. Policy and redaction still run on them.
 
-To keep that blast radius small:
+What Bower does record is where each event came from. The agent passes on the log group and
+stream of every line, and the row's `Origin` column holds them
+(`Origin.kind == "cloudwatch-logs"`, `Origin.logGroup`, `Origin.logStream`). With the stream
+named after the instance (the example's `{instance_id}`), each row names the server whose
+stream it was written to. The application cannot set this. To turn it on, give the agent its
+own entry in the collector's `BOWER_INGEST_TOKENS_FILE` and list that producer in
+`BOWER_ORIGIN_PRODUCERS`, for example `BOWER_ORIGIN_PRODUCERS=bower-cloud`. Without it the
+column stays empty. See [BowerSecurity_CL columns](../reference/sentinel-table.md#origin).
+
+`Origin` names the stream, not the account that wrote to it, so it identifies the server only
+as far as each server is limited to its own stream. To keep that blast radius small:
 
 - Use **one log group, and one Bower stack, per trust level**, so servers you trust less
   can't write where your most important applications write.

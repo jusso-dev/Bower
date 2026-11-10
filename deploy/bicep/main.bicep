@@ -91,6 +91,7 @@ resource table 'Microsoft.OperationalInsights/workspaces/tables@2025-07-01' = {
         { name: 'Target', type: 'dynamic' }
         { name: 'Change', type: 'dynamic' }
         { name: 'Attributes', type: 'dynamic' }
+        { name: 'Origin', type: 'dynamic' }
       ]
     }
   }
@@ -184,7 +185,8 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
               EventOutcomeReason = substring(tostring(eventOutcomeReason), 0, 1024),
               Target = target,
               Change = change,
-              Attributes = attributes
+              Attributes = attributes,
+              Origin = collector.origin
         '''
       }
     ]

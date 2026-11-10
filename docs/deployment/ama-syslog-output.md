@@ -211,6 +211,11 @@ any local process can put a row into `BowerSecurity_CL` with any collector, acto
 fields. That row never passes through Bower's policy or redaction. The rule's `ProcessName ==
 "bower"` check stops accidents only.
 
+Every row on this path does record the machine it came from. The rule sets the `Origin` column
+to `{"kind": "ama-syslog", "host": <Computer>}`, the host Azure Monitor Agent ran on, and
+ignores anything the message says about its origin. A forged row still names the server it was
+forged on. See [BowerSecurity_CL columns](../reference/sentinel-table.md#origin).
+
 An rsyslog filter on a field the sender cannot set closes most of this. Install it as
 `/etc/rsyslog.d/09-bower-origin.conf`, so it runs before the agent's forward:
 

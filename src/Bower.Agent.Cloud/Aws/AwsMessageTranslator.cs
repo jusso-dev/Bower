@@ -4,6 +4,7 @@ using System.Text.Json;
 using Amazon.S3;
 using Amazon.S3.Model;
 using Bower.Contracts;
+using Bower.Forwarding;
 using Bower.Source.Aws;
 
 namespace Bower.Agent.Cloud.Aws;
@@ -88,6 +89,7 @@ public sealed partial class AwsMessageTranslator(
         CancellationToken cancellationToken)
     {
         List<string> events = [];
+        List<string?> origins = [];
         int skipped = 0;
         int denied = 0;
         foreach (AwsS3ObjectReference reference in references)
@@ -119,6 +121,12 @@ public sealed partial class AwsMessageTranslator(
                     stream,
                     new FirehoseLogObjectOptions { SourceId = $"aws-s3:{settings.AccountId}" });
                 events.AddRange(result.Envelopes);
+                for (int index = 0; index < result.Envelopes.Count; index++)
+                {
+                    CloudWatchLogsOrigin? origin = index < result.Origins.Count ? result.Origins[index] : null;
+                    origins.Add(origin is null ? null : OriginHeader.Format(origin.LogGroup, origin.LogStream));
+                }
+
                 skipped += result.Skipped;
                 if (result.Skipped > 0)
                 {
@@ -134,7 +142,7 @@ public sealed partial class AwsMessageTranslator(
 
         return denied == references.Count
             ? CloudTranslation.Unsupported("bucket not allowed")
-            : new CloudTranslation(events, skipped, null);
+            : new CloudTranslation(events, skipped, null) { Origins = origins };
     }
 
     private static bool IsMalformed(Exception exception) =>

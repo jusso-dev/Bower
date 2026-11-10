@@ -418,6 +418,34 @@ public sealed class CloudForwarderWorkerTests
             && message.Contains("1 log line(s) skipped as not a Bower envelope", StringComparison.Ordinal));
     }
 
+    private static readonly string[] BowerFilter = ["bower"];
+
+    [Fact]
+    public async Task Pass_SendsEachEventsLogGroupAndStreamAsItsOrigin()
+    {
+        // #253: the Firehose reader keeps each payload's log group and stream, and the forwarder
+        // reports them in X-Bower-Origin. The collector honours it only from a trusted producer.
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        string envelope = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(TestEvents.Now, "app-1"), BowerJson.Options);
+        string payload = JsonSerializer.Serialize(new
+        {
+            messageType = "DATA_MESSAGE",
+            owner = "123456789012",
+            logGroup = "/bower/app-events",
+            logStream = "i-0abc123",
+            subscriptionFilters = BowerFilter,
+            logEvents = new[] { new { id = "1", timestamp = 1, message = envelope } }
+        });
+        FakeObjects objects = new(Encoding.UTF8.GetBytes(payload));
+        FakeSource source = new(Message("m1", CloudSourceTests.S3Notification));
+        Collector collector = new(_ => HttpStatusCode.Accepted);
+
+        CloudPassResult result = await Worker(source, collector, objects).ProcessOnceAsync(cancellationToken);
+
+        Assert.Equal(1, result.Forwarded);
+        Assert.Equal(Bower.Forwarding.OriginHeader.Format("/bower/app-events", "i-0abc123"), Assert.Single(collector.Origins));
+    }
+
     [Fact]
     public async Task Pass_S3ReadFailureKeepsMessage()
     {
@@ -920,6 +948,8 @@ public sealed class CloudForwarderWorkerTests
 
         public List<string> Authorizations { get; } = [];
 
+        public List<string?> Origins { get; } = [];
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             if (request.Method == HttpMethod.Get)
@@ -930,6 +960,7 @@ public sealed class CloudForwarderWorkerTests
             string body = await request.Content!.ReadAsStringAsync(cancellationToken);
             Bodies.Add(body);
             Authorizations.Add(request.Headers.Authorization?.ToString() ?? string.Empty);
+            Origins.Add(request.Headers.TryGetValues(Bower.Forwarding.OriginHeader.Name, out IEnumerable<string>? values) ? values.Single() : null);
             return new HttpResponseMessage(respond(body));
         }
     }

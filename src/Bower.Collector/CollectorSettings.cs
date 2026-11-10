@@ -238,6 +238,14 @@ public sealed record CollectorSettings
     /// </summary>
     public IReadOnlyList<string> TapProducers { get; init; } = [];
 
+    /// <summary>
+    /// BOWER_ORIGIN_PRODUCERS: tokens-file producer ids trusted to report where an event came
+    /// from (the cloud forwarder's X-Bower-Origin header: CloudWatch Logs log group and stream).
+    /// Any other producer's header is ignored, so an application cannot choose its own origin.
+    /// Empty by default: no producer is trusted.
+    /// </summary>
+    public IReadOnlyList<string> OriginProducers { get; init; } = [];
+
     public EventTapOptions TapOptions() => new()
     {
         Enabled = TapEnabled,
@@ -428,6 +436,7 @@ public sealed record CollectorSettings
             TapMaximumEvents = ReadInt32(read, "BOWER_TAP_MAX_EVENTS", 1000),
             TapMaximumEventBytes = ReadInt32(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
             TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
+            OriginProducers = SplitList(read("BOWER_ORIGIN_PRODUCERS")),
             WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
             FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG"))
         };
@@ -642,6 +651,13 @@ public sealed record CollectorSettings
         if (TapProducers.Any(producer => producer.Length is < 1 or > 64 || producer.Contains(' ', StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("BOWER_TAP_PRODUCERS must list producer ids of 1 to 64 characters.");
+        }
+
+        if (OriginProducers.Any(producer => producer.Length is < 1 or > 64 || producer.Contains(' ', StringComparison.Ordinal)
+            || producer is "anonymous"))
+        {
+            throw new InvalidOperationException(
+                "BOWER_ORIGIN_PRODUCERS must list tokens-file producer ids of 1 to 64 characters; anonymous cannot be trusted.");
         }
     }
 

@@ -110,7 +110,8 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
               EventOutcomeReason = substring(tostring(e.eventOutcomeReason), 0, 1024),
               Target = e.target,
               Change = e.change,
-              Attributes = e.attributes
+              Attributes = e.attributes,
+              Origin = pack("kind", "ama-syslog", "host", Computer)
         '''
       }
     ]

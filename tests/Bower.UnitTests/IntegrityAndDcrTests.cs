@@ -261,6 +261,17 @@ public sealed partial class IntegrityAndDcrTests
     }
 
     [Fact]
+    public void TableReferencePage_ListsEveryColumnInOrder()
+    {
+        // docs/reference/sentinel-table.md is the readable list of BowerSecurity_CL columns.
+        string page = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "docs", "reference", "sentinel-table.md"));
+        string[] documented = [.. Regex.Matches(page, @"^\| `(?<name>[A-Za-z]+)` \| (?<type>[a-z]+) \|", RegexOptions.Multiline)
+            .Select(match => $"{match.Groups["name"].Value}:{match.Groups["type"].Value}")];
+
+        Assert.Equal(SentinelSchema.Default.TableColumns.Select(column => $"{column.Name}:{column.Type}"), documented);
+    }
+
+    [Fact]
     public void Bicep_MatchesTheSchemaModel()
     {
         string bicep = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));

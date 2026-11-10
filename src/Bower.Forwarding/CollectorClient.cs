@@ -29,12 +29,24 @@ public enum SendOutcome
 /// </summary>
 public sealed class CollectorClient(HttpClient client, string? ingestToken)
 {
-    public async Task<SendOutcome> SendAsync(string json, CancellationToken cancellationToken)
+    public Task<SendOutcome> SendAsync(string json, CancellationToken cancellationToken) =>
+        SendAsync(json, null, cancellationToken);
+
+    /// <summary>
+    /// Posts one event with an optional <see cref="OriginHeader"/> value. The collector honours it
+    /// only when this client's producer is listed in BOWER_ORIGIN_PRODUCERS.
+    /// </summary>
+    public async Task<SendOutcome> SendAsync(string json, string? origin, CancellationToken cancellationToken)
     {
         using HttpRequestMessage request = new(HttpMethod.Post, "v1/events")
         {
             Content = new StringContent(json, Encoding.UTF8, "application/json")
         };
+        if (!string.IsNullOrEmpty(origin))
+        {
+            request.Headers.TryAddWithoutValidation(OriginHeader.Name, origin);
+        }
+
         if (!string.IsNullOrEmpty(ingestToken))
         {
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ingestToken);

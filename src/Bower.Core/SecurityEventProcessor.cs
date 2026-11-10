@@ -379,7 +379,8 @@ public sealed class SecurityEventProcessor(
                 Version = collector.Version,
                 SourceAdapter = collector.SourceAdapter,
                 ConfigurationHash = collector.ConfigurationHash,
-                ReceivedAt = now
+                ReceivedAt = now,
+                Origin = collector.Origin
             }
         };
 
@@ -604,7 +605,8 @@ public sealed class SecurityEventProcessor(
                 Version = collector.Version,
                 SourceAdapter = collector.SourceAdapter,
                 ConfigurationHash = collector.ConfigurationHash,
-                ReceivedAt = now
+                ReceivedAt = now,
+                Origin = collector.Origin
             }
         };
 
@@ -728,7 +730,14 @@ public sealed record CollectorIdentity(
     string Id,
     string Version,
     string SourceAdapter,
-    string ConfigurationHash);
+    string ConfigurationHash)
+{
+    /// <summary>
+    /// Where this event entered Bower, as recorded by the collector (never by the producer).
+    /// Written to <c>collector.origin</c>; null leaves it unset.
+    /// </summary>
+    public EventOrigin? Origin { get; init; }
+}
 
 /// <param name="Stage">Pipeline stage that decided the event.</param>
 /// <param name="Suppressed">Accepted but counted instead of queued (window allowance spent).</param>
