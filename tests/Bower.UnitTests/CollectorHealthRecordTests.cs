@@ -909,6 +909,52 @@ public sealed class CollectorHealthRecordTests
     }
 
     [Fact]
+    public void RecordAtTheLimit_ListsInFullThenCountsTheRest()
+    {
+        // #230 decision: list the first entries in full, then a count of the rest, always fitting.
+        CollectorHealthSample sample = LargeSample(10);
+        string full = CollectorHealthRecord.CreateJson(sample, "edge-01", "production");
+        int fullBytes = Encoding.UTF8.GetByteCount(full);
+
+        // Exactly at its own size: nothing is summarised.
+        Assert.Equal(full, CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, fullBytes));
+
+        // One byte under: summarised, within the limit, listing as many as fit, counting the rest.
+        string summarised = CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, fullBytes - 1);
+        Assert.True(Encoding.UTF8.GetByteCount(summarised) <= fullBytes - 1);
+        using JsonDocument document = JsonDocument.Parse(summarised);
+        JsonElement attributes = document.RootElement.GetProperty("attributes");
+        JsonElement coverage = attributes.GetProperty("monitoringCoverage");
+        int listed = coverage.GetProperty("listedLimit").GetInt32();
+        Assert.Equal(9, listed);
+        Assert.Equal(listed, attributes.GetProperty("sources").GetProperty("overdue").GetArrayLength());
+        Assert.Equal(10 - listed, attributes.GetProperty("sources").GetProperty("overdueNotListed").GetInt64());
+        Assert.Equal(listed, attributes.GetProperty("syslog").GetArrayLength());
+        Assert.Equal(10 - listed, coverage.GetProperty("syslogNotListed").GetInt64());
+        Assert.Equal(10, attributes.GetProperty("sources").GetProperty("silent").GetInt64());
+        Assert.False(coverage.GetProperty("syslogComplete").GetBoolean());
+
+        // The most that fits: a limit just big enough for the summarised record keeps the same
+        // count, and the full record (one more of each) is over the limit by construction.
+        Assert.Equal(summarised, CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, Encoding.UTF8.GetByteCount(summarised)));
+    }
+
+    [Fact]
+    public void RecordAtATinyLimit_StillListsNothingAndCountsEverything()
+    {
+        CollectorHealthSample sample = LargeSample(25);
+
+        string summarised = CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, 100);
+
+        using JsonDocument document = JsonDocument.Parse(summarised);
+        JsonElement attributes = document.RootElement.GetProperty("attributes");
+        Assert.Equal(0, attributes.GetProperty("monitoringCoverage").GetProperty("listedLimit").GetInt32());
+        Assert.Equal(0, attributes.GetProperty("sources").GetProperty("overdue").GetArrayLength());
+        Assert.Equal(25, attributes.GetProperty("sources").GetProperty("overdueNotListed").GetInt64());
+        Assert.Equal(25, attributes.GetProperty("monitoringCoverage").GetProperty("syslogNotListed").GetInt64());
+    }
+
+    [Fact]
     public void RecordWithoutALimit_KeepsEveryListUpToTheCap()
     {
         CollectorHealthSample sample = LargeSample(25);

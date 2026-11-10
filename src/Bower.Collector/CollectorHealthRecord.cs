@@ -123,12 +123,13 @@ public static class CollectorHealthRecord
         JsonSerializer.Serialize(Create(sample, collectorId, environment, previous), BowerJson.Envelope);
 
     /// <summary>
-    /// The record as JSON within <paramref name="maximumBytes"/> (UTF-8) where it can be. An
-    /// output with a small message limit (BOWER_OUTPUT=ama-syslog) would otherwise refuse a record
-    /// that lists many sources, and a missing health record looks like a stopped collector. The
-    /// lists (overdue sources, syslog listeners, Windows subscriptions) are shortened, worst
-    /// first, until it fits; every count and problem code stays complete, and
-    /// <c>monitoringCoverage.listedLimit</c> says how many of each were kept. Null limit: as
+    /// The record as JSON within <paramref name="maximumBytes"/> (UTF-8). An output with a small
+    /// message limit (BOWER_OUTPUT=ama-syslog) would otherwise refuse a record that lists many
+    /// sources, and a missing health record looks like a stopped collector. Past the limit the
+    /// record is summarised: the first entries of each list (overdue sources worst first, syslog
+    /// listeners, Windows subscriptions) are written in full, as many as fit, and the rest are a
+    /// count (<c>overdueNotListed</c>, <c>syslogNotListed</c>, <c>windowsEventLogNotListed</c>).
+    /// Every other count and problem code stays complete. Null limit: as
     /// <see cref="CreateJson(CollectorHealthSample, string, string, CollectorHealthSample?)"/>.
     /// </summary>
     public static string CreateJson(
@@ -144,14 +145,33 @@ public static class CollectorHealthRecord
             return json;
         }
 
-        for (int listed = MaximumListed / 2; ; listed /= 2)
+        // The size grows with the number listed, so find the largest number that fits.
+        string Render(int listed) =>
+            JsonSerializer.Serialize(Create(sample, collectorId, environment, previous, listed), BowerJson.Envelope);
+        int low = 0;
+        int high = MaximumListed - 1;
+        string best = Render(0);
+        while (low <= high)
         {
-            json = JsonSerializer.Serialize(Create(sample, collectorId, environment, previous, listed), BowerJson.Envelope);
-            if (listed == 0 || System.Text.Encoding.UTF8.GetByteCount(json) <= limit)
+            int middle = (low + high + 1) / 2;
+            string candidate = Render(middle);
+            if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
             {
-                return json;
+                best = candidate;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+
+            if (middle == 0)
+            {
+                break;
             }
         }
+
+        return best;
     }
 
     /// <summary>
@@ -429,8 +449,10 @@ public static class CollectorHealthRecord
             writer.WriteBoolean("windowsEventLogComplete", (sample.WindowsEventLog?.Count ?? 0) <= listed);
             if (listed < MaximumListed)
             {
-                // Lists were shortened to fit the output's message limit; counts stay complete.
+                // Summarised to fit the output's message limit: the rest of each list is a count.
                 Number(writer, "listedLimit", listed);
+                Number(writer, "syslogNotListed", Math.Max(0, (sample.Syslog?.Count ?? 0) - listed));
+                Number(writer, "windowsEventLogNotListed", Math.Max(0, (sample.WindowsEventLog?.Count ?? 0) - listed));
             }
 
             writer.WriteEndObject();
@@ -479,6 +501,11 @@ public static class CollectorHealthRecord
         }
 
         writer.WriteEndArray();
+        if (listed < MaximumListed)
+        {
+            Number(writer, "overdueNotListed", Math.Max(0, sources.Count(item => item.IsOverdue) - listed));
+        }
+
         writer.WriteEndObject();
     }
 
