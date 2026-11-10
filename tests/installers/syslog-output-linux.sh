@@ -13,9 +13,10 @@ fail() { echo "FAIL: $*" >&2; journalctl -u bower.service -t Bower.Collector --n
 env_file=/etc/bower/bower.env
 cp -p "$env_file" /root/bower.env.before
 listener=""
+test_rsyslog=""
 restore() {
   [ -z "$listener" ] || kill "$listener" 2>/dev/null || true
-  rm -f /etc/rsyslog.d/09-bower-forward-test-module.conf /etc/rsyslog.d/10-bower-forward-test.conf
+  [ -z "$test_rsyslog" ] || kill "$test_rsyslog" 2>/dev/null || true
   cp -p /root/bower.env.before "$env_file"
   rm -f /etc/bower/producer-scopes.json /etc/systemd/system/bower.service.d/syslog-output.conf
   systemctl daemon-reload
@@ -108,10 +109,11 @@ echo "syslog output: 2000 of 2000 burst events acknowledged and in the journal"
 
 # 3. rsyslog forwards the largest event Bower accepts whole (#230, #245 test 4). A local TCP
 #    listener stands in for Azure Monitor Agent's forward. Event content is never printed.
-#    Bower writes to a dedicated rsyslog socket here, not /dev/log: the line limit is in
-#    rsyslog's core, whichever input reads the message, and in the CI container imjournal
+#    Bower writes to a dedicated rsyslogd's socket here, not /dev/log: the line limit is in
+#    rsyslog's core, whichever input reads the message. In CI the distribution's instance
 #    stopped reading the journal after the burst ("Journal indicates no msgs when positioned
-#    at head"), which would test the input, not the size.
+#    at head") and, when restarted, did not create a second socket in time; both would test
+#    the CI container's rsyslog, not the size.
 if command -v dnf >/dev/null; then dnf install -y -q rsyslog >/dev/null; else apt-get install -y -qq rsyslog >/dev/null; fi
 python3 - >/root/forward-listener.log 2>&1 <<'PYTHON' &
 import socket
@@ -131,22 +133,27 @@ for _ in $(seq 1 20); do
   (exec 3<>/dev/tcp/127.0.0.1/28330) 2>/dev/null && break
   sleep 0.5
 done
-# The distribution's rsyslog.conf already loads imuxsock (with the system socket off).
-grep -q 'imuxsock' /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null \
-  || printf 'module(load="imuxsock")\n' > /etc/rsyslog.d/09-bower-forward-test-module.conf
-cat > /etc/rsyslog.d/10-bower-forward-test.conf <<'RSYSLOG'
+# A separate rsyslogd with only this input and the forward: the distribution's instance (its
+# journal input) is left alone and cannot delay or swallow the message.
+cat > /root/bower-forward-test.rsyslog.conf <<'RSYSLOG'
+global(workDirectory="/root/bower-forward-test.rsyslog")
+module(load="imuxsock" SysSock.Use="off")
 input(type="imuxsock" Socket="/run/bower-rsyslog-test.sock" CreatePath="on")
 local4.* action(type="omfwd" target="127.0.0.1" port="28330" protocol="tcp")
 RSYSLOG
-systemctl restart rsyslog
-for _ in $(seq 1 20); do [ -S /run/bower-rsyslog-test.sock ] && break; sleep 0.5; done
-[ -S /run/bower-rsyslog-test.sock ] || fail "rsyslog did not create the test socket"
+install -d /root/bower-forward-test.rsyslog
+rsyslogd -N1 -f /root/bower-forward-test.rsyslog.conf >/root/rsyslog-test.log 2>&1 \
+  || { cat /root/rsyslog-test.log >&2; fail "the test rsyslog configuration is invalid"; }
+rsyslogd -n -f /root/bower-forward-test.rsyslog.conf -i /run/bower-forward-test.pid >>/root/rsyslog-test.log 2>&1 &
+test_rsyslog=$!
+for _ in $(seq 1 60); do [ -S /run/bower-rsyslog-test.sock ] && break; sleep 0.5; done
+[ -S /run/bower-rsyslog-test.sock ] || { cat /root/rsyslog-test.log >&2; fail "rsyslog did not create the test socket"; }
 printf 'BOWER_SYSLOG_OUTPUT_SOCKET=/run/bower-rsyslog-test.sock\n' >> "$env_file"
 systemctl restart bower.service
 for _ in $(seq 1 60); do curl -sf http://127.0.0.1:4319/health >/dev/null && break; sleep 1; done
 # The collector adds its own context to the envelope (its size depends on the collector id
 # and settings). Aim for about 5,400 bytes of JSON, below the 5,730 that fits the default
-# 7,680-byte message with room for that context, and well above rsyslog's old risk zone.
+# 7,680-byte message with room for that context.
 large_id="$(python3 - <<'PYTHON'
 import json, urllib.request, uuid, datetime
 event_id = str(uuid.uuid4())
@@ -193,10 +200,10 @@ PYTHON
 if [ "$forward_ok" -ne 0 ]; then
   # Metadata only: sizes, counts and rsyslog's own messages, never event content.
   echo "forwarded bytes: $(stat -c %s /root/forwarded 2>/dev/null || echo none); listener: $(cat /root/forward-listener.log 2>/dev/null)" >&2
-  journalctl -u rsyslog --no-pager -n 15 -o cat 2>/dev/null | grep -v 'bower-b64:' >&2 || true
+  grep -v 'bower-b64:' /root/rsyslog-test.log >&2 || true
   curl -sf http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; s=json.load(sys.stdin); print("queue", s["queue"], "last failure", s["deliveryActivity"]["lastFailureCode"])' >&2 || true
   fail "the forwarded line for the large event was not whole"
 fi
 kill "$listener" 2>/dev/null || true
-rm -f /etc/rsyslog.d/09-bower-forward-test-module.conf /etc/rsyslog.d/10-bower-forward-test.conf /root/forwarded /run/bower-rsyslog-test.sock
-systemctl restart rsyslog
+kill "$test_rsyslog" 2>/dev/null || true
+rm -rf /root/forwarded /run/bower-rsyslog-test.sock /root/bower-forward-test.rsyslog /root/bower-forward-test.rsyslog.conf
