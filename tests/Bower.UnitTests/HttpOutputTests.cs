@@ -794,15 +794,21 @@ public sealed class HttpOutputTests
         using HttpResponseMessage posted = await client.SendAsync(post, cancellationToken);
         Assert.True(posted.IsSuccessStatusCode);
 
-        string status = string.Empty;
-        for (int attempt = 0; attempt < 100 && !status.Contains("destination-http-403", StringComparison.Ordinal); attempt++)
-        {
-            await Task.Delay(100, cancellationToken);
-            using HttpRequestMessage request = new(HttpMethod.Get, "/v1/status");
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ingestToken);
-            using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
-            status = await response.Content.ReadAsStringAsync(cancellationToken);
-        }
+        // The worker records the failure code before it moves the row to retrying, in a
+        // separate transaction, so wait for both before asserting either.
+        string status = await Polling.UntilAsync(
+            async () =>
+            {
+                using HttpRequestMessage request = new(HttpMethod.Get, "/v1/status");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", ingestToken);
+                using HttpResponseMessage response = await client.SendAsync(request, cancellationToken);
+                return await response.Content.ReadAsStringAsync(cancellationToken);
+            },
+            static body => body.Contains("destination-http-403", StringComparison.Ordinal)
+                && body.Contains("\"retrying\":1", StringComparison.Ordinal),
+            cancellationToken,
+            attempts: 100,
+            delayMilliseconds: 100);
 
         await app.StopAsync(cancellationToken);
         Assert.Contains("\"output\":\"http\"", status, StringComparison.Ordinal);

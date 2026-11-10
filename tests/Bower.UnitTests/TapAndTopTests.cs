@@ -443,15 +443,8 @@ public sealed class TapHostTests
         Assert.Equal("Tap refused: HTTP 400 (tap-stage-invalid).", TapAndTopCommands.TapRefusal(HttpStatusCode.BadRequest, "tap-stage-invalid"));
     }
 
-    private static async Task WaitForAsync(Func<bool> condition, CancellationToken cancellation)
-    {
-        for (int attempt = 0; attempt < 200 && !condition(); attempt++)
-        {
-            await Task.Delay(25, cancellation);
-        }
-
-        Assert.True(condition());
-    }
+    private static Task WaitForAsync(Func<bool> condition, CancellationToken cancellation) =>
+        Polling.UntilAsync(condition, cancellation);
 
     private static async Task<HttpStatusCode> PostAsync(HttpClient client, SecurityEventEnvelope candidate, CancellationToken cancellation)
     {
