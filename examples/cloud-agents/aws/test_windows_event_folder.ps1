@@ -208,18 +208,18 @@ try {
     $rotated = (Get-FileHash -LiteralPath "$dir\events.jsonl.1").Hash
     $holder = [IO.FileStream]::new("$dir\events.jsonl", 'Open', 'Write', 'ReadWrite')
     try {
-        $code = Invoke-Rotation
+        $heldCode = Invoke-Rotation
     } finally {
         $holder.Dispose()
     }
-    if ($code -eq 0) { Fail 'the rotation task succeeded while a writer held the file open' }
+    if ($heldCode -eq 0) { Fail 'the rotation task succeeded while a writer held the file open' }
     if ((Get-FileHash -LiteralPath "$dir\events.jsonl.1").Hash -ne $rotated) { Fail 'events.jsonl.1 changed during a failed run' }
     if (Test-Path -LiteralPath "$dir\events.jsonl.2") { Fail 'older copies were shifted during a failed run' }
     if ((Lines "$dir\events.jsonl") -ne 1) { Fail 'events.jsonl lost its event during a failed run' }
     $code = Invoke-Rotation
     if ($code -ne 0) { Fail "the next run failed with $code" }
     if ((Get-FileHash -LiteralPath "$dir\events.jsonl.2").Hash -ne $rotated) { Fail 'the next run did not shift events.jsonl.1 to .2' }
-    Pass "a run that finds the file held open fails (task result $code) without changing anything, and the next run rotates"
+    Pass "a run that finds the file held open fails (task result $heldCode) without changing anything, and the next run rotates"
 
     # 5. A run cut short after its first rename is finished by the next run.
     Set-Content -LiteralPath "$dir\events.jsonl.rotating" -Value 'cut-short'
