@@ -282,6 +282,27 @@ public sealed class QueueDeliveryWorkerTests
     }
 
     [Fact]
+    public async Task DeliveryActivity_ReportsAnUnavailableLocalSyslogDaemonByName()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["a"], cancellationToken);
+        FakeOutput output = new(events => new DeliveryResult([], [.. events.Select(item =>
+            new DeliveryFailure(item.EventId, Bower.Output.Syslog.SyslogOutput.SocketUnavailableCode, true, null))], null));
+        DeliveryActivity activity = new();
+        RecordingLogger logger = new();
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), logger, activity);
+
+        await worker.DeliverOnceAsync(cancellationToken);
+
+        // Persisted, logged and shown in /v1/status under its own name, not "delivery-failure".
+        Assert.Equal("destination-syslog-unavailable", activity.LastFailure?.Code);
+        Assert.Contains(logger.Messages, line => line.Contains("destination-syslog-unavailable", StringComparison.Ordinal));
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
+    }
+
+    [Fact]
     public async Task DeliveryTelemetry_DoesNotExposeUntrustedFailureCodesOrHideCredentialFailure()
     {
         CancellationToken cancellationToken = TestContext.Current.CancellationToken;

@@ -68,8 +68,8 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
                 }
                 catch (SocketException)
                 {
-                    // The daemon is down, restarting or its buffer is full. Keep the rest queued
-                    // in order; the delivery worker backs off and retries.
+                    // The daemon is down, restarting or its queue is full (WouldBlock). Keep the
+                    // rest queued in order; the delivery worker backs off and retries.
                     Reset();
                     for (int rest = index; rest < events.Count; rest++)
                     {
@@ -123,6 +123,10 @@ public sealed class SyslogOutput : IOutputAdapter, IDisposable
             try
             {
                 created.Connect(new UnixDomainSocketEndPoint(options.SocketPath));
+                // Never wait on a slow daemon: a full receive queue fails the send at once
+                // (WouldBlock), so the batch is retried later instead of stalling the delivery
+                // worker, shutdown and Dispose behind this lock.
+                created.Blocking = false;
             }
             catch
             {

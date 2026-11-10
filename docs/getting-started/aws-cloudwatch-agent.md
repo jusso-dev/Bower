@@ -48,14 +48,18 @@ Give the application a group that can write the file, and keep everyone else out
 sudo groupadd --system bower-events
 sudo usermod -a -G bower-events orders-api
 sudo install -d -m 2770 -o root -g bower-events /var/log/bower
-sudo install -m 0660 -o root -g bower-events /dev/null /var/log/bower/events.jsonl
+# Create the file only if it's missing; never truncate events the agent hasn't shipped yet.
+[ -e /var/log/bower/events.jsonl ] || sudo touch /var/log/bower/events.jsonl
+sudo chown root:bower-events /var/log/bower/events.jsonl
+sudo chmod 0660 /var/log/bower/events.jsonl
 sudo -u orders-api python3 examples/cloud-agents/emit_event.py /var/log/bower/events.jsonl
 ```
 
 The setgid directory keeps new files in the `bower-events` group. The CloudWatch agent runs
 as root by default and can read the file. If your agent configuration sets `run_as_user`
-(for example `cwagent`), add that account to `bower-events` too, and restart the application
-so it picks up the new group.
+(for example `cwagent`), add that account to `bower-events` too. A running process keeps the
+groups it started with, so restart the application, and the agent if you added its account
+(`sudo systemctl restart amazon-cloudwatch-agent`).
 
 Rotate the file with logrotate
 ([`logrotate-bower-events`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/logrotate-bower-events)
@@ -153,13 +157,18 @@ aws cloudformation deploy --region ap-southeast-2 \
 
 Then allow the new bucket in the `bower-cloud` agent. It ignores S3 notifications from any
 bucket not listed in `BOWER_AWS_S3_BUCKETS` and deletes them as unsupported, so without this
-the events reach the queue but never Sentinel. Add the bucket to any already listed:
+the events reach the queue but never Sentinel. Set the complete list (buckets already allowed,
+plus the new one) where Compose reads it, then recreate the agent:
 
 ```bash
-# in the environment of the bower-cloud agent (for example deploy/docker/compose.cloud.yaml)
-BOWER_AWS_S3_BUCKETS=acme-bower-app-logs
-docker compose -f deploy/docker/compose.cloud.yaml up -d   # recreate the agent with the new setting
+# deploy/docker/compose.cloud.yaml reads BOWER_AWS_S3_BUCKETS from the environment or an .env file.
+export BOWER_AWS_S3_BUCKETS=existing-bucket,acme-bower-app-logs
+docker compose -f deploy/docker/compose.cloud.yaml up -d
+docker compose -f deploy/docker/compose.cloud.yaml exec bower-cloud printenv BOWER_AWS_S3_BUCKETS
 ```
+
+A plain `BOWER_AWS_S3_BUCKETS=...` line in your shell isn't passed to Compose unless it's
+exported; an empty value would make the agent drop every app-log notification.
 
 The stack takes one log group. To collect from several applications, point their agents at
 the same group with different `log_stream_name` values.

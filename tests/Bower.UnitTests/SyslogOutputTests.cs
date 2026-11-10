@@ -109,6 +109,34 @@ public sealed class SyslogOutputTests
     }
 
     [Fact]
+    public async Task Deliver_DoesNotBlockWhenTheDaemonQueueIsFull()
+    {
+        if (!Socket.OSSupportsUnixDomainSockets)
+        {
+            return;
+        }
+
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using ShortDirectory directory = new();
+        // A daemon that never reads: its receive queue fills and stays full. On Linux a blocking
+        // send would wait here for ever (macOS fails it at once), so this guards the Linux path CI runs.
+        using FakeDaemon daemon = new(Path.Combine(directory.Path, "log.sock"), receiveBufferBytes: 4_096);
+        using SyslogOutput output = new(new SyslogOutputOptions { Id = "syslog", SocketPath = daemon.Path });
+        string payload = "{\"eventId\":\"x\",\"attributes\":{\"note\":\"" + new string('a', 4_000) + "\"}}";
+        QueuedEvent[] events = [.. Enumerable.Range(0, 2_000).Select(index => new QueuedEvent($"e{index}", $"sha256:{index}", payload, Now))];
+
+        Task<DeliveryResult> delivery = output.DeliverAsync(events, cancellationToken);
+        Task finished = await Task.WhenAny(delivery, Task.Delay(TimeSpan.FromSeconds(10), cancellationToken));
+
+        Assert.Same(delivery, finished);
+        DeliveryResult result = await delivery;
+        Assert.NotEmpty(result.Failures);
+        Assert.All(result.Failures, failure => Assert.Equal((SyslogOutput.SocketUnavailableCode, true), (failure.Code, failure.IsRetryable)));
+        // Nothing is lost: every event is either acknowledged or kept for retry, in order.
+        Assert.Equal(events.Select(item => item.EventId), result.AcknowledgedEventIds.Concat(result.Failures.Select(failure => failure.EventId)));
+    }
+
+    [Fact]
     public async Task Deliver_ReconnectsAfterTheDaemonRestarts()
     {
         if (!Socket.OSSupportsUnixDomainSockets)
@@ -204,9 +232,14 @@ public sealed class SyslogOutputTests
     {
         private readonly Socket socket = new(AddressFamily.Unix, SocketType.Dgram, ProtocolType.Unspecified);
 
-        public FakeDaemon(string path)
+        public FakeDaemon(string path, int? receiveBufferBytes = null)
         {
             Path = path;
+            if (receiveBufferBytes is { } bytes)
+            {
+                socket.ReceiveBufferSize = bytes;
+            }
+
             socket.Bind(new UnixDomainSocketEndPoint(path));
             socket.ReceiveTimeout = 5_000;
         }

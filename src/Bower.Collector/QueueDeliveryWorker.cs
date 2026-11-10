@@ -414,6 +414,7 @@ public sealed partial class QueueDeliveryWorker(
         {
             "destination-azure-credential-failed" or "destination-azure-paused" or "destination-azure-unavailable"
                 or "destination-azure-cancelled" or "destination-output-timeout" or "destination-ama-cancelled"
+                or "destination-syslog-unavailable"
                 or "destination-relay-unavailable" or "destination-relay-response-invalid" or "destination-relay-result-missing"
                 or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
                 or "preflight-record-too-large" or "preflight-field-too-large" or "preflight-type-mismatch"

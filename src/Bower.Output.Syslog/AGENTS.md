@@ -8,6 +8,7 @@ envelope JSON. Azure Monitor Agent (or any agent reading syslog) ships it from t
   in the other direction, and remote syslog would bypass the collector's delivery guarantees.
 - A datagram is all or nothing, so a record is never split. Refuse an envelope that does not
   fit `MaximumMessageBytes` (non-retryable) rather than truncating it.
-- A full or missing socket is a destination fault: retry, never drop.
+- A full or missing socket is a destination fault: retry, never drop. The socket is
+  non-blocking, so a slow daemon can never stall the delivery worker or shutdown.
 - Never log payloads. Failure codes are bounded constants.
 - Delivery means the local daemon accepted the datagram, not that Sentinel has the row.
