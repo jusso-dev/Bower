@@ -6,7 +6,8 @@
 # 1. Ubuntu, offline bundle (deb): silent install with a pre-seeded token and trusted pack
 #    key joins Pending; remove leaves no secret; purge leaves nothing.
 # 2. Ubuntu, Ansible role (deb): the same through deploy/ansible.
-# 3. Rocky Linux 9 container with systemd, offline bundle (rpm): the same with dnf remove.
+# 3. Rocky Linux 9 container with systemd, offline bundle (rpm): the same with dnf remove,
+#    and BOWER_OUTPUT=syslog through the packaged unit to journald (syslog-output-linux.sh).
 # 4. Ubuntu (deb) and Rocky Linux 9 (rpm), when an upgrade-test directory and the expected
 #    version are given: upgrade-linux.sh installs the older test package (<core>-dev.0),
 #    upgrades to this build, checks the reported versions and proves downgrades are
@@ -139,6 +140,9 @@ docker exec bower-rocky test ! -e /root/bundle/seed/enrolment-token
 wait_for_pending rocky-offline
 docker exec bower-rocky install -o root -g bower -m 0640 /dev/null /etc/bower/secrets/ingest-token
 docker exec bower-rocky bash /root/assert-linux.sh installed /root/secrets
+echo "== Rocky Linux 9: BOWER_OUTPUT=syslog through the packaged unit and journald (#245)"
+docker cp "$here/syslog-output-linux.sh" bower-rocky:/root/syslog-output-linux.sh
+docker exec bower-rocky bash /root/syslog-output-linux.sh
 docker exec bower-rocky dnf remove -y bower-collector >/dev/null
 docker exec bower-rocky bash /root/assert-linux.sh removed
 

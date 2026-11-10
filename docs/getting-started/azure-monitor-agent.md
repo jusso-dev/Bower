@@ -145,8 +145,27 @@ bower test emit
 ```
 
 It sends a new synthetic authentication failure each time and prints the collector's answer,
-including `"eventId"`. If the collector has an ingest token, pass it from the file without
-printing it:
+including `"eventId"`.
+
+On a fresh install the collector answers `403` ("Producer is not authorized for this event
+identity"): producer scopes are default deny, and nothing is allowed to claim the canary's
+identity yet. For the test, allow it for the loopback producer in a scopes file, then restart
+Bower (see [Producer identity scopes](../security/producer-scopes.md)):
+
+```bash
+sudo tee /etc/bower/producer-scopes.json >/dev/null <<JSON
+[{"producer": "anonymous",
+  "application": {"name": "BowerCanary", "environment": "test", "instance": "$(cat /proc/sys/kernel/hostname)"},
+  "source": {"ipAddress": "192.0.2.1"}}]
+JSON
+sudo chown root:bower /etc/bower/producer-scopes.json && sudo chmod 0640 /etc/bower/producer-scopes.json
+echo 'BOWER_PRODUCER_SCOPES_FILE=/etc/bower/producer-scopes.json' | sudo tee -a /etc/bower/bower.env
+sudo systemctl restart bower
+```
+
+Use `"producer": "default"` instead when the collector has a shared ingest token. Add your
+applications' identities to the same file. If the collector has an ingest token, pass it from
+the file without printing it:
 
 ```bash
 sudo sh -c 'BOWER_INGEST_TOKEN="$(cat /etc/bower/secrets/ingest-token)" bower test emit'
