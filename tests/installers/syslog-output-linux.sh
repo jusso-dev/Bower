@@ -131,8 +131,9 @@ printf 'local4.* action(type="omfwd" target="127.0.0.1" port="28330" protocol="t
   > /etc/rsyslog.d/10-bower-forward-test.conf
 systemctl restart rsyslog
 sleep 2
-# The collector adds its own context to the envelope. Aim for about 5,600 bytes of JSON,
-# close to the 5,730 that fits the default 7,680-byte message.
+# The collector adds its own context to the envelope (its size depends on the collector id
+# and settings). Aim for about 5,400 bytes of JSON, below the 5,730 that fits the default
+# 7,680-byte message with room for that context, and well above rsyslog's old risk zone.
 large_id="$(python3 - <<'PYTHON'
 import json, urllib.request, uuid, datetime
 event_id = str(uuid.uuid4())
@@ -144,17 +145,19 @@ event = {"schemaVersion": "1.0.0", "eventId": event_id, "timeGenerated": now,
          "application": {"name": "BowerBurst", "environment": "test"},
          "actor": {"username": "burst-user"}, "source": {"ipAddress": "192.0.2.1"},
          "request": {"correlationId": "large"},
-         "attributes": {"note": "y" * 3450}}
+         "attributes": {"note": "y" * 3250}}
 request = urllib.request.Request("http://127.0.0.1:4319/v1/events", json.dumps(event).encode(), {"Content-Type": "application/json"})
 urllib.request.urlopen(request).read()
 print(event_id)
 PYTHON
 )"
-# imjournal replays earlier journal lines first; wait for this event's line.
-python3 - "$large_id" <<'PYTHON' || fail "the forwarded line for the large event was not whole"
+# On a fresh install imjournal starts at the beginning of the journal and replays the burst
+# above before this event: allow it time on a slow runner.
+forward_ok=0
+python3 - "$large_id" <<'PYTHON' || forward_ok=$?
 import base64, json, re, sys, time
 want = sys.argv[1]
-deadline = time.time() + 60
+deadline = time.time() + 240
 while time.time() < deadline:
     try:
         forwarded = open("/root/forwarded", "rb").read().decode(errors="replace")
@@ -175,6 +178,13 @@ while time.time() < deadline:
     time.sleep(1)
 sys.exit(1)
 PYTHON
+if [ "$forward_ok" -ne 0 ]; then
+  # Metadata only: sizes, counts and rsyslog's own messages, never event content.
+  echo "forwarded bytes: $(stat -c %s /root/forwarded 2>/dev/null || echo none); listener: $(cat /root/forward-listener.log 2>/dev/null)" >&2
+  journalctl -u rsyslog --no-pager -n 15 -o cat 2>/dev/null | grep -v 'bower-b64:' >&2 || true
+  curl -sf http://127.0.0.1:4319/v1/status | python3 -c 'import json,sys; s=json.load(sys.stdin); print("queue", s["queue"], "last failure", s["deliveryActivity"]["lastFailureCode"])' >&2 || true
+  fail "the forwarded line for the large event was not whole"
+fi
 kill "$listener" 2>/dev/null || true
 rm -f /etc/rsyslog.d/10-bower-forward-test.conf /root/forwarded
 systemctl restart rsyslog
