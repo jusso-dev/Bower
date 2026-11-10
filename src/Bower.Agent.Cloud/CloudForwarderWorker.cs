@@ -7,6 +7,11 @@ namespace Bower.Agent.Cloud;
 /// Messages whose lease could not be renewed or passed its deadline. Work on them stopped and
 /// they were neither acknowledged nor released: the queue redelivers them (retryable).
 /// </param>
+/// <param name="Skipped">
+/// Log events inside S3 objects that were not usable Bower envelopes (not JSON, over 1 MiB, or
+/// missing schemaVersion, eventId or eventType) and were dropped. Counted for messages that
+/// reached forwarding; the translator logs the bucket, key and count for each object.
+/// </param>
 public sealed record CloudPassResult(
     int Messages,
     int Forwarded,
@@ -14,7 +19,8 @@ public sealed record CloudPassResult(
     int Unsupported,
     int Malformed,
     bool Backpressure,
-    int LeaseLost = 0);
+    int LeaseLost = 0,
+    int Skipped = 0);
 
 /// <summary>
 /// Receives messages from one cloud queue, translates them to candidate events and posts
@@ -49,7 +55,7 @@ public sealed partial class CloudForwarderWorker(
                 if (result.Messages > 0)
                 {
                     LogPass(logger, source.Name, result.Messages, result.Forwarded, result.Rejected,
-                        result.Unsupported, result.Malformed, result.LeaseLost);
+                        result.Unsupported, result.Malformed, result.LeaseLost, result.Skipped);
                 }
 
                 wait = result.Backpressure;
@@ -123,7 +129,7 @@ public sealed partial class CloudForwarderWorker(
 
     private async Task<CloudPassResult> ProcessBatchAsync(List<SourceLease> leases, CancellationToken cancellationToken)
     {
-        int forwarded = 0, rejected = 0, unsupported = 0, malformed = 0, leaseLost = 0;
+        int forwarded = 0, rejected = 0, unsupported = 0, malformed = 0, leaseLost = 0, skipped = 0;
         for (int index = 0; index < leases.Count; index++)
         {
             SourceLease lease = leases[index];
@@ -175,6 +181,7 @@ public sealed partial class CloudForwarderWorker(
                 continue;
             }
 
+            skipped += translation.Skipped;
             (int accepted, int refused, SendOutcome? stoppedBy, bool lost) =
                 await ForwardAsync(lease, translation.Events, cancellationToken);
             forwarded += accepted;
@@ -213,7 +220,7 @@ public sealed partial class CloudForwarderWorker(
         }
 
         CloudPassResult Result(bool backpressure) =>
-            new(leases.Count, forwarded, rejected, unsupported, malformed, backpressure || leaseLost > 0, leaseLost);
+            new(leases.Count, forwarded, rejected, unsupported, malformed, backpressure || leaseLost > 0, leaseLost, skipped);
     }
 
     private async Task<(int Accepted, int Rejected, SendOutcome? StoppedBy, bool LeaseLost)> ForwardAsync(
@@ -359,8 +366,8 @@ public sealed partial class CloudForwarderWorker(
     }
 
     [LoggerMessage(EventId = 4001, Level = LogLevel.Information,
-        Message = "{Source} pass: {Messages} message(s), {Forwarded} event(s) forwarded, {Rejected} rejected by policy, {Unsupported} unsupported, {Malformed} malformed, {LeaseLost} lease(s) lost.")]
-    private static partial void LogPass(ILogger logger, string source, int messages, int forwarded, int rejected, int unsupported, int malformed, int leaseLost);
+        Message = "{Source} pass: {Messages} message(s), {Forwarded} event(s) forwarded, {Rejected} rejected by policy, {Unsupported} unsupported, {Malformed} malformed, {LeaseLost} lease(s) lost, {Skipped} log line(s) skipped as not a Bower envelope.")]
+    private static partial void LogPass(ILogger logger, string source, int messages, int forwarded, int rejected, int unsupported, int malformed, int leaseLost, int skipped);
 
     [LoggerMessage(EventId = 4002, Level = LogLevel.Warning, Message = "{Source} pass failed with {FailureType}; backing off.")]
     private static partial void LogPassFailure(ILogger logger, string source, string failureType);

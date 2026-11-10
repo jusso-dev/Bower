@@ -120,6 +120,11 @@ public sealed partial class AwsMessageTranslator(
                     new FirehoseLogObjectOptions { SourceId = $"aws-s3:{settings.AccountId}" });
                 events.AddRange(result.Envelopes);
                 skipped += result.Skipped;
+                if (result.Skipped > 0)
+                {
+                    // Names and counts only, never the lines: they are unredacted application data.
+                    LogSkippedLines(logger, reference.Bucket, reference.Key, result.Skipped, result.LogEvents);
+                }
             }
             catch (Exception exception) when (IsMalformed(exception))
             {
@@ -142,4 +147,8 @@ public sealed partial class AwsMessageTranslator(
     [LoggerMessage(EventId = 4101, Level = LogLevel.Warning,
         Message = "S3 notification for bucket {Bucket} ignored; add it to BOWER_AWS_S3_BUCKETS to read it.")]
     private static partial void LogBucketNotAllowed(ILogger logger, string bucket);
+
+    [LoggerMessage(EventId = 4102, Level = LogLevel.Warning,
+        Message = "S3 object {Bucket}/{Key}: {Skipped} of {LogEvents} log event(s) skipped as not a usable Bower envelope (not JSON, over 1 MiB, or missing schemaVersion, eventId or eventType); those events are not forwarded.")]
+    private static partial void LogSkippedLines(ILogger logger, string bucket, string key, int skipped, int logEvents);
 }

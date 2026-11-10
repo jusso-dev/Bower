@@ -8,6 +8,7 @@ using Bower.Contracts;
 using Bower.Forwarding;
 using Bower.Source.Aws;
 using Bower.Source.Gcp;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Bower.UnitTests;
@@ -363,6 +364,58 @@ public sealed class CloudForwarderWorkerTests
         Assert.Equal(["bower-app-logs"], objects.Buckets);
         Assert.Equal("123456789012", objects.Owners.Single());
         Assert.Equal(["allowed", "other"], source.Acknowledged);
+    }
+
+    [Fact]
+    public async Task Pass_ReportsLinesSkippedInAnS3ObjectWithoutTheirContent()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        string envelope = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(TestEvents.Now, "app-1"), BowerJson.Options);
+        // What the CloudWatch agent leaves of a line longer than the event limit: cut short, not JSON.
+        string truncated = envelope[..(envelope.Length / 2)];
+        FakeObjects objects = new(Encoding.UTF8.GetBytes(envelope + "\n" + truncated + "\n"));
+        FakeSource source = new(Message("m1", CloudSourceTests.S3Notification));
+        WarningLogger<AwsMessageTranslator> translatorLog = new();
+        WarningLogger<CloudForwarderWorker> workerLog = new(LogLevel.Information);
+        using TemporaryDirectory heartbeats = new();
+        CloudAgentSettings settings = Settings() with { HeartbeatDirectory = heartbeats.Path };
+        AwsMessageTranslator translator = new(
+            new AwsQueueMessageParser(new AwsQueueOptions
+            {
+                SourceId = "aws:123456789012:ap-southeast-2",
+                AccountId = "123456789012",
+                Region = "ap-southeast-2"
+            }),
+            objects,
+            settings.Aws!,
+            TimeProvider.System,
+            translatorLog);
+        CloudForwarderWorker worker = new(source, translator, Client(new Collector(_ => HttpStatusCode.Accepted)), settings, TimeProvider.System, workerLog);
+
+        CloudPassResult result = await worker.ProcessOnceAsync(cancellationToken);
+
+        Assert.Equal((1, 1), (result.Forwarded, result.Skipped));
+        Assert.Equal(["m1"], source.Acknowledged);
+        string warning = Assert.Single(translatorLog.Messages);
+        Assert.StartsWith("S3 object bower-app-logs/", warning, StringComparison.Ordinal);
+        Assert.Contains(": 1 of 2 log event(s) skipped", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("app-1", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain(truncated[..20], warning, StringComparison.Ordinal);
+
+        // The pass summary the worker loop writes carries the count too.
+        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        FakeSource second = new(Message("m2", CloudSourceTests.S3Notification));
+        CloudForwarderWorker looping = new(second, translator, Client(new Collector(_ => HttpStatusCode.Accepted)), settings, TimeProvider.System, workerLog);
+        await looping.StartAsync(stop.Token);
+        while (!workerLog.Messages.Any(message => message.StartsWith("fake pass:", StringComparison.Ordinal)))
+        {
+            await Task.Delay(10, cancellationToken);
+        }
+
+        await stop.CancelAsync();
+        await looping.StopAsync(CancellationToken.None);
+        Assert.Contains(workerLog.Messages, message => message.StartsWith("fake pass:", StringComparison.Ordinal)
+            && message.Contains("1 log line(s) skipped as not a Bower envelope", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -809,6 +862,27 @@ public sealed class CloudForwarderWorkerTests
             }
 
             return new HttpResponseMessage(respond(body));
+        }
+    }
+
+    /// <summary>Keeps formatted messages at or above the level; tests assert what operators would see.</summary>
+    private sealed class WarningLogger<T>(LogLevel minimum = LogLevel.Warning) : ILogger<T>
+    {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> messages = new();
+
+        public IReadOnlyList<string> Messages => [.. messages];
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(LogLevel logLevel) => logLevel >= minimum;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (IsEnabled(logLevel))
+            {
+                messages.Enqueue(formatter(state, exception));
+            }
         }
     }
 

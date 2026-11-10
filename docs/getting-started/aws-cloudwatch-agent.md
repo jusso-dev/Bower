@@ -391,6 +391,64 @@ exported; an empty value would make the agent drop every app-log notification.
 The stack takes one log group. To collect from several applications, point their agents at
 the same group with different `log_stream_name` values, as in step 2.
 
+### Trust boundary
+
+The collector sees every event on this path as coming from one producer: the `bower-cloud`
+agent's ingest token. The log group, stream and server that wrote an event are not passed on,
+so [producer scopes](../security/producer-scopes.md) can't tell one server from another here.
+That means **any server or account that can write to the log group can send events that claim
+any application identity**, and the collector accepts them. A compromised low-value server, or
+any local account in its `bower-events` group, could write events in the name of a different
+application. Policy and redaction still run on them. A Sentinel row is tied to a server only
+if the application put the host in the event itself (for example `source.hostname`).
+
+To keep that blast radius small:
+
+- Use **one log group, and one Bower stack, per trust level**, so servers you trust less
+  can't write where your most important applications write.
+- Limit what each server can write. The confirmed facts, from AWS's
+  [actions, resources and condition keys for CloudWatch Logs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatchlogs.html):
+  `logs:CreateLogStream` and `logs:PutLogEvents` act on the log-stream resource
+  (`arn:aws:logs:<region>:<account>:log-group:<group>:log-stream:<stream>`), and the only
+  condition key CloudWatch Logs offers on log groups and streams is `aws:ResourceTag/${TagKey}`.
+  So the limit goes in the policy's `Resource`. The simplest form that needs no further
+  checking is one role per server or per group of equally trusted servers, each allowed only
+  its own stream names, for example `...:log-stream:orders-api-*`, with the agent's
+  `log_stream_name` set to match.
+- A single shared role that limits each EC2 instance to the stream named after its own
+  instance ID would need a policy variable that resolves to the bare instance ID. AWS
+  documents that for an instance role `aws:userid` is `<role-id>:<instance-id>`
+  ([IAM policy variables](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html#principaltable)),
+  and that `ec2:SourceInstanceArn` holds the instance ARN
+  ([AWS global condition context keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html)).
+  Neither is the bare ID, and a stream name can't contain `:`. This needs confirming (for
+  example in the IAM policy simulator) before you rely on it; until then, treat every server
+  that shares a role as able to write any stream that role allows.
+
+## Limits
+
+- **Firehose buffer.** The stack's Firehose stream writes an S3 object every 60 seconds or
+  5 MB, whichever comes first (`BufferingHints` in `bower-aws-security.yaml`).
+- **One S3 object per SQS message.** The `bower-cloud` agent refuses an object over 32 MB
+  (`BOWER_AWS_S3_MAX_OBJECT_MB`), over 64 MiB once decompressed, or holding more than 50,000
+  Bower events. It treats such a message as malformed: it releases it at once, and after
+  `MaxReceiveCount` deliveries (10 by default) SQS moves it to the dead-letter queue, **with
+  every event in that object**. At a 5 MB buffer this needs an unusual burst, but a server
+  that writes a flood of events can cause it. Fix the cause, then use SQS dead-letter queue
+  redrive; the objects stay in S3 for `AppLogRetentionDays`.
+- **Dropped lines.** A log event that isn't a usable Bower envelope (not JSON, over 1 MiB, or
+  missing `schemaVersion`, `eventId` or `eventType`) is dropped. The subscription filter
+  passes it because it contains `schemaVersion`. The agent counts these drops in its pass
+  summary (`... log line(s) skipped as not a Bower envelope.`) and logs a warning per object
+  with the bucket, key and count, never the content:
+
+    ```text
+    S3 object acme-bower-app-logs/bower/2026/11/10/01/...: 1 of 40 log event(s) skipped as not a usable Bower envelope (not JSON, over 1 MiB, or missing schemaVersion, eventId or eventType); those events are not forwarded.
+    ```
+
+    Look on the server for a line that's too long, was written in two pieces or follows a
+    partial line.
+
 ## 4. Check it
 
 Send the test event only now, once the agent and the forwarding are in place, so the check
@@ -414,4 +472,20 @@ application account (for example with `runas /user:CONTOSO\svc-orders`). It prin
 4. In Sentinel: `BowerSecurity_CL | where EventId == "<your eventId>"`.
 
 If step 2 works and step 3 doesn't, check the SQS dead-letter queue and the agent's log;
-see [AWS security signal](../deployment/aws.md#delivery-guarantees).
+see [AWS security signal](../deployment/aws.md#delivery-guarantees). Search the log for:
+
+- `S3 notification for bucket {Bucket} ignored; add it to BOWER_AWS_S3_BUCKETS to read it.`
+  (warning): the bucket isn't in `BOWER_AWS_S3_BUCKETS`. The agent deleted the notification,
+  so fixing the list doesn't bring those events back by itself. The objects are still in the
+  bucket under `bower/` for `AppLogRetentionDays`. To replay them, after fixing the list,
+  copy each object onto itself so S3 sends a new notification (this is a write to the bucket;
+  run it with an administrator's credentials, not the agent's):
+
+    ```bash
+    aws s3 cp --recursive "s3://acme-bower-app-logs/bower/2026/11/10/" "s3://acme-bower-app-logs/bower/2026/11/10/" \
+      --metadata-directive REPLACE --metadata replayed=true
+    ```
+
+    The collector deduplicates by `eventId`, so replaying an object twice is harmless.
+
+- `log event(s) skipped as not a usable Bower envelope` (warning): see [Limits](#limits).
