@@ -352,24 +352,24 @@ public sealed record CollectorSettings
                 read("BOWER_ALLOW_UNAUTHENTICATED_INGEST"),
                 "true",
                 StringComparison.OrdinalIgnoreCase),
-            IngestRequestsPerSecond = (int)ReadInt64(read, "BOWER_INGEST_RATE_PER_SECOND", 500),
-            MaximumDeliveryAttempts = (int)ReadInt64(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
+            IngestRequestsPerSecond = ReadInt32(read, "BOWER_INGEST_RATE_PER_SECOND", 500),
+            MaximumDeliveryAttempts = ReadInt32(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
             DeliveryLeaseDuration = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_LEASE_SECONDS", 300)),
             DeliveryTimeout = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_TIMEOUT_SECONDS", 240)),
             StorageWatermarks = new Bower.Persistence.StorageWatermarkOptions
             {
                 WarningFreeBytes = ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_BYTES", 1024L * 1024 * 1024),
-                WarningFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_PERCENT", 10), -1, 101),
+                WarningFreePercent = ReadInt32(read, "BOWER_STORAGE_WARNING_FREE_PERCENT", 10),
                 CriticalFreeBytes = ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_BYTES", 256L * 1024 * 1024),
-                CriticalFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5), -1, 101)
+                CriticalFreePercent = ReadInt32(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5)
             },
             OutputType = (read("BOWER_OUTPUT") ?? "none").ToLowerInvariant(),
             HttpOutput = HttpOutputSettings.FromEnvironment(read),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
             SyslogOutputSocket = Blank(read("BOWER_SYSLOG_OUTPUT_SOCKET")) ?? "/dev/log",
-            SyslogOutputFacility = (int)ReadInt64(read, "BOWER_SYSLOG_OUTPUT_FACILITY", 20),
-            SyslogOutputMaximumBytes = (int)ReadInt64(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", 8_192),
+            SyslogOutputFacility = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_FACILITY", 20),
+            SyslogOutputMaximumBytes = ReadInt32(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", 8_192),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
             DceEndpoint = string.IsNullOrWhiteSpace(dceEndpoint)
                 ? null
@@ -411,11 +411,11 @@ public sealed record CollectorSettings
                 : null,
             SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG")),
             TapEnabled = ReadBoolean(read, "BOWER_TAP_ENABLED", true),
-            TapMaximumSessions = (int)ReadInt64(read, "BOWER_TAP_MAX_SESSIONS", 2),
-            TapMaximumEventsPerSecond = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20),
-            TapMaximumDurationSeconds = (int)ReadInt64(read, "BOWER_TAP_MAX_DURATION_SECONDS", 300),
-            TapMaximumEvents = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS", 1000),
-            TapMaximumEventBytes = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
+            TapMaximumSessions = ReadInt32(read, "BOWER_TAP_MAX_SESSIONS", 2),
+            TapMaximumEventsPerSecond = ReadInt32(read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20),
+            TapMaximumDurationSeconds = ReadInt32(read, "BOWER_TAP_MAX_DURATION_SECONDS", 300),
+            TapMaximumEvents = ReadInt32(read, "BOWER_TAP_MAX_EVENTS", 1000),
+            TapMaximumEventBytes = ReadInt32(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
             TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
             WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
             FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG"))
@@ -1039,6 +1039,23 @@ public sealed record CollectorSettings
 
         return IPAddress.TryParse(host.Trim('[', ']'), out IPAddress? address)
             && IPAddress.IsLoopback(address);
+    }
+
+    /// <summary>
+    /// A 32-bit setting. Anything outside the 32-bit range is refused here, never narrowed:
+    /// a cast from a 64-bit value would wrap 4294967316 to 20 and pass the range check.
+    /// </summary>
+    private static int ReadInt32(Func<string, string?> read, string name, int fallback)
+    {
+        string? value = read(name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+            ? parsed
+            : throw new InvalidOperationException($"{name} must be an integer between {int.MinValue} and {int.MaxValue}.");
     }
 
     private static long ReadInt64(Func<string, string?> read, string name, long fallback)
