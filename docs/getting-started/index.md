@@ -14,10 +14,13 @@ You run Bower in your own infrastructure. The console belongs to your tenant.
 4. **Deliver.** A durable queue and bounded output handle sending and acknowledgement.
 5. **Prove.** For a canary, a Sentinel query looks for the exact test event. An evidence bundle records the result. It is signed only when a signing key is configured; otherwise, it is unsigned.
 
-!!! important "Acceptance is not proof"
-    A collector accepting an event is one step along the path. Only finding the
-    exact test event in Sentinel proves delivery. A simulated run is labelled
-    **simulated** and does not prove arrival.
+:::info[Acceptance is not proof]
+
+A collector accepting an event is one step along the path. Only finding the
+exact test event in Sentinel proves delivery. A simulated run is labelled
+**simulated** and does not prove arrival.
+
+:::
 
 ## Pick your next step
 

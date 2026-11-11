@@ -28,3 +28,5 @@ spool/
 /tools/docs/**/__pycache__/
 __pycache__/
 *.py[cod]
+/website/build/
+/website/.docusaurus/

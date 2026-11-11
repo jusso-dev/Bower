@@ -22,6 +22,13 @@ updates:
         patterns: ["@azure/msal-*"]
       tooling:
         patterns: ["vite", "vitest", "@vitejs/*", "typescript", "@playwright/test", "jsdom", "@testing-library/*", "@types/node"]
+  - package-ecosystem: npm
+    directory: /website
+    schedule:
+      interval: weekly
+    groups:
+      docusaurus:
+        patterns: ["@docusaurus/*", "react", "react-dom", "@mdx-js/*", "prism-react-renderer", "typescript"]
   - package-ecosystem: docker
     directory: /deploy/docker
     schedule:

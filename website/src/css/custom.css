@@ -1,0 +1,193 @@
+/* Bower documentation theme. Colours follow the README artwork and the console's tokens:
+   a navy canvas with signal-blue accents and amber details. Geist is self-hosted. */
+@font-face {
+  font-family: Geist;
+  src: url("../../static/fonts/geist-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --ifm-font-family-base: Geist, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ifm-heading-font-family: Geist, system-ui, sans-serif;
+  --ifm-font-family-monospace: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.7;
+  --ifm-heading-font-weight: 650;
+  --ifm-global-radius: 10px;
+  --ifm-code-font-size: 88%;
+  --ifm-navbar-height: 4rem;
+  --ifm-container-width-xl: 1360px;
+
+  --ifm-color-primary: #08649c;
+  --ifm-color-primary-dark: #075a8c;
+  --ifm-color-primary-darker: #065584;
+  --ifm-color-primary-darkest: #05466d;
+  --ifm-color-primary-light: #096eac;
+  --ifm-color-primary-lighter: #0a73b4;
+  --ifm-color-primary-lightest: #0b82cb;
+  --ifm-background-color: #f7fafc;
+  --ifm-background-surface-color: #ffffff;
+  --ifm-font-color-base: #15283a;
+  --ifm-color-emphasis-600: #455d70;
+  --ifm-toc-border-color: #cddde8;
+  --ifm-hr-border-color: #cddde8;
+  --ifm-code-background: #eaf0f5;
+  --ifm-navbar-background-color: rgba(247, 250, 252, 0.86);
+  --ifm-footer-background-color: #030f1d;
+
+  --bower-gold: #92600e;
+  --bower-surface: #ffffff;
+  --bower-soft: #eaf3f9;
+  --bower-rule: #cddde8;
+  --bower-muted: #455d70;
+  --bower-accent: #08649c;
+  --bower-on-accent: #ffffff;
+  --bower-wire: #97b8ce;
+  --bower-glow: rgba(8, 100, 156, 0.12);
+  --docusaurus-highlighted-code-line-bg: rgba(8, 100, 156, 0.1);
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #53beff;
+  --ifm-color-primary-dark: #33b2ff;
+  --ifm-color-primary-darker: #24acff;
+  --ifm-color-primary-darkest: #0097f2;
+  --ifm-color-primary-light: #73caff;
+  --ifm-color-primary-lighter: #82d0ff;
+  --ifm-color-primary-lightest: #b1e1ff;
+  --ifm-background-color: #030f1d;
+  --ifm-background-surface-color: #0a1b2d;
+  --ifm-font-color-base: #edf4fa;
+  --ifm-color-emphasis-600: #b3c5d6;
+  --ifm-toc-border-color: #29445e;
+  --ifm-hr-border-color: #29445e;
+  --ifm-code-background: #0f2338;
+  --ifm-navbar-background-color: rgba(3, 15, 29, 0.82);
+
+  --bower-gold: #f5be62;
+  --bower-surface: #0a1b2d;
+  --bower-soft: #10273d;
+  --bower-rule: #29445e;
+  --bower-muted: #b3c5d6;
+  --bower-accent: #53beff;
+  --bower-on-accent: #031421;
+  --bower-wire: #4e7a9e;
+  --bower-glow: rgba(83, 190, 255, 0.16);
+  --docusaurus-highlighted-code-line-bg: rgba(83, 190, 255, 0.12);
+}
+
+/* Header: glass bar with a hairline rule, as on maester.dev. */
+.navbar {
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  box-shadow: none;
+  border-bottom: 1px solid var(--bower-rule);
+}
+.navbar__title { font-weight: 700; letter-spacing: -0.025em; }
+.navbar__logo { height: 1.75rem; }
+.navbar__link { font-weight: 550; font-size: 0.92rem; }
+.navbar__link--active { color: var(--bower-accent); }
+.header-github-link::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  display: flex;
+  background-color: var(--ifm-navbar-link-color);
+  mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+.header-github-link:hover::before { background-color: var(--bower-accent); }
+
+/* Announcement bar. */
+.theme-announcement-bar {
+  background: var(--bower-soft);
+  color: var(--ifm-font-color-base);
+  border-bottom: 1px solid var(--bower-rule);
+  font-size: 0.88rem;
+}
+.theme-announcement-bar a { color: var(--bower-accent); font-weight: 600; }
+
+/* Docs pages. */
+.theme-doc-markdown h1 {
+  font-size: clamp(2rem, 3.2vw, 2.6rem);
+  letter-spacing: -0.04em;
+  line-height: 1.12;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--bower-rule);
+}
+.theme-doc-markdown h1::before {
+  content: "";
+  display: block;
+  width: 2.25rem;
+  height: 3px;
+  margin-bottom: 1.1rem;
+  background: var(--bower-gold);
+  border-radius: 2px;
+}
+.theme-doc-markdown h2 { font-size: 1.6rem; letter-spacing: -0.03em; margin-top: 2.6rem; }
+.theme-doc-markdown h3 { font-size: 1.2rem; letter-spacing: -0.02em; }
+.theme-doc-markdown img {
+  border-radius: 12px;
+  border: 1px solid var(--bower-rule);
+  box-shadow: 0 12px 36px -18px rgba(3, 15, 29, 0.45);
+}
+.theme-doc-markdown table {
+  display: table;
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--bower-rule);
+  border-radius: 12px;
+  overflow: hidden;
+  font-size: 0.92rem;
+}
+.theme-doc-markdown table thead tr { background: var(--bower-soft); }
+.theme-doc-markdown table th, .theme-doc-markdown table td { border: 0; border-bottom: 1px solid var(--bower-rule); }
+.theme-doc-markdown table tr:last-child td { border-bottom: 0; }
+.theme-doc-markdown table tr:nth-child(2n) { background: transparent; }
+@media (max-width: 996px) { .theme-doc-markdown table { display: block; overflow-x: auto; } }
+
+.theme-code-block { border: 1px solid var(--bower-rule); box-shadow: none; }
+code { border: 0; }
+
+.menu { font-size: 0.92rem; }
+.menu__link { border-radius: 6px; }
+.menu__link--active:not(.menu__link--sublist) {
+  font-weight: 650;
+  background: var(--bower-soft);
+  box-shadow: inset 2px 0 0 var(--bower-gold);
+}
+.theme-doc-sidebar-container { border-right: 1px solid var(--bower-rule) !important; }
+.table-of-contents__link--active { color: var(--bower-accent); font-weight: 600; }
+.breadcrumbs__item--active .breadcrumbs__link { background: var(--bower-soft); color: var(--bower-accent); }
+
+.alert { border-radius: 12px; border-left-width: 4px; }
+.pagination-nav__link { border-radius: 12px; border-color: var(--bower-rule); background: var(--bower-surface); }
+.pagination-nav__link:hover { border-color: var(--bower-accent); }
+
+.footer--dark {
+  --ifm-footer-link-color: #b3c5d6;
+  --ifm-footer-title-color: #edf4fa;
+  border-top: 1px solid #29445e;
+}
+.footer__copyright { color: #8fa8bf; font-size: 0.85rem; }
+
+:focus-visible { outline: 3px solid var(--bower-accent); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+
+/* Console screenshots on docs pages. */
+.bower-screenshot { margin: 1.5rem 0 2rem; }
+.bower-screenshot img { display: block; width: 100%; height: auto; }
+.tour-meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.25rem; margin: -0.5rem 0 1rem; font-size: 0.9rem; color: var(--bower-muted); }
+.tour-meta strong { color: var(--ifm-font-color-base); font-weight: 600; }
+
+/* Links inside running text are underlined, so they do not rely on colour alone (WCAG 1.4.1). */
+.theme-doc-markdown p a, .theme-doc-markdown li a, .theme-doc-markdown td a, .alert a {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+.theme-doc-markdown p a:hover, .theme-doc-markdown li a:hover, .theme-doc-markdown td a:hover { text-decoration-thickness: 2px; }

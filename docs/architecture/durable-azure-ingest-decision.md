@@ -17,7 +17,7 @@ dead-letter queue and audited replay.
 
 ## Options
 
-| | (a) Durable Functions | (b) Web or Container App plus Event Grid | (c) Function plus Service Bus queue |
+| Aspect | (a) Durable Functions | (b) Web or Container App plus Event Grid | (c) Function plus Service Bus queue |
 |---|---|---|---|
 | Shape | HTTP starter, orchestration, upload activity | Always-on intake publishes to Event Grid, which pushes to a delivery handler | HTTP intake function sends to a Service Bus queue; a Service Bus triggered function delivers |
 | Durability before 202 | Task hub write (Storage, Netherite or MSSQL backend) | Event Grid publish | Service Bus send acknowledged |

@@ -1,0 +1,188 @@
+---
+title: Console tour
+description: Every page of the Bower management console, with light and dark screenshots, who can use it and where to read more.
+---
+
+import Screenshot from "@site/src/components/Screenshot";
+
+# Console tour
+
+The management console runs in your tenant, beside the management API. It is where people
+approve collectors, connect sources, change privacy actions and check that events arrive.
+This page walks through every page in the order of the navigation.
+
+:::note[About these screenshots]
+
+They use the console's synthetic preview dataset (`npm run seed:preview`), captured by
+`ui/Bower.Management.Web/e2e/docs-gallery.spec.ts`, and follow this site's light or dark theme.
+The amber banner is the local development sign-in used to capture them. A real deployment
+signs in with Microsoft Entra ID and never shows it.
+
+:::
+
+## Roles at a glance
+
+| Role | Can |
+| --- | --- |
+| `Bower.Viewer` | Read fleet, health, approvals, audit and privacy profile versions. Starts in the [simple view](/operations/console-simple-view/). |
+| `Bower.Operator` | Respond operationally; validate, preview and submit privacy profile versions; request sources. |
+| `Bower.Approver` | Decide collector enrolment; approve or reject changes authored by someone else. |
+| `Bower.Administrator` | Suspend, revoke and administer; assign privacy profile versions; create enrolment tokens. |
+
+The API enforces these. The console hides what you cannot do, but it is the API that refuses.
+See [roles and identity](/security/management-identity-and-rbac/).
+
+## Home
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/</code></span><span><strong>Who</strong> Every role</span></div>
+
+What needs my attention? Home answers three questions for an owner who does not read CLI output: is my data flowing, what was protected this week, and what needs attention. The counts are reported by collectors; Bower never shows the removed values.
+
+<Screenshot name="home" alt="Bower management console, Home page, with synthetic preview data" />
+
+Read more: [Console home view](/operations/console-home/).
+
+## Fleet posture
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/overview</code></span><span><strong>Who</strong> Viewer and above</span></div>
+
+Exceptions first. Counts for collectors, pending approvals, unhealthy, stale, queued, policy drift, privacy drift and dead letters, then a table of the machines that need action and how much of each source is reporting.
+
+<Screenshot name="overview" alt="Bower management console, Fleet posture page, with synthetic preview data" />
+
+Read more: [Check your collectors](/operations/console-fleet/).
+
+## Setup
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/setup</code></span><span><strong>Who</strong> Administrator for changes; anyone can read</span></div>
+
+A seven-step wizard from an empty management database to a test event found in Microsoft Sentinel. Progress is computed from server state, so anyone can leave and resume it, and every step can be run again.
+
+<Screenshot name="setup" alt="Bower management console, Setup page, with synthetic preview data" />
+
+Read more: [Console onboarding](/operations/console-onboarding/).
+
+## Collectors
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/collectors</code></span><span><strong>Who</strong> Viewer and above</span></div>
+
+Every machine with one plain-language state, a short explanation and a suggested fix. The most urgent appear first. Filter by state and site, or search by machine name or collector ID.
+
+<Screenshot name="fleet" alt="Bower management console, Collectors page, with synthetic preview data" />
+
+Read more: [Check your collectors](/operations/console-fleet/).
+
+## One collector
+
+<div className="tour-meta"><span><strong>Route</strong> <code>{"/collectors/<id>"}</code></span><span><strong>Who</strong> Viewer and above; commands need Operator</span></div>
+
+The detail for one machine: queue depth, delivery state, policy and privacy drift, dead letters, sources and recent commands. Operators can fetch a bundle or run a canary; only administrators can reload or rotate a credential.
+
+<Screenshot name="collector" alt="Bower management console, One collector page, with synthetic preview data" />
+
+Read more: [Queue and fleet integrity](/operations/fleet-and-queue-integrity/).
+
+## Sources
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/sources</code></span><span><strong>Who</strong> Operator to request; a different person approves</span></div>
+
+Guided setup for syslog, Windows Event Log, security-selected files, Docker containers, AWS and Google Cloud. Bower writes the settings and shows a protected preview; someone else approves them; an operator applies the signed configuration.
+
+<Screenshot name="sources" alt="Bower management console, Sources page, with synthetic preview data" />
+
+Read more: [Add a security source](/operations/console-sources/).
+
+## Pipelines
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/pipelines</code></span><span><strong>Who</strong> Operator</span></div>
+
+Infer a custom log parser from a sample, validate the transformed fields and start from a pipeline template. Inference is deterministic and local; samples are bounded, kept in memory and never stored.
+
+<Screenshot name="pipelines" alt="Bower management console, Pipelines page, with synthetic preview data" />
+
+Read more: [Custom parsers](/developer-integration/custom-log-parser/).
+
+## Approvals
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/approvals</code></span><span><strong>Who</strong> Approver</span></div>
+
+Approve or reject a collector's identity, a source request or a privacy profile version. A requester cannot approve their own change, and every decision records a reason in the audit history.
+
+<Screenshot name="approvals" alt="Bower management console, Approvals page, with synthetic preview data" />
+
+Read more: [Roles and identity](/security/management-identity-and-rbac/).
+
+## Privacy profiles
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/privacy-profiles</code></span><span><strong>Who</strong> Operator to submit; Approver to approve; Administrator to assign</span></div>
+
+Edit what Bower redacts with forms, check the protected example, and submit a new immutable version for approval. Assigning a version to collectors is a separate administrator step.
+
+<Screenshot name="privacy" alt="Bower management console, Privacy profiles page, with synthetic preview data" />
+
+Read more: [Change privacy actions with forms](/operations/console-privacy-editor/).
+
+## Alerts
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/alerts</code></span><span><strong>Who</strong> Every role</span></div>
+
+Current conditions that need attention, each with a suggested fix from the management server, such as a full queue or a failed maintenance job.
+
+<Screenshot name="alerts" alt="Bower management console, Alerts page, with synthetic preview data" />
+
+Read more: [Help in the console](/operations/console-help/).
+
+## Reports
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/reports</code></span><span><strong>Who</strong> Every role</span></div>
+
+Is my data flowing, and what was protected this week, by kind of detail. The latest destination proof sits here: only a Sentinel query that finds the exact canary counts.
+
+<Screenshot name="reports" alt="Bower management console, Reports page, with synthetic preview data" />
+
+Read more: [Prove delivery](/operations/evidence-bundles/).
+
+## Jobs
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/jobs</code></span><span><strong>Who</strong> Viewer and above</span></div>
+
+Scheduled maintenance and health reporting: the management plane's staleness and inactivity jobs, which you can run now, and each collector's heartbeat, queue maintenance and retention jobs as reported in heartbeats. Event delivery never runs here; it stays in each collector's durable queue.
+
+<Screenshot name="jobs" alt="Bower management console, Jobs page, with synthetic preview data" />
+
+Read more: [Background jobs](/operations/background-jobs/).
+
+## Audit
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/audit</code></span><span><strong>Who</strong> Viewer and above</span></div>
+
+Who performed which management action, and when. An empty history means nothing has been recorded yet.
+
+<Screenshot name="audit" alt="Bower management console, Audit page, with synthetic preview data" />
+
+Read more: [Roles and identity](/security/management-identity-and-rbac/).
+
+## Access
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/access</code></span><span><strong>Who</strong> Every role</span></div>
+
+Your own roles, as the management API sees them. Ask your Entra administrator for a Bower app role; API authorisation is what counts, the console only follows it.
+
+<Screenshot name="access" alt="Bower management console, Access page, with synthetic preview data" />
+
+Read more: [Roles and identity](/security/management-identity-and-rbac/).
+
+## Help
+
+<div className="tour-meta"><span><strong>Route</strong> <code>/help</code></span><span><strong>Who</strong> Every role</span></div>
+
+Next steps for setup, fleet health, sources, privacy, access, alerts, reports and audit, the setup checklist and a glossary. Every page also links to its own help.
+
+<Screenshot name="help" alt="Bower management console, Help page, with synthetic preview data" />
+
+Read more: [Help in the console](/operations/console-help/).
+
+## Next
+
+- [Send your first verified event](/getting-started/first-event/) with the Setup wizard.
+- [Deploy the console](/deployment/console-image/) in your tenant.

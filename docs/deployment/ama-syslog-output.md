@@ -20,7 +20,7 @@ stand-in for the agent.
 
 ## Which Azure path
 
-| | `azure-logs-ingestion` | `ama-syslog` (this page) | `ama-spool` |
+| Aspect | `azure-logs-ingestion` | `ama-syslog` (this page) | `ama-spool` |
 |---|---|---|---|
 | Credential on the server | Managed identity or workload identity with the Monitoring Metrics Publisher role on the rule | None (the agent's managed identity uploads) | None (the agent uploads) |
 | Delivery confirmation | Each upload is confirmed by the API; refusals are dead-lettered by name | Only that the local daemon took the datagram; arrival is proved only by a Sentinel query | Only that the file was written; arrival is proved only by a Sentinel query |

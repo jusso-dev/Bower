@@ -1,2 +1,3 @@
-mkdocs==1.6.1
-mkdocs-material>=9.6,<10
+# Python tools for the documentation checks (generators, link check, template tests).
+# The site itself is built by Docusaurus in website/.
+pyyaml==6.0.3

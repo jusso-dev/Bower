@@ -169,10 +169,12 @@ re-check that the path is not a link after opening.
 
 | Dependency | Scope | Reason and alternatives |
 |---|---|---|
-| MkDocs 1.6.1 and Material 9.x | Build time only, pinned with hashes in `tools/docs/requirements.txt` | Publish the existing Markdown as searchable, responsive static HTML on GitHub Pages. Material supplies navigation, local search and light/dark themes. A small local template adds Bower's animated dataflow. Docusaurus would introduce a second React application and more tooling without improving the existing Markdown workflow. No third-party analytics, remote fonts or runtime service is added. |
+| Docusaurus 3.10 (`@docusaurus/core`, `preset-classic`, `theme-mermaid`), React 19 | Build time only, exact versions in `website/package-lock.json` | Publish the existing Markdown from `docs/` as searchable, responsive static HTML on GitHub Pages, with a React homepage, a light and dark console gallery and themed screenshots. Replaced MkDocs Material, which announced end of life for 5 May 2027. Built static, with no runtime service, analytics or remote fonts. Mermaid diagrams are drawn in the browser from the bundled library, not a CDN. |
+| `@easyops-cn/docusaurus-search-local` 0.55 | Build time and browser | Search built with the site; no query leaves the browser. Algolia DocSearch was not used because it sends queries to a hosted service. |
+| npm `overrides` in `website/package.json` | Build time only | `serialize-javascript` 7.1.4, `tinypool` 2.2.0 and `uuid` 11.1.1 replace older transitive versions with known advisories (GHSA for prototype pollution, worker pool and buffer bounds). Each is loaded the same way as before (CommonJS `require` or dynamic `import`), checked by a full build. `deepmerge` (via `@svgr/plugin-svgo`, SVG imports at build time only) has no fixed release; the site imports no untrusted SVG. Remove each override once Docusaurus depends on a fixed version. |
 
 The site self-hosts the existing console's OFL-licensed Geist variable font. The
-license accompanies the font in `docs/assets/fonts/`. Browser checks reuse the
+license accompanies the font in `website/static/fonts/`. Browser checks reuse the
 console's Playwright version in a separate locked test package. `@axe-core/playwright` is a development-only
 accessibility check for the documentation; it is never included in the published site. Lighthouse is a development-only performance/accessibility audit, also excluded from the site.
 
