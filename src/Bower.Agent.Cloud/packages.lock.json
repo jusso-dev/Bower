@@ -4,11 +4,11 @@
     "net10.0": {
       "AWSSDK.S3": {
         "type": "Direct",
-        "requested": "[4.0.104.7, )",
-        "resolved": "4.0.104.7",
-        "contentHash": "mmURYvVR/+CM3+9FycHsz+ZZ2I3B1PPch7msARX8fKtiAfkDHYXCzdwQOKA5SvGGvleOKhLGa8YcWlAlbAtu0g==",
+        "requested": "[4.0.104.12, )",
+        "resolved": "4.0.104.12",
+        "contentHash": "z4rPjjQoPDuWtxk2utbO/I+xNEqA+ac7/cDjwd4KvFrYHfwatJ1IVwjQ7ukaSlSnqY5e9+Q6YHtu87LBJNj+SQ==",
         "dependencies": {
-          "AWSSDK.Core": "[4.0.102.14, 5.0.0)"
+          "AWSSDK.Core": "[4.0.103, 5.0.0)"
         }
       },
       "AWSSDK.SecurityToken": {
@@ -43,13 +43,13 @@
       },
       "AWSSDK.Core": {
         "type": "Transitive",
-        "resolved": "4.0.102.14",
-        "contentHash": "pRYOOIyj40UdQ6G9iq8AOU30sFPqWS/umM/sFTmAl4n1S6AVbVa67DJpJTxD+9qJFqweHPcyVW7Qb4BbUBLJdg=="
+        "resolved": "4.0.103",
+        "contentHash": "DCOotOZU/uuGTJHyhdzDaISArck4hYC6Y9OzZM8/PI+G4AhtNaD1hszFG1Giwdpod0Sn7gxxlx6xUfcPKNeQ8Q=="
       },
       "bower.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.contracts": {
@@ -58,21 +58,21 @@
       "bower.forwarding": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.aws": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.gcp": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       }
     },
