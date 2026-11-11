@@ -1,0 +1,184 @@
+{
+ "scope": "interim",
+ "summary": {
+  "linux": {
+   "native": 36056,
+   "accepted": 33066,
+   "sentinelDistinct": 36060,
+   "sentinelRows": 36060,
+   "duplicateRows": 0,
+   "missingAtAccepted": 2990,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 4,
+   "nativeComplete": true,
+   "exact": false,
+   "latencyOutside": {
+    "count": 36060,
+    "p50": 4.12,
+    "p95": 9.966,
+    "p99": 25.101,
+    "max": 48.063
+   },
+   "canaries": {
+    "native": 56,
+    "atSentinel": 56,
+    "missing": 0
+   },
+   "problems": []
+  },
+  "windows": {
+   "native": 36059,
+   "accepted": 19225,
+   "sentinelDistinct": 36059,
+   "sentinelRows": 36059,
+   "duplicateRows": 0,
+   "missingAtAccepted": 16834,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "exact": false,
+   "latencyOutside": {
+    "count": 36059,
+    "p50": 6.905,
+    "p95": 13.861,
+    "p99": 32.841,
+    "max": 49.333
+   },
+   "canaries": {
+    "native": 60,
+    "atSentinel": 60,
+    "missing": 0
+   },
+   "problems": []
+  }
+ },
+ "privacy": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Rows": 36121,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Rows": 36121,
+   "Matches": 0
+  }
+ ],
+ "alertAccounting": {
+  "pass": false,
+  "violations": [
+   {
+    "kind": "alerts",
+    "rule": "destination-freshness",
+    "startedAt": "2026-11-06T02:04:36.11534Z",
+    "state": "Resolved"
+   },
+   {
+    "kind": "alerts",
+    "rule": "destination-freshness",
+    "startedAt": "2026-11-06T02:04:36.0374346Z",
+    "state": "Resolved"
+   }
+  ],
+  "excusedByFault": []
+ },
+ "versions": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Version": "0.1.1-dev.416",
+   "Rows": 36119
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Version": "0.1.1-dev.416",
+   "Rows": 36119
+  }
+ ],
+ "verdict": null,
+ "faults": [
+  {
+   "id": "F01",
+   "steps": [
+    "done"
+   ],
+   "executedOn": [
+    "Linux",
+    "Wec"
+   ],
+   "lateSeconds": 1.0,
+   "errors": []
+  },
+  {
+   "id": "F02",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F03",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F04",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F05",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F06",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F07",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F08",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F09",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F10",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  },
+  {
+   "id": "F11",
+   "steps": [],
+   "executedOn": [],
+   "lateSeconds": null,
+   "errors": []
+  }
+ ]
+}

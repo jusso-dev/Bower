@@ -26,7 +26,9 @@ faults. Neither collector met all six criteria (`final.json` `verdict.pass: fals
 
 Every fault outcome held, both collectors reported the candidate version, every restart was a
 scheduled one, and there were no privacy-marker matches. WEC latency now passes (p99 11.5 s
-against 18.16 s), where the 24-hour soak failed at 881.8 s. See [re-soak results](#6b-results-of-the-72-hour-re-soak)
+against 18.16 s), where the 24-hour soak failed at 881.8 s. That is consistent with #178's group
+commit, but not isolated from the host change: the 24-hour soak ran on credit-limited `t3`
+hosts and the re-soak on `m6i.large`. See [re-soak results](#6b-results-of-the-72-hour-re-soak)
 and the [evidence](../evidence/resoak-20261106-092539/README.md).
 
 **Neither path is production-ready.** Check 7 closes only when a re-soak passes all six criteria
@@ -67,8 +69,10 @@ retention. A release built from a later commit needs its own soak (section 4).
 An isolated re-soak harness dry run on 3 November was interrupted before its final
 reconciliation ([interrupted campaign record](../evidence/interrupted-20261103/README.md)). A
 first 72-hour attempt, `bower-resoak-20261105-234529`, was aborted on 6 November because a
-harness gap between the smoke and the soak guaranteed a criterion 5 failure; it was torn down
-(38 of 38 checks absent) and replaced by the run above
+harness gap between the smoke and the soak let `destination-freshness` fire on both collectors
+24 s before the soak start, which the registered accounting counts as a criterion 5 failure (its
+committed interim lists both alerts as violations). It was torn down (38 of 38 checks absent) and
+replaced by the run above
 ([record](../evidence/resoak-20261106-092539/README.md#aborted-first-attempt-bower-resoak-20261105-234529)).
 Neither closes the soak gate.
 
@@ -98,13 +102,17 @@ A soak runs the real topology at a realistic, steady rate for long enough that:
 The 24-hour soak injected **no faults**. Faults are qualified by gaps 1 to 6. A soak that
 passes does not replace those tests, and a fault test does not replace a soak. The 72-hour
 re-soak added eleven scheduled faults (outage, kills, reboots, rotations, rollovers) with
-their expected restarts, latency and alerts accounted for by rules registered before the run;
-the six criteria are unchanged (section 6b).
+their expected restarts, latency and alerts accounted for by rules registered before the run.
+Those rules change how criteria 2 to 5 are judged, so the re-soak was not gated by the section 2
+table as written (section 6b).
 
 ## 2. Pass criteria
 
-Register these before the run starts. Never change them afterwards. A run passes only if **all**
-of them hold for **every** collector.
+These are the criteria of the **24-hour soak** (no scheduled faults). Register them before the
+run starts. Never change them afterwards. A run passes only if **all** of them hold for
+**every** collector. A run with scheduled faults, like the 72-hour re-soak, keeps the six
+criteria but must register how each fault's restarts, latency and alerts are accounted for; the
+re-soak's rules are summarised in [section 6b](#6b-results-of-the-72-hour-re-soak).
 
 | # | Criterion | How it is measured | Pass |
 |---|---|---|---|
@@ -115,7 +123,8 @@ of them hold for **every** collector.
 | 5 | No alerts | Azure Monitor alert instances and Sentinel incidents from the [monitoring rules](06-monitoring-and-runbooks.md) | None fired during the run |
 | 6 | Privacy | `tostring(pack_all())` of every destination row searched for the synthetic markers (the synthetic user name, raw kernel prefix, synthetic password prefix) | 0 matches |
 
-**Recommended for future runs (added after this soak; not part of its registered criterion 3):**
+**Recommended for future runs (added after the 24-hour soak, before the 72-hour re-soak was
+registered; not part of either run's registered criterion 3):**
 record CPU seconds per hour at the constant rate and fail when CPU per event trends upwards.
 This soak's WEC result shows that memory and handle slopes alone can miss a cost that grows
 with input size. Register it before the next run if it is to be used as a gate.
@@ -473,10 +482,12 @@ version it recorded.
 
 **Current state (2026-11-11).**
 
-- **Check 0 for `8f615b8`:** closed. CI run
+- **Check 0 for `8f615b8`:** closed, about 14 h after the re-soak started. CI run
   [42130604210](https://github.com/jusso-dev/Bower/actions/runs/42130604210) finished
-  `success` on attempt 3 (2026-11-07); only the `windows-event-log` job, which had failed on a
-  runner permission error, was re-run, so the packages under test were not rebuilt.
+  `success` on attempt 3 (2026-11-07T01:25:34Z); only the `windows-event-log` job, which had
+  failed on a runner permission error, and the `ci-success` gate were re-run, so the packages
+  under test were not rebuilt
+  ([jobs listing](../evidence/resoak-20261106-092539/operations/ci-run-42130604210-attempt-3.json)).
 - **Firewall over RELP:** checks 0–6 and 8 have evidence. Check 7 is **open**. In the 72-hour
   re-soak the firewall met criteria 1 (exact: 2,693,520 native = accepted = distinct Sentinel),
   2, 4 and 6 and failed 3 (queue file and threads over hours 3–24; memory and FDs after the last
@@ -545,6 +556,23 @@ detail is in the [evidence README](../evidence/resoak-20261106-092539/README.md)
 
 **Result: FAILED** (`verdict.pass: false`; `faultOutcomesPass: true`, `versionMatches: true`).
 
+**Registered rules.** The
+[pre-registration](https://github.com/jusso-dev/Bower/blob/4b529bc71f4d43da8969d0d7fb6e3fe3aadeed8b/lab/aws/resoak/preregistration.json)
+(SHA-256 `b06e344f…`, on the harness branch, not on main) copies the six criteria of
+section 2 verbatim, then adds `faultAccounting` rules that change how four of them are judged:
+
+- **1** unchanged, over every event, fault windows and canaries included.
+- **2** allows exactly 1 + the scheduled restarts (and boots) per collector, each starting inside
+  its fault window, instead of one process identity for the whole run.
+- **3** must pass on two windows: hours 3–24 and from 3 hours after the last scheduled restart
+  (+38:20) to +72:00.
+- **4** gates the p99 of events whose event time is outside every fault window; the p99
+  including fault windows is reported only.
+- **5** excuses an alert only if its rule is listed by the fault whose alert window (fault start
+  to fault end + impact allowance + 1 hour) it started in. `syslog-tls-expiry` and
+  `destination-credential` are never excused.
+- **6** unchanged, with `bower-canary` added as a marker.
+
 | # | Criterion | Firewall (RPM, RELP) | WEC (MSI) |
 |---|---|---|---|
 | 1 | Exact delivery | **PASS**: native 2,693,520 = accepted 2,693,520 = distinct Sentinel 2,693,520; 0 duplicate rows | **FAIL (blocked: native evidence missing)**: accepted 2,693,520 = distinct Sentinel 2,693,520, 0 missing, 0 duplicate rows; native 2,693,469 (`missing-window-h72`) |
@@ -560,8 +588,9 @@ Percentages are slope × 720 h as a share of the mean; the threshold is under 10
 in all, and the accepted and Sentinel sets equal that count with one digest. The native export
 covers windows `h00` to `h71` (2,693,469 records). The DC generator ran past the end of `h71`,
 and the run's handoff prescribed exporting `h72` on demand (`native-h72`) before the hosts
-powered themselves off at 2026-11-09T15:05Z. The scheduled final reconciliation wrote
-`final.json` at 11:45:58Z but was interrupted before running `native-h72`, and the hosts are
+powered themselves off at 2026-11-09T15:05Z. The scheduled final reconciliation produced
+`final.json` (the report's recorded generation time, set before its queries, is 11:45:58Z; its
+health data runs to 12:01Z) but was interrupted before running `native-h72`, and the hosts are
 gone. The 51 extra ids are most likely those generated after 11:05:00Z, but no native record
 proves it. The criterion is not met; it is recorded as blocked by missing native evidence, not
 as a proven delivery failure.
@@ -588,25 +617,25 @@ threshold registered before the run. CPU, reported but not gated, was flat: the 
 
 **Criterion 4.** Outside fault windows: firewall p50/p95/p99 3.9/6.3/7.9 s, WEC 6.8/9.5/11.5 s.
 Including fault windows (reported, not gated): firewall p99 9.8 s, WEC 13.7 s. Only hour 58
-(2026-11-08T21:05Z to 22:05Z) had a p99 above the limit on either collector: firewall 46.2 s
-(max 77.6 s), WEC 39.8 s (max 66.3 s). That hour holds a scheduled burst and the
-`dcr-request-errors` alert; other burst hours stayed at a firewall p99 of 6.7–8.7 s. The large
+(2026-11-08T21:05Z to 22:05Z) had a p99 above the limit on either collector: firewall 46.2 s (max
+77.6 s), WEC 39.8 s (max 66.3 s). That hour holds a scheduled burst and the `dcr-request-errors`
+alert; other burst hours stayed at a firewall p99 of 6.7–8.6 s (gated `latency.hourly`). The large
 maxima come from F01, the 30-minute destination outage on 2026-11-06 from 12:25Z: 1,845.1 s
-(firewall) and 1,813.7 s (WEC) inside its window. The firewall's 1,845.8 s maximum outside
-fault windows is in the same hour and matches the outage length, so it is most likely an event
-stamped just before the window opened.
+(firewall) and 1,813.7 s (WEC) inside its window. The firewall's 1,845.8 s maximum outside fault
+windows is in the same hour and matches the outage length, so it is most likely an event stamped
+just before the window opened.
 
 **Criterion 5.** The F01 outage's `collector-health-missing` and `queue-backlog` alerts were
-excused, as registered. Two `collector-health-missing` alerts before the collectors existed
-(09:30Z to 10:01Z on 2026-11-06) resolved before the run and are not counted. One alert is not
-excused: `dcr-request-errors`, a metric alert on DCR requests answered with a code other than
-200, 202 or 204, active 2026-11-08T21:28:49Z to 21:48:52Z. It started inside F11's alert window,
-but F11 (a log rollover at 20:25Z) permits no alerts. F09, the ingestion-credential rotation,
-was at 2026-11-07T22:25Z, 23 hours earlier. **The cause is not determined.** The evidence
-records no response code. It falls in hour 58, when both collectors' latency rose, which points
-at the destination side but does not prove it. Neither collector restarted, health records
-stayed `healthy`, and nothing was duplicated or missing. The DCR is deleted, so the metric
-cannot be split by response code now.
+excused, as registered. Two `collector-health-missing` alerts fired before the run, before the
+collectors sent health records (09:30Z to 10:01Z on 2026-11-06); they resolved before the soak
+started and are not counted. One alert is not excused: `dcr-request-errors`, a metric alert on DCR
+requests answered with a code other than 200, 202 or 204, active 2026-11-08T21:28:49Z to 21:48:52Z.
+It started inside F11's alert window, but F11 (a log rollover at 20:25Z) permits no alerts. F09, the
+ingestion-credential rotation, was at 2026-11-07T22:25Z, 23 hours earlier. **The cause is not
+determined.** The evidence records no response code. It falls in hour 58, when both collectors'
+latency rose, which points at the destination side but does not prove it. Neither collector
+restarted, health records stayed `healthy`, and nothing was duplicated or missing. The DCR is
+deleted, so the metric cannot be split by response code now.
 
 **Restarts.** Each collector had exactly the scheduled process identities (start, kill,
 reboot, F09 credential rotation) and boots, `unexplained: []`.
@@ -620,11 +649,19 @@ What else the run showed:
   2026-11-08T14:35Z (1,936,262 records, 4.2 GB) with reader gaps, resets, cursor conflicts and
   read errors all 0. No `source-transport-errors` alert fired, and outside F01 every health
   record was `healthy`; in the 24-hour soak the WEC source failed twice during retention.
-- **TLS expiry:** `syslog-tls-expiry` did not fire in 72 hours on a build with #171.
+- **Two registered natural events were not shown.** Entra token refresh with no delivery
+  failure code is not demonstrated: `deliveryFailureCodes` holds `delivery-failure`, with no
+  times, so it cannot be told apart from F01's failures. Sender journald rotation is not
+  recorded in the committed evidence.
+- **TLS expiry:** `syslog-tls-expiry`, deployed and enabled from the `monitoring.bicep` of
+  `8f615b8` (which includes #171), did not fire in the 72 hours, including F04's syslog TLS
+  certificate rotation. That shows no false positive in this lab configuration; the rule was not
+  tested against a certificate near expiry.
 - **Canaries:** 4,320 of 4,320 per source at Sentinel.
-- **Smoke** exact on both collectors. The **interim** ran at +14 h 13 m instead of +2 h 10: the
-  WEC hour 1 was exact, and the firewall figures are not a valid comparison because the native
-  export does not stop at hour 1 (the final is exact for every firewall id).
+- **Smoke** exact on both collectors. The **interim** ran at +14 h 13 m instead of +2 h 10 and
+  covered hour 0 (`h00`, 11:05Z to 12:05Z): the WEC was exact for hour 0, and the firewall figures are
+  not a valid comparison because the native export does not stop at hour 0 (the final is exact
+  for every firewall id).
 - **Cleanup:** the audit recorded 38 of 38 checks absent on 2026-11-10, and the private lab
   directory was deleted. The estimated cost was about USD 110–125.
 
@@ -665,23 +702,24 @@ independently (38 of 38 checks absent), as was the aborted first attempt (38 of 
 ## 9. Known defects found by this work
 
 1. **WEC reader falls behind** (mitigated by group commit, #178; [wecfix evidence](../evidence/wecfix-20261103-043750/README.md)).
-   **The 72-hour re-soak is evidence that the latency is addressed:** on `8f615b8` and
-   `m6i.large`, the WEC's p99 outside fault windows was 11.5 s against the 18.16 s limit,
-   only hour 58 was above it (also on the firewall), reader gaps, resets and read errors stayed
-   0, and CPU was flat at about 38 s an hour, including after `ForwardedEvents` filled at
-   1.9 million records. It does not qualify the WEC path: growth (criterion 3) still fails
-   (defect 6), and burstable hosts were not re-tested. Earlier record: The suspected cause below was profiled and is not it: a poll
-   costs 0.8–0.95 ms from 10,000 to 1,040,000 records. Each event was its own durable commit
-   (about 22 ms of flushes on gp3), capping a subscription at about 44 events/sec, below the
-   tested burst rate. The earlier group-commit build was exercised at 100/sec, but its
-   historical reader lag is unknown, and subsequent runtime changes have not been live-qualified.
-   The CPU growth did not reproduce on `m6i.large` and stays unexplained (the soak's
-   `t3.medium` is the candidate). In the original soak, CPU per hour rose from about 450 s
-   to about 2,500 s as `ForwardedEvents` grew to 900,000 retained records; the cause is
-   unproven. Previously reported backlog sizes and drain times were computed by subtracting
-   the process `eventsRead` counter from `RecordCount` and are invalid. The archived final
-   sample yields −103 by that calculation; the run did not record the newest record ID.
-   The re-soak repeated the destination latency gate and passed it; see above.
+   In the 24-hour soak (`1a4c4c2`, credit-limited `t3.medium`) the WEC's p99 latency was
+   881.8 s. It was first attributed to reader cost growing with `ForwardedEvents`; profiling
+   ruled that out (a poll costs 0.8–0.95 ms from 10,000 to 1,040,000 records). The limit was one
+   durable queue commit per event (about 22 ms of flushes on gp3), capping a subscription at
+   about 44 events/sec, below the tested burst rate. The wecfix run exercised an earlier
+   group-commit build at 100 events/sec; its reader lag is unknown.
+   In the 72-hour re-soak (`8f615b8`, `m6i.large`) the WEC's p99 outside fault windows was
+   11.5 s against the 18.16 s limit, only hour 58 was above it (also on the firewall), reader
+   gaps, resets and read errors stayed 0, and CPU was flat at about 38 s an hour, including after
+   `ForwardedEvents` filled at 1.9 million records. That is consistent with #178, but not isolated
+   from the host change: the re-soak changed both the build and the host type, and burstable
+   hosts were not re-tested. It does not qualify the WEC path, because growth (criterion 3) still
+   fails (defect 6).
+   Still unexplained: in the 24-hour soak, WEC CPU rose from about 450 s to about 2,500 s an hour
+   as `ForwardedEvents` grew to 900,000 retained records. It did not recur on `m6i.large`; the
+   credit-limited host is a candidate, not a proven cause. Backlog sizes and drain times reported
+   for that soak subtracted the process `eventsRead` counter from `RecordCount` and are invalid
+   (the archived final sample yields −103); the run did not record the newest record ID.
 2. **Hourly retention contends with queue writers on Windows** (mitigated: 1,000-row purge
    transactions with pauses, ledger compaction scanning through the purge boundary (including
    any unresolved prefix), SQLite busy treated as a
@@ -702,7 +740,7 @@ independently (38 of 38 checks absent), as was the aborted first attempt (38 of 
    #171, rotated the syslog TLS certificate (F04), and `syslog-tls-expiry` never fired.
 4. Harness defects found and fixed during the runs (all preserved in the evidence): probe id
    redaction in the smoke, the sampler's timestamp parsing, and the final export's task time
-   limit (24-hour soak); the 64-minute gap between smoke and soak that tripped
+   limit (24-hour soak); the 65-minute gap between smoke and soak that tripped
    `destination-freshness` (first re-soak attempt, fixed by ending the smoke 20 minutes before
    the soak); a cached empty Sentinel query result that could look like missing events (fixed
    by #199 before the final). Not fixed:

@@ -1,0 +1,179 @@
+{
+ "source": "GitHub REST: GET repos/jusso-dev/Bower/actions/runs/42130604210/attempts/3 and .../attempts/3/jobs, trimmed to names, conclusions and times",
+ "fetchedAt": "2026-11-11T12:05:27Z",
+ "run": {
+  "id": 42130604210,
+  "runNumber": 416,
+  "attempt": 3,
+  "event": "workflow_dispatch",
+  "headSha": "8f615b8ed10d84d6a4b19ff42415b24d9a89b623",
+  "status": "completed",
+  "conclusion": "success",
+  "attemptStartedAt": "2026-11-07T01:21:14Z",
+  "updatedAt": "2026-11-07T01:25:35Z"
+ },
+ "jobs": [
+  {
+   "name": "changes",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:35:58Z",
+   "completedAt": "2026-11-05T23:36:04Z"
+  },
+  {
+   "name": "version",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:35:58Z",
+   "completedAt": "2026-11-05T23:36:04Z"
+  },
+  {
+   "name": "workflow-lint",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:35:58Z",
+   "completedAt": "2026-11-05T23:36:14Z"
+  },
+  {
+   "name": "docker",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:51:47Z"
+  },
+  {
+   "name": "docker-arm64 (deploy/docker/Dockerfile)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:38:58Z"
+  },
+  {
+   "name": "docker-arm64 (deploy/docker/Dockerfile.cloud)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:37:40Z"
+  },
+  {
+   "name": "docker-arm64 (deploy/docker/Dockerfile.management)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:38:29Z"
+  },
+  {
+   "name": "docker-arm64 (deploy/docker/Dockerfile.sidecar)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:37:40Z"
+  },
+  {
+   "name": "e2e",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:42:33Z"
+  },
+  {
+   "name": "infrastructure",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:37:52Z"
+  },
+  {
+   "name": "monitoring-windows",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:40:06Z"
+  },
+  {
+   "name": "powershell",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:36:42Z"
+  },
+  {
+   "name": "publish (linux-x64, ubuntu-latest)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:38:17Z"
+  },
+  {
+   "name": "ui",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:06Z",
+   "completedAt": "2026-11-05T23:36:35Z"
+  },
+  {
+   "name": "build-test",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:07Z",
+   "completedAt": "2026-11-05T23:43:49Z"
+  },
+  {
+   "name": "publish (win-arm64, windows-11-arm)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:07Z",
+   "completedAt": "2026-11-05T23:40:54Z"
+  },
+  {
+   "name": "publish (win-x64, windows-latest)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:07Z",
+   "completedAt": "2026-11-05T23:39:58Z"
+  },
+  {
+   "name": "rust",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:07Z",
+   "completedAt": "2026-11-05T23:43:32Z"
+  },
+  {
+   "name": "publish (osx-arm64, macos-latest)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:08Z",
+   "completedAt": "2026-11-05T23:41:05Z"
+  },
+  {
+   "name": "publish (linux-arm64, ubuntu-24.04-arm)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:09Z",
+   "completedAt": "2026-11-05T23:39:14Z"
+  },
+  {
+   "name": "publish (osx-x64, macos-15-intel)",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:36:11Z",
+   "completedAt": "2026-11-05T23:46:49Z"
+  },
+  {
+   "name": "package-linux",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:46:52Z",
+   "completedAt": "2026-11-05T23:47:27Z"
+  },
+  {
+   "name": "package-windows",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:46:52Z",
+   "completedAt": "2026-11-05T23:48:43Z"
+  },
+  {
+   "name": "install-linux",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:47:29Z",
+   "completedAt": "2026-11-05T23:49:29Z"
+  },
+  {
+   "name": "install-windows",
+   "conclusion": "success",
+   "startedAt": "2026-11-05T23:48:45Z",
+   "completedAt": "2026-11-05T23:52:04Z"
+  },
+  {
+   "name": "windows-event-log",
+   "conclusion": "success",
+   "startedAt": "2026-11-07T01:21:18Z",
+   "completedAt": "2026-11-07T01:25:29Z"
+  },
+  {
+   "name": "ci-success",
+   "conclusion": "success",
+   "startedAt": "2026-11-07T01:25:31Z",
+   "completedAt": "2026-11-07T01:25:34Z"
+  }
+ ]
+}

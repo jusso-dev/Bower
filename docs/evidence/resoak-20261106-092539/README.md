@@ -29,7 +29,7 @@ windows) `ac42b3d05cbb66ec4449e40ccd75934bc8b286db6fbdbde3c2174136bea5c5fa`.
 | Plan | Pre-registered on 2026-11-03: `lab/aws/resoak/preregistration.json` SHA-256 `b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e`. The staged plan and the plan the reconciler checked are byte-identical ([`operations/stage.json`](operations/stage.json), [`final/final.json`](final/final.json) `planSha256`) |
 | Harness | Branch `test/resoak-72h-v2` (not merged). Launched at `de3ca08`; refreshed on 2026-11-07 to `4b529bc` for the final reconciliation, which adds the query-cache fix [#199](https://github.com/jusso-dev/Bower/pull/199) (`Cache-Control: no-cache`, partial results rejected). Only query code changed; the plan hash did not |
 | Candidate | main `8f615b8ed10d84d6a4b19ff42415b24d9a89b623`, CI run [42130604210](https://github.com/jusso-dev/Bower/actions/runs/42130604210) (workflow_dispatch, build 416), version `0.1.1-dev.416`. **Unsigned**: release signing is deferred. RPM `bower-collector-0.1.1~dev.416-1.x86_64.rpm` `7b02d15d9596d888ce5b7b0e9e794ec87fda4423c56c6c066d58aab04985f59e`; MSI `bower-collector-0.1.1-dev.416-x64.msi` `f26c00ea2090c73bb5a80a9fc0f3f6de068953c98e8a31003159b526f73093b6` ([`operations/candidate.json`](operations/candidate.json)) |
-| Release check 0 | [`operations/candidate.json`](operations/candidate.json) was captured when the CI run's conclusion was `failure`: `windows-event-log` failed twice with "Access is denied" opening a test event log on the hosted runner. Attempt 3 re-ran only the failed jobs and finished `success` on 2026-11-07, which closed check 0 for `8f615b8`. The build, package and install jobs passed in attempt 1 and were not rebuilt, so the RPM and MSI under test are the ones hashed above |
+| Release check 0 | [`operations/candidate.json`](operations/candidate.json) was captured when the CI run's conclusion was `failure`: `windows-event-log` failed twice with "Access is denied" opening a test event log on the hosted runner. Attempt 3 re-ran only the failed jobs and finished `success` at 2026-11-07T01:25:34Z, about 14 h 20 m after the soak started, which closed check 0 for `8f615b8` ([`operations/ci-run-42130604210-attempt-3.json`](operations/ci-run-42130604210-attempt-3.json)). The build, package and install jobs passed in attempt 1 and were not rebuilt, so the RPM and MSI under test are the ones hashed above |
 | Hosts | AWS account 959038055523, ap-southeast-2, stack `bower-resoak-20261106-092539`. Four `m6i.large` (fixed performance, no CPU credits): `Dc` and `Wec` Windows Server 2022 (the WEC runs the MSI collector, `ForwardedEvents` 4 GiB), `Sender` and `Linux` Amazon Linux 2023 (the Linux collector runs the RPM with the RELP listener; the sender runs rsyslog 8.2610.0 with `omrelp`). Private subnet 172.31.248.0/24 through the existing NAT gateway, no inbound rules |
 | Collector settings | `BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60`, `BOWER_QUEUE_RETENTION_HOURS=2` (from the registered profile) |
 | Azure | `rg-bower-resoak-20261106-092539` (Australia East): workspace with Sentinel, the repository Bicep DCE, DCR and table, the monitoring alert rules from `deploy/sentinel/monitoring/monitoring.bicep`, an ingestion application and a verifier application (Log Analytics Reader on the workspace only). Every query in `final.json` ran as the verifier |
@@ -39,16 +39,24 @@ windows) `ac42b3d05cbb66ec4449e40ccd75934bc8b286db6fbdbde3c2174136bea5c5fa`.
 
 The re-soak differs from the [24-hour soak](../soak-20261102-015614/README.md) in four ways:
 it ran 72 hours, on fixed-performance hosts, with scheduled faults, and with each fault's
-expected restarts, latency and alerts accounted for by rules fixed before the run. The criteria
-themselves are unchanged. The registered accounting:
+expected restarts, latency and alerts accounted for by rules fixed before the run. The
+[pre-registration](https://github.com/jusso-dev/Bower/blob/4b529bc71f4d43da8969d0d7fb6e3fe3aadeed8b/lab/aws/resoak/preregistration.json)
+(on the harness branch, not on main) copies the six criteria verbatim from the 24-hour soak's
+table (`criteriaSource`: guide section 2 at `71d5de7`), then its `faultAccounting` rules change
+how criteria 2 to 5 are judged. So the re-soak's gates are **not** the section 2 table as
+written. The registered rules:
 
-- Criterion 1 applies to every event, fault windows included.
-- Criterion 2 allows exactly the scheduled restarts and reboots, each inside its fault window.
+- Criterion 1 is unchanged and applies to every event, fault windows and canaries included.
+- Criterion 2 allows exactly the scheduled restarts and reboots, each starting inside its fault
+  window, instead of one process identity for the whole run.
 - Criterion 3 must pass on two windows: hours 3–24 (no restart in it) and from 3 hours after the
   last scheduled restart (F09 at +35:20, so from +38:20) to +72:00.
-- Criterion 4's p99 is over events whose event time is outside every fault window.
+- Criterion 4's gated p99 is over events whose event time is outside every fault window, not
+  the whole run; the p99 including fault windows is reported only.
 - Criterion 5 excuses only an alert of a rule the fault lists, starting inside that fault's
-  alert window (fault start to fault end + impact allowance + 1 hour).
+  alert window (fault start to fault end + impact allowance + 1 hour). `syslog-tls-expiry` and
+  `destination-credential` are never excused.
+- Criterion 6 is unchanged, with `bower-canary` added as a marker.
 
 ## Results in detail
 
@@ -67,7 +75,8 @@ themselves are unchanged. The registered accounting:
   11:06:44Z, 104 s after the soak end. The DC generator ran past the end of `h71`
   (11:05:00Z) too, and the run's handoff prescribed exporting `h72` on demand (`native-h72`)
   before the hosts powered themselves off at 2026-11-09T15:05Z. The scheduled final
-  reconciliation wrote `final.json` at 11:45:58Z but was interrupted before it ran
+  reconciliation produced `final.json` (its recorded generation time, set before its queries,
+  is 11:45:58Z; its health data runs to 12:01Z) but was interrupted before it ran
   `native-h72`. The hosts then terminated, so the window cannot be exported now.
 - **Reading.** The 51 ids equal the number of generator attempts not covered by an exported
   window, and accepted and Sentinel equal the attempt count exactly, so the most likely reading
@@ -145,7 +154,7 @@ First `ingestion_time()` minus event time, from [`final/final.json`](final/final
   both collectors: firewall p95 17.0 s, p99 46.2 s, max 77.6 s; WEC p95 17.3 s, p99 39.8 s,
   max 66.3 s. It contains a scheduled 100/s burst (firewall 21:06:24Z to 21:07:24Z) and the
   `dcr-request-errors` alert (section 5). Every other burst hour had a firewall p99 between 6.7 s and
-  8.7 s, so the burst alone does not explain it. Both collectors slowing in the same hour, together with
+  8.6 s (`latency.hourly`, gated), so the burst alone does not explain it. Both collectors slowing in the same hour, together with
   an alert on non-success responses at the shared DCR, points at the destination side, but the
   evidence does not prove it.
 - **The large maxima come from F01**, the 30-minute destination outage from 12:25Z on
@@ -165,7 +174,7 @@ Seven alert instances were listed; five were active during the run. Sentinel had
 
 | Rule | Started (UTC) | Resolved (UTC) | Accounting |
 |---|---|---|---|
-| `collector-health-missing` × 2 | 2026-11-06T09:30:44Z | 09:56:42Z and 10:01:44Z | Before the run (no collectors yet); not counted |
+| `collector-health-missing` × 2 | 2026-11-06T09:30:44Z | 09:56:42Z and 10:01:44Z | Before the run, before the collectors sent health records; not counted |
 | `collector-health-missing` × 2 | 2026-11-06T12:40:40Z | 13:06:42Z and 13:11:42Z | Excused by F01 |
 | `queue-backlog` × 2 | 2026-11-06T12:57:25Z | 13:23:58Z | Excused by F01 |
 | `dcr-request-errors` | **2026-11-08T21:28:49Z** | **21:48:52Z** | **Violation**: no fault lists this rule |
@@ -183,9 +192,9 @@ request. What it does show:
 - Neither collector restarted, and every 60-second health record outside F01 was `healthy`. A
   retry shorter than a sample would not show there.
 - There were no duplicate rows and nothing missing at Sentinel.
-- `deliveryFailureCodes` lists only the distinct codes seen over the whole run (none and
-  `delivery-failure`, which F01 also produces), without times, so it cannot place a failure at
-  21:00Z.
+- `naturalEvents.deliveryFailureCodes` lists the distinct codes seen over the whole run, without
+  times. It holds only `delivery-failure`, which F01 also produces, so it cannot place a failure
+  at 21:00Z.
 
 The workspace and DCR are deleted, so the metric cannot be split by response code now.
 
@@ -222,6 +231,8 @@ fault window: nothing was missing at Sentinel on either collector.
 | `queue-retention` hourly | 136 runs observed on Linux, 143 on the WEC (`Processing`, `Succeeded`) |
 | `queue-maintenance` daily | 3 runs on each collector, all `Succeeded` (last 2026-11-09T03:00Z) |
 | `ForwardedEvents` full | First full sample 2026-11-08T14:35Z: 1,936,262 records, 4,230,025,216 bytes. Reader gaps, resets, cursor conflicts and read errors all 0 for the whole run |
+| Entra token refresh with no delivery failure code | **Not demonstrated.** `deliveryFailureCodes` holds `delivery-failure` with no times, so a refresh-related failure cannot be told apart from F01's, and the evidence has no separate token-refresh record |
+| Sender journald rotation | **Not recorded.** No committed file holds a journald rotation observation for this run. F03 and F11 (scheduled log rollovers) ran, but they are faults, not the natural rotation |
 | Health records | Linux 4,375, WEC 4,372; largest gap 61 s and 68 s. Non-healthy outcomes (`retrying`, `stalled`) only during F01 |
 | Samples | 864 per collector; largest gap 301 s. Linux: 9 samples without status (`URLError`, `ValueError`); WEC: 1 without the process (`ProcessCommandException`) |
 | Disk | Minimum free: Linux 29.3 GB, WEC 15.1 GB |
@@ -234,26 +245,44 @@ fault window: nothing was missing at Sentinel on either collector.
   privacy 0 matches, both reporting `0.1.1-dev.416`
   ([`smoke/smoke.json`](smoke/smoke.json), [`smoke/smoke-summary.json`](smoke/smoke-summary.json)).
 - **Interim** ([`interim/interim.json`](interim/interim.json)) ran at 2026-11-07T01:18Z, soak
-  +14 h 13 m, not at the planned +2 h 10. The WEC was exact for hour 1: 36,059 native = 36,059
-  distinct at Sentinel, same digest, 0 duplicates (its `extraAtAccepted` 18,003 counts ids
-  accepted after hour 1). The firewall figures are **not a valid comparison**: the interim
-  reads the firewall native set from the host export, which does not stop at hour 1. At +14 h it
-  held 526,260 ids while the Sentinel query covered hour 1, hence 487,201 "missing at Sentinel"
+  +14 h 13 m, not at the planned +2 h 10. Its window was hour 0 (`h00`, 11:05Z to 12:05Z). The WEC was exact
+  for hour 0: 36,059 native = 36,059 distinct at Sentinel, same digest, 0 duplicates (its
+  `extraAtAccepted` 18,003 counts ids accepted after hour 0). The firewall figures are **not a
+  valid comparison**: the interim reads the firewall native set from the host export, which does
+  not stop at hour 0. At +14 h it held 526,260 ids while the Sentinel query covered hour 0, hence 487,201 "missing at Sentinel"
   and 9,173 "missing at accepted". They are timing, not loss: the final reconciliation is exact
   for every firewall id. Interim privacy, health and alerts passed.
 
 ## Aborted first attempt: `bower-resoak-20261105-234529`
 
-An earlier attempt on the same candidate started its soak at 2026-11-06T02:05:00Z and was
-aborted at about 09:20Z, before any verdict. `destination-freshness` fired at 02:04:36Z, 24 s
-before the soak start, on both collectors, and stayed active to 02:20:36Z. The harness caused
-it: 64 minutes without traffic between the smoke end and the soak start, against the rule's
-60-minute allowance. Under the registered accounting that alert would have failed criterion 5,
-so the run could not pass. The harness was fixed (the smoke now ends 20 minutes before the soak)
-and the run was replaced by this one. Its smoke was exact on both collectors. Its hour-1 p99 was
-25.1 s (firewall) and 32.8 s (WEC), above the limits; the similar maxima of about 48 s on both
-paths suggest Azure-side ingestion latency, not investigated. It was torn down and audited:
-**38 of 38 absent** ([`aborted-run/cleanup.json`](aborted-run/cleanup.json), 2026-11-06).
+An earlier attempt on the same candidate started its soak at 2026-11-06T02:05:00Z
+([`aborted-run/run.json`](aborted-run/run.json)) and was aborted at about 09:20Z, before any
+verdict (the abort time is from the operator's record; no committed file holds it). The
+attempt's interim, generated at 03:36:24Z (soak +1 h 31 m) over hour 0 (02:05Z to 03:05Z), lists
+two `destination-freshness` alerts, one per collector, that started at 02:04:36Z, 24 s before
+the soak start, and resolved at 02:20:36Z. Its `alertAccounting` records both as violations
+([`aborted-run/interim.json`](aborted-run/interim.json),
+[`aborted-run/interim-summary.json`](aborted-run/interim-summary.json)), so the run could not
+pass criterion 5. The cause was the harness: the smoke's workload ended at 01:00:00Z and the
+soak's started at 02:05:00Z (`run.json`), a 65-minute gap against the rule's 60-minute silence
+allowance. The harness was fixed (the smoke now ends 20 minutes before the soak) and the run was
+replaced by this one.
+
+What the committed files show for that attempt:
+
+- **Smoke** (00:45Z to 01:00Z, [`aborted-run/smoke.json`](aborted-run/smoke.json),
+  [`aborted-run/smoke-summary.json`](aborted-run/smoke-summary.json)): exact on both
+  collectors, 9,000 native = accepted = distinct Sentinel, 0 duplicate rows, privacy 0 matches.
+- **Hour 0 interim:** 0 missing at Sentinel and 0 duplicate rows on both collectors; canaries
+  56 of 56 (firewall) and 60 of 60 (WEC) at Sentinel. The accepted counts (33,066 and 19,225)
+  were short of native, while Sentinel held every native id. The operator's reading is that the
+  interim ran before the hosts' hourly upload of the accepted set; it is not a delivery loss.
+- **Hour 0 latency** was above the limits: p99 25.1 s (firewall, limit 13.3 s) and 32.8 s
+  (WEC, limit 18.16 s), maxima 48.1 s and 49.3 s. The cause was not investigated; similar
+  maxima on both paths are consistent with destination-side latency but do not show it.
+
+It was torn down and audited: **38 of 38 absent**
+([`aborted-run/cleanup.json`](aborted-run/cleanup.json), 2026-11-06).
 
 ## Limits
 
@@ -294,13 +323,15 @@ running cost.
 
 | File | What it is |
 |---|---|
-| [`final/final.json`](final/final.json) | The final reconciliation and verdict, as produced at 2026-11-09T11:45:58Z |
+| [`final/final.json`](final/final.json) | The final reconciliation and verdict; recorded generation time (set before its queries) 2026-11-09T11:45:58Z |
 | [`interim/interim.json`](interim/interim.json) | The interim reconciliation (+14 h 13 m); read the firewall figures with the caveat above |
 | [`smoke/smoke.json`](smoke/smoke.json), [`smoke/smoke-summary.json`](smoke/smoke-summary.json) | The 15-minute smoke |
 | [`operations/candidate.json`](operations/candidate.json) | The candidate build, package hashes and CI state at capture |
 | [`operations/stage.json`](operations/stage.json) | Plan, manifest, tool, pack and certificate hashes (no keys) |
 | [`operations/run.json`](operations/run.json) | Smoke and soak times and the expiry-guard times |
 | [`cleanup.json`](cleanup.json) | The cleanup audit of this run |
+| [`operations/ci-run-42130604210-attempt-3.json`](operations/ci-run-42130604210-attempt-3.json) | CI run 42130604210 attempt 3: run conclusion and every job's name, conclusion and times (fetched from the GitHub REST API on 2026-11-11) |
+| [`aborted-run/run.json`](aborted-run/run.json), [`aborted-run/smoke.json`](aborted-run/smoke.json), [`aborted-run/smoke-summary.json`](aborted-run/smoke-summary.json), [`aborted-run/interim.json`](aborted-run/interim.json), [`aborted-run/interim-summary.json`](aborted-run/interim-summary.json) | The aborted attempt's times, smoke and hour 0 interim, including its alert list and accounting |
 | [`aborted-run/cleanup.json`](aborted-run/cleanup.json) | The cleanup audit of the aborted attempt |
 
 All files are metadata: counts, digests, hashes and resource names. The application ids in
