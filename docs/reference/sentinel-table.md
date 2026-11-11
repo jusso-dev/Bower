@@ -75,3 +75,21 @@ BowerSecurity_CL
 | summarize Rows = count() by Kind = tostring(Origin.kind),
     Server = coalesce(tostring(Origin.host), tostring(Origin.logStream))
 ```
+
+## The two Azure paths, compared
+
+Live on 11-11-2026 (#249), one VM sent the same envelope once through `ama-syslog` and once
+through `azure-logs-ingestion` (managed identity) into the same table. Every typed column was
+equal, including `TimeGenerated` to the millisecond, the empty strings in `EventOriginalId` and
+`ActorUserId`, nulls in the dynamic columns, and accented text in `EventOutcomeReason`. The
+differences:
+
+| Column | `ama-syslog` | `azure-logs-ingestion` |
+|---|---|---|
+| `Origin` | `{"kind":"ama-syslog","host":"<the VM>"}` | empty |
+| `_ResourceId` | the VM's resource ID | empty |
+| `RawEnvelope` | only the keys the envelope has | also `eventOriginalId` (`""`) and `labels`, `privacy`, `target`, `change`, `attributes` (null) |
+
+The `RawEnvelope` difference is the Logs Ingestion stream declaring every column: `pack_all()`
+packs declared columns that are absent too. Read optional envelope fields with `isempty()` or
+`isnull()` rather than testing for the key, and the query works on both paths.
