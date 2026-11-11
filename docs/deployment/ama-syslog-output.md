@@ -315,9 +315,12 @@ Syslog
 ## Relay
 
 A relay collector can use `BOWER_OUTPUT=ama-syslog` as its own output: the relay stores each
-downstream envelope in its own queue and delivers it through the configured output, and the
-settings do not forbid this one (read from the code, not tested). Everything on this page then
-applies to the relay host, including the trust boundary.
+downstream envelope in its own queue and delivers it through the configured output. Tested
+(`RelayEndToEndTests.ARelayDeliversThroughTheAmaSyslogOutput`): an event posted to an edge
+collector crosses the relay over mutual TLS and leaves the relay as one `bower-b64:`
+datagram. It decodes to exactly the envelope the edge stored, redacted at the edge, with the
+edge's `collector.id`. Everything on this page then applies to the relay host, including the
+trust boundary.
 
 ## Limits
 
