@@ -29,7 +29,7 @@ windows) `ac42b3d05cbb66ec4449e40ccd75934bc8b286db6fbdbde3c2174136bea5c5fa`.
 | Plan | Pre-registered on 2026-11-03: `lab/aws/resoak/preregistration.json` SHA-256 `b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e`. The staged plan and the plan the reconciler checked are byte-identical ([`operations/stage.json`](operations/stage.json), [`final/final.json`](final/final.json) `planSha256`) |
 | Harness | Branch `test/resoak-72h-v2` (not merged). Launched at `de3ca08`; refreshed on 2026-11-07 to `4b529bc` for the final reconciliation, which adds the query-cache fix [#199](https://github.com/jusso-dev/Bower/pull/199) (`Cache-Control: no-cache`, partial results rejected). Only query code changed; the plan hash did not |
 | Candidate | main `8f615b8ed10d84d6a4b19ff42415b24d9a89b623`, CI run [42130604210](https://github.com/jusso-dev/Bower/actions/runs/42130604210) (workflow_dispatch, build 416), version `0.1.1-dev.416`. **Unsigned**: release signing is deferred. RPM `bower-collector-0.1.1~dev.416-1.x86_64.rpm` `7b02d15d9596d888ce5b7b0e9e794ec87fda4423c56c6c066d58aab04985f59e`; MSI `bower-collector-0.1.1-dev.416-x64.msi` `f26c00ea2090c73bb5a80a9fc0f3f6de068953c98e8a31003159b526f73093b6` ([`operations/candidate.json`](operations/candidate.json)) |
-| Release check 0 | [`operations/candidate.json`](operations/candidate.json) was captured when the CI run's conclusion was `failure`: `windows-event-log` failed twice with "Access is denied" opening a test event log on the hosted runner. Attempt 3 re-ran only the failed jobs and finished `success` at 2026-11-07T01:25:34Z, about 14 h 20 m after the soak started, which closed check 0 for `8f615b8` ([`operations/ci-run-42130604210-attempt-3.json`](operations/ci-run-42130604210-attempt-3.json)). The build, package and install jobs passed in attempt 1 and were not rebuilt, so the RPM and MSI under test are the ones hashed above |
+| Release check 0 | [`operations/candidate.json`](operations/candidate.json) was captured when the CI run's conclusion was `failure`: `windows-event-log` failed twice with "Access is denied" opening a test event log on the hosted runner. Attempt 3 re-ran only the failed jobs and finished `success` at 2026-11-07T01:25:34Z, about 14 h 20 m after the soak started, which made CI green for `8f615b8` ([`operations/ci-run-42130604210-attempt-3.json`](operations/ci-run-42130604210-attempt-3.json)). The build, package and install jobs passed in attempt 1 and were not rebuilt, so the RPM and MSI under test are the ones hashed above. The RPM version (`0.1.1~dev.416-1`), the Bower version and build number, the package hashes and the signature status are recorded; the deb version and the MSI `ProductVersion` were not read from the packages. By the [versioning scheme](../../operations/release-versioning.md) they would be `0.1.1~dev.416-1` and `0.1.416`, which is not verified, so check 0's version record is incomplete |
 | Hosts | AWS account 959038055523, ap-southeast-2, stack `bower-resoak-20261106-092539`. Four `m6i.large` (fixed performance, no CPU credits): `Dc` and `Wec` Windows Server 2022 (the WEC runs the MSI collector, `ForwardedEvents` 4 GiB), `Sender` and `Linux` Amazon Linux 2023 (the Linux collector runs the RPM with the RELP listener; the sender runs rsyslog 8.2610.0 with `omrelp`). Private subnet 172.31.248.0/24 through the existing NAT gateway, no inbound rules |
 | Collector settings | `BOWER_HEALTH_RECORD_INTERVAL_SECONDS=60`, `BOWER_QUEUE_RETENTION_HOURS=2` (from the registered profile) |
 | Azure | `rg-bower-resoak-20261106-092539` (Australia East): workspace with Sentinel, the repository Bicep DCE, DCR and table, the monitoring alert rules from `deploy/sentinel/monitoring/monitoring.bicep`, an ingestion application and a verifier application (Log Analytics Reader on the workspace only). Every query in `final.json` ran as the verifier |
@@ -245,12 +245,15 @@ fault window: nothing was missing at Sentinel on either collector.
   privacy 0 matches, both reporting `0.1.1-dev.416`
   ([`smoke/smoke.json`](smoke/smoke.json), [`smoke/smoke-summary.json`](smoke/smoke-summary.json)).
 - **Interim** ([`interim/interim.json`](interim/interim.json)) ran at 2026-11-07T01:18Z, soak
-  +14 h 13 m, not at the planned +2 h 10. Its window was hour 0 (`h00`, 11:05Z to 12:05Z). The WEC was exact
-  for hour 0: 36,059 native = 36,059 distinct at Sentinel, same digest, 0 duplicates (its
-  `extraAtAccepted` 18,003 counts ids accepted after hour 0). The firewall figures are **not a
-  valid comparison**: the interim reads the firewall native set from the host export, which does
-  not stop at hour 0. At +14 h it held 526,260 ids while the Sentinel query covered hour 0, hence 487,201 "missing at Sentinel"
-  and 9,173 "missing at accepted". They are timing, not loss: the final reconciliation is exact
+  +14 h 13 m, not at the planned +2 h 10. Its window was hour 0 (`h00`, 11:05Z to 12:05Z). For the
+  WEC, the hour-0 native and Sentinel sets matched: 36,059 native = 36,059 distinct at Sentinel,
+  same digest, 0 duplicates. The accepted set did not match (`exact: false`): it held 54,062 ids,
+  and the interim does not establish that its 18,003 extra accepted ids all came after hour 0
+  (the final reconciliation is the authority). The firewall figures are **not a valid
+  comparison**, for two scope mismatches: the interim reads the firewall native set from the host
+  export, which does not stop at hour 0 (at +14 h it held 526,260 ids), and its Sentinel query ran
+  five minutes past hour 0 (39,059 ids: 36,059 in hour 0 and 3,000 from 12:05Z to 12:10Z). Hence
+  487,201 "missing at Sentinel" and 9,173 "missing at accepted". They are timing, not loss: the final reconciliation is exact
   for every firewall id. Interim privacy, health and alerts passed.
 
 ## Aborted first attempt: `bower-resoak-20261105-234529`

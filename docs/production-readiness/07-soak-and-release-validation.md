@@ -482,13 +482,19 @@ version it recorded.
 
 **Current state (2026-11-11).**
 
-- **Check 0 for `8f615b8`:** closed, about 14 h after the re-soak started. CI run
+- **Check 0 for `8f615b8`:** CI green, about 14 h after the re-soak started; version record
+  incomplete. CI run
   [42130604210](https://github.com/jusso-dev/Bower/actions/runs/42130604210) finished
   `success` on attempt 3 (2026-11-07T01:25:34Z); only the `windows-event-log` job, which had
   failed on a runner permission error, and the `ci-success` gate were re-run, so the packages
   under test were not rebuilt
   ([jobs listing](../evidence/resoak-20261106-092539/operations/ci-run-42130604210-attempt-3.json)).
-- **Firewall over RELP:** checks 0–6 and 8 have evidence. Check 7 is **open**. In the 72-hour
+  The Bower version, build number, RPM version (`0.1.1~dev.416-1`), package hashes and signature
+  status are recorded; the deb version and the MSI `ProductVersion` were not read from the
+  packages (by the [versioning scheme](../operations/release-versioning.md) `0.1.1~dev.416-1`
+  and `0.1.416`, unverified), so check 0 is not fully met for this candidate.
+- **Firewall over RELP:** checks 1–6 and 8 have evidence, and check 0 is CI-green with the
+  incomplete version record above. Check 7 is **open**. In the 72-hour
   re-soak the firewall met criteria 1 (exact: 2,693,520 native = accepted = distinct Sentinel),
   2, 4 and 6 and failed 3 (queue file and threads over hours 3–24; memory and FDs after the last
   restart) and 5 (the unexcused `dcr-request-errors` alert). The TLS-expiry false positive did
@@ -659,9 +665,11 @@ What else the run showed:
   tested against a certificate near expiry.
 - **Canaries:** 4,320 of 4,320 per source at Sentinel.
 - **Smoke** exact on both collectors. The **interim** ran at +14 h 13 m instead of +2 h 10 and
-  covered hour 0 (`h00`, 11:05Z to 12:05Z): the WEC was exact for hour 0, and the firewall figures are
-  not a valid comparison because the native export does not stop at hour 0 (the final is exact
-  for every firewall id).
+  covered hour 0 (`h00`, 11:05Z to 12:05Z): for the WEC the hour-0 native and Sentinel sets
+  matched (36,059, same digest) but the accepted set did not (`exact: false`, 18,003 extra not
+  shown to be after hour 0); the firewall figures are not a valid comparison because the native
+  export does not stop at hour 0 and the Sentinel query ran five minutes past it (the final is
+  exact for every firewall id).
 - **Cleanup:** the audit recorded 38 of 38 checks absent on 2026-11-10, and the private lab
   directory was deleted. The estimated cost was about USD 110–125.
 
@@ -732,9 +740,11 @@ independently (38 of 38 checks absent), as was the aborted first attempt (38 of 
    `source-transport-errors` alert; the historical native exports do not establish complete
    no-loss reconciliation. Smaller purge batches or yielding between batches should be
    evaluated. In the 72-hour re-soak on `8f615b8` (with #178's batched retention) the WEC ran
-   143 retention runs with no `source-transport-errors` alert, health records `healthy`
-   outside F01 and every WEC id accepted and at Sentinel exactly once; the second purge
-   scenario itself was not repeated.
+   143 retention runs with no `source-transport-errors` alert and health records `healthy`
+   outside F01. Every available native WEC id was accepted and reached Sentinel exactly once,
+   and accepted matched Sentinel (2,693,520), but 51 ids have no native evidence because the
+   `h72` export is missing, so complete delivery is not established. The second purge scenario
+   itself was not repeated.
 3. **TLS-expiry false positive without a CRL** (fixed after the 24-hour soak by
    [#171](https://github.com/jusso-dev/Bower/pull/171)). The 72-hour re-soak ran a build with
    #171, rotated the syslog TLS certificate (F04), and `syslog-tls-expiry` never fired.
