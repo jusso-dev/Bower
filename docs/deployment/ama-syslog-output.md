@@ -278,7 +278,7 @@ rule first, then upgrade the collectors.
 | `location` | the resource group's region | The rule must be in the workspace's region ([Microsoft](https://learn.microsoft.com/en-us/azure/azure-monitor/vm/data-collection)). Pass `location=<workspace region>` when the resource group is in another region. |
 | `namePrefix` | `bower` | The rule is named `<namePrefix>-ama-syslog-dcr`. |
 | `facility` | `local4` | Must match `BOWER_AMA_SYSLOG_FACILITY`. |
-| `dataCollectionEndpointId` | empty | Only for Private Link; see below. |
+| `dataCollectionEndpointId` | empty | Leave empty, including behind Private Link (tested; see below). |
 | `tags` | `{}` | Tags for the rule. |
 
 **Private Link.** Microsoft's guidance for agents behind Azure Monitor Private Link Scope is
@@ -288,10 +288,19 @@ that each machine is associated with a data collection endpoint through an assoc
 That is a step per machine, separate from the rule. Microsoft also says a rule that uses an
 endpoint must have that endpoint in the scope
 ([Microsoft](https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/data-collection-endpoint-overview)).
-Whether this rule also needs `dataCollectionEndpointId` set is not stated there. Live, the
-template accepts an endpoint (`what-if` shows only that property changing), and without Private
-Link the agents uploaded with no endpoint at all. Behind Private Link it has not been tested.
-Without Private Link, leave both out.
+**This rule does not need `dataCollectionEndpointId`, behind Private Link or not.** Live on
+11-11-2026 (#249), with agent 1.45.1 on Ubuntu 24.04:
+- The setup: an AMPLS in `PrivateOnly` ingestion mode, holding the workspace and a DCE; one
+  private endpoint with the five private DNS zones; the VM associated with that DCE as
+  `configurationAccessEndpoint`; and the shipped rule, with no endpoint, associated as usual.
+- The VM's network security group denied outbound traffic to the `AzureMonitor` service tag,
+  so the public endpoints were unreachable from it (a request to the public handler timed out).
+- The agent fetched its configuration through the DCE's private name, and every upload
+  connection went to the private endpoint's address.
+- `bower test emit` arrived in `BowerSecurity_CL` with the right `Origin`.
+
+So behind Private Link you add the per-machine `configurationAccessEndpoint` association and
+the AMPLS, and leave the rule as it is. Without Private Link, leave both out.
 
 A second rule that collects the same facility into the `Syslog` table stores each event again
 there, as base64 (live: the same event arrived in both tables on both hosts, as `local4`,
@@ -317,5 +326,5 @@ applies to the relay host, including the trust boundary.
 - Live on Oracle Linux 9.8 with SELinux enforcing, agent 1.45.1 wrote the TCP file
   (`10-azuremonitoragent-omfwd.conf`, port 28330), not the Unix-socket variant
   (`10-azuremonitoragent.conf`). Hosts where it uses the socket file were not tested.
-- Live on two distributions and one agent version, once. Private Link, syslog-ng, Arc
-  machines and other agent versions were not run.
+- Live on two distributions and one agent version, once, plus once behind Private Link.
+  syslog-ng, Arc machines and other agent versions were not run.

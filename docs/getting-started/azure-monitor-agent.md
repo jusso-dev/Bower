@@ -216,5 +216,5 @@ Rows already in `BowerSecurity_CL` stay until the table's retention removes them
 - Linux with rsyslog only. See the [reference](../deployment/ama-syslog-output.md#limits).
 - This path was run once end to end with real Azure Monitor Agents (1.45.1) on Oracle Linux
   9.8 and Ubuntu 24.04 (#249): test events, 5,000-event bursts and the shipped filters. The
-  results are in the [reference](../deployment/ama-syslog-output.md). Private Link, Arc machines,
-  syslog-ng and other agent versions were not run.
+  results are in the [reference](../deployment/ama-syslog-output.md). It was also run once
+  behind Private Link. Arc machines, syslog-ng and other agent versions were not run.
