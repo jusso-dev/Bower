@@ -34,6 +34,8 @@
   --ifm-hr-border-color: #cddde8;
   --ifm-code-background: #eaf0f5;
   --ifm-navbar-background-color: rgba(247, 250, 252, 0.86);
+  /* Search placeholder and its Ctrl K hint: AA contrast on the search field. */
+  --ifm-navbar-search-input-placeholder-color: #455d70;
   --ifm-footer-background-color: #030f1d;
 
   --bower-gold: #92600e;
@@ -64,6 +66,7 @@
   --ifm-hr-border-color: #29445e;
   --ifm-code-background: #0f2338;
   --ifm-navbar-background-color: rgba(3, 15, 29, 0.82);
+  --ifm-navbar-search-input-placeholder-color: #b3c5d6;
 
   --bower-gold: #f5be62;
   --bower-surface: #0a1b2d;
