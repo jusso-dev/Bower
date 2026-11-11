@@ -48,7 +48,7 @@ public sealed class WindowsEventLogWindowsTests
             CreateLog(LogName, SourceName, maximumSizeInBytes: 0);
             using EventLog log = new(LogName) { Source = SourceName };
             log.Clear();
-            log.WriteEntry("before the first start", EventLogEntryType.Information, 1000);
+            WriteEntry(log, "before the first start", EventLogEntryType.Information, 1000);
 
             using SqliteTemporaryDirectory directory = new();
             WindowsEventLogSourceConfiguration configuration = WindowsEventLogSourceConfigurationLoader.Parse($$"""
@@ -65,9 +65,9 @@ public sealed class WindowsEventLogWindowsTests
                 // First start: bookmark at the newest event, nothing read.
                 Assert.Equal(0, (await source.PollOnceAsync("ci", cancellation)).Read);
 
-                log.WriteEntry("order=1 result=failure", EventLogEntryType.Warning, 1000);
-                log.WriteEntry("not allow-listed marker", EventLogEntryType.Information, 1001);
-                log.WriteEntry("order=2 result=failure", EventLogEntryType.Warning, 1000);
+                WriteEntry(log, "order=1 result=failure", EventLogEntryType.Warning, 1000);
+                WriteEntry(log, "not allow-listed marker", EventLogEntryType.Information, 1001);
+                WriteEntry(log, "order=2 result=failure", EventLogEntryType.Warning, 1000);
                 await PollUntil(source, sink, 2, cancellation);
 
                 WindowsEventSubscriptionStatus status = source.Snapshot()[0];
@@ -79,7 +79,7 @@ public sealed class WindowsEventLogWindowsTests
             }
 
             // Restart with the same queue database: resumes after the bookmark.
-            log.WriteEntry("order=3 result=failure", EventLogEntryType.Warning, 1000);
+            WriteEntry(log, "order=3 result=failure", EventLogEntryType.Warning, 1000);
             await using (WindowsEventLogSource restarted = new(configuration, sink, await WindowsEventLogSourceTests.Cursors(directory), channels))
             {
                 await PollUntil(restarted, sink, 3, cancellation);
@@ -91,7 +91,7 @@ public sealed class WindowsEventLogWindowsTests
                 log.Clear();
                 Assert.Equal(0, (await restarted.PollOnceAsync("ci", cancellation)).Read);
                 Assert.Equal(1, restarted.Snapshot()[0].Resets);
-                log.WriteEntry("order=4 result=failure", EventLogEntryType.Warning, 1000);
+                WriteEntry(log, "order=4 result=failure", EventLogEntryType.Warning, 1000);
                 await PollUntil(restarted, sink, 4, cancellation);
                 long recordId = long.Parse(
                     System.Text.Json.Nodes.JsonNode.Parse(sink.Records.Last())!["recordId"]!.GetValue<string>(),
@@ -186,7 +186,7 @@ public sealed class WindowsEventLogWindowsTests
             for (int index = 0; index < count; index++)
             {
                 // Mostly not allow-listed, as on a WEC: the service filters them out.
-                log.WriteEntry("scale", EventLogEntryType.Information, index % 10 == 0 ? 1000 : 1001);
+                WriteEntry(log, "scale", EventLogEntryType.Information, index % 10 == 0 ? 1000 : 1001);
             }
         }
 
@@ -329,6 +329,40 @@ public sealed class WindowsEventLogWindowsTests
             }
 
             Thread.Sleep(100);
+        }
+    }
+
+    /// <summary>
+    /// Writes one event, waiting while the service denies writes. After #205 the poll-cost test
+    /// still failed in three CI runs with Access is denied from <c>WriteEntry</c>, in the first
+    /// batch of writes after <c>Clear</c>, a few milliseconds after the log was served (#198).
+    /// The likely cause is that <c>Clear</c> returns before the service has reopened the log; that
+    /// is inferred from the logs, not reproduced. A denied write records nothing (the poll-cost
+    /// test's exact count of 20,200 would show a duplicate). The handles are closed before each
+    /// retry, so a refused one is never reused. Retries go to the test output.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    private static void WriteEntry(EventLog log, string message, EventLogEntryType type, int eventId)
+    {
+        Stopwatch waited = Stopwatch.StartNew();
+        for (int retries = 0; ; retries++)
+        {
+            try
+            {
+                log.WriteEntry(message, type, eventId);
+                if (retries > 0)
+                {
+                    TestContext.Current.TestOutputHelper?.WriteLine(
+                        $"{log.Log} write: accepted after {retries} retries, {waited.Elapsed.TotalMilliseconds:F0} ms");
+                }
+
+                return;
+            }
+            catch (Exception exception) when (NotServedYet(exception) && waited.Elapsed < TimeSpan.FromSeconds(30))
+            {
+                log.Close();
+                Thread.Sleep(100);
+            }
         }
     }
 
