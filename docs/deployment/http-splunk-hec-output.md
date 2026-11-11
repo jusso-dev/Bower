@@ -8,13 +8,16 @@ It is a delivery sink for the same security events Bower already selected, redac
 queued. It is not a generic log forwarder: only events that passed policy and redaction
 reach it, exactly as they would reach Sentinel.
 
-!!! warning "Acceptance is not indexing, and it is not Sentinel"
-    An event counts as delivered when the endpoint **accepted** its request: HTTP 2xx and,
-    for HEC, a response `code` of `0`, `24` or `25`. That is what HEC's response means: the event was
-    received, not that an indexer has written it. Bower does not implement HEC indexer
-    acknowledgement (`useACK`) yet, so it cannot tell you an event was indexed. Nothing
-    about this output is Sentinel delivery: status, acknowledgements and evidence say
-    `endpoint-accepted`, never Sentinel or indexed.
+:::warning[Acceptance is not indexing, and it is not Sentinel]
+
+An event counts as delivered when the endpoint **accepted** its request: HTTP 2xx and,
+for HEC, a response `code` of `0`, `24` or `25`. That is what HEC's response means: the event was
+received, not that an indexer has written it. Bower does not implement HEC indexer
+acknowledgement (`useACK`) yet, so it cannot tell you an event was indexed. Nothing
+about this output is Sentinel delivery: status, acknowledgements and evidence say
+`endpoint-accepted`, never Sentinel or indexed.
+
+:::
 
 ## When to use it
 
@@ -150,13 +153,16 @@ table): 7 incorrect index, 10 data channel is missing, 11 invalid data channel,
 for example gzip not accepted) and 421 (misdirected request) mean the URL, host or
 encoding is wrong for this endpoint, so they are held too.
 
-!!! warning "Alarm on the destination backlog"
-    Held failures retry until the endpoint or its configuration is fixed. Alert on a
-    growing retrying backlog with `destination-*` failure codes (`/v1/status`
-    `queue.retrying` and `deliveryActivity.lastFailureCode`, the `collector_health`
-    record, or the `Output adapter did not deliver events` log line). In particular a
-    2xx from HEC whose `code` is neither 0, 24 nor 25 is retried indefinitely
-    (`destination-http-response-invalid`).
+:::warning[Alarm on the destination backlog]
+
+Held failures retry until the endpoint or its configuration is fixed. Alert on a
+growing retrying backlog with `destination-*` failure codes (`/v1/status`
+`queue.retrying` and `deliveryActivity.lastFailureCode`, the `collector_health`
+record, or the `Output adapter did not deliver events` log line). In particular a
+2xx from HEC whose `code` is neither 0, 24 nor 25 is retried indefinitely
+(`destination-http-response-invalid`).
+
+:::
 
 ### A single event held without an accepted sibling
 

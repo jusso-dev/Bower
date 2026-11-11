@@ -1,6 +1,9 @@
 import importlib.util
 import io
 import json
+import re
+import shutil
+import subprocess
 import runpy
 from unittest.mock import patch
 from pathlib import Path
@@ -32,46 +35,62 @@ class LinkCheckTests(unittest.TestCase):
                 with self.assertRaises(SystemExit):
                     load("check_links").check(root)
 
-    def test_search_dialog_has_a_static_name(self):
-        output = load("hooks").on_post_page('<div data-md-component="search" role="dialog"></div>')
-        self.assertIn('aria-label="Search documentation"', output)
 
-    def test_source_links_rewrite_but_missing_docs_and_code_do_not(self):
-        hooks = load("hooks")
-        class File:
-            abs_src_path = str(hooks.DOCS / "reference/index.md")
-        class Page:
-            file = File()
-        source = '[Source](../../README.md)\n[Missing](missing.md)\n```md\n[Example](../../README.md)\n```'
-        output = hooks.on_page_markdown(source, Page())
-        self.assertIn('[Source](https://github.com/jusso-dev/Bower/blob/main/README.md)', output)
-        self.assertIn('[Missing](missing.md)', output)
-        self.assertIn('```md\n[Example](../../README.md)\n```', output)
 
-class DiagramCheckTests(unittest.TestCase):
-    def build(self, html, markdown="# Page\n\n```mermaid\nflowchart LR\n  A --> B\n```\n"):
-        directory = tempfile.TemporaryDirectory()
-        self.addCleanup(directory.cleanup)
-        root = Path(directory.name)
-        (root / "docs/guide").mkdir(parents=True)
-        (root / "docs/guide/page.md").write_text(markdown)
-        (root / "site/guide/page").mkdir(parents=True)
-        (root / "site/guide/page/index.html").write_text(html)
-        return root / "site", root / "docs"
 
-    def test_rendered_diagram_passes(self):
-        site, docs = self.build('<pre class="mermaid"><code>flowchart LR</code></pre>')
-        self.assertEqual(load("check_diagrams").check(site, docs), 1)
+class SidebarTests(unittest.TestCase):
+    """Every published docs page is in the sidebars exactly once, and every sidebar id exists."""
 
-    def test_code_listing_fails(self):
-        # What pymdownx.superfences writes without the mermaid custom fence.
-        site, docs = self.build('<div class="language-mermaid highlight"><pre><code>flowchart LR</code></pre></div>')
-        with self.assertRaises(SystemExit):
-            load("check_diagrams").check(site, docs)
+    def test_every_page_is_in_the_sidebars_once(self):
+        root = TOOLS.parents[1]
+        docs = root / "docs"
+        sidebars = (root / "website/sidebars.ts").read_text(encoding="utf-8")
+        ids = re.findall(r'"id": "([^"]+)"', sidebars)
+        pages = sorted(
+            path.relative_to(docs).with_suffix("").as_posix()
+            for path in docs.rglob("*")
+            if path.suffix in (".md", ".mdx")
+            and not path.relative_to(docs).as_posix().startswith(("research/", "evidence/"))
+            and not path.name.startswith("_")
+        )
+        duplicates = sorted({page for page in ids if ids.count(page) > 1})
+        self.assertEqual(duplicates, [], "pages listed twice in website/sidebars.ts")
+        self.assertEqual(sorted(set(ids) - set(pages)), [], "sidebar ids with no page in docs/")
+        # Published and linked from other pages, but not in the navigation (as on the MkDocs site).
+        unlisted = {"deployment/native-sources", "operations/production-readiness"}
+        self.assertEqual(sorted(set(pages) - set(ids) - unlisted), [], "pages missing from website/sidebars.ts")
 
-    def test_page_without_a_diagram_is_ignored(self):
-        site, docs = self.build("<p>No diagram</p>", markdown="# Page\n\n```bash\necho hi\n```\n")
-        self.assertEqual(load("check_diagrams").check(site, docs), 0)
+
+class SourceLinkTests(unittest.TestCase):
+    """website/plugins/remark-source-links.mjs, run with node."""
+
+    def rewrite(self, url, source="docs/reference/index.md"):
+        root = TOOLS.parents[1]
+        script = (
+            "import { rewrite } from './website/plugins/remark-source-links.mjs';"
+            "console.log(rewrite(process.argv[1], process.argv[2]));"
+        )
+        result = subprocess.run(
+            ["node", "--input-type=module", "-e", script, url, str(root / source)],
+            cwd=root, capture_output=True, text=True, check=True)
+        return result.stdout.strip()
+
+    @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+    def test_repository_files_become_github_links(self):
+        self.assertEqual(self.rewrite("../../README.md#why-bower"),
+                         "https://github.com/jusso-dev/Bower/blob/main/README.md#why-bower")
+
+    @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+    def test_docs_pages_and_missing_files_are_left_alone(self):
+        self.assertEqual(self.rewrite("cli.md"), "cli.md")
+        self.assertEqual(self.rewrite("../../missing-file.md"), "../../missing-file.md")
+        self.assertEqual(self.rewrite("https://example.org/x"), "https://example.org/x")
+
+    @unittest.skipUnless(shutil.which("node"), "node is not on PATH")
+    def test_files_under_docs_link_to_their_published_copy(self):
+        self.assertEqual(
+            self.rewrite("../evidence/pilot-native-20261030/report.html", "docs/getting-started/index.md"),
+            "pathname:///Bower/evidence/pilot-native-20261030/report.html")
 
 
 class GlossaryEncodingTests(unittest.TestCase):

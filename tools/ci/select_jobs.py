@@ -31,8 +31,8 @@ def select(paths, full=False):
             continue
         # Known editorial inputs cannot affect product builds. Check this before
         # the unknown-file fallback, but never ignore Markdown under source/tests.
-        if path.startswith(("docs/", "docs-site/", "tools/docs/")) or path in {
-            "README.md", "LICENSE", "AGENTS.md", "CLAUDE.md", "mkdocs.yml",
+        if path.startswith(("docs/", "website/", "tools/docs/")) or path in {
+            "README.md", "LICENSE", "AGENTS.md", "CLAUDE.md",
             ".github/CODEOWNERS", ".github/pull_request_template.md",
             ".github/dependabot.yml", ".github/workflows/docs.yml",
         } or path.startswith(".github/ISSUE_TEMPLATE/"):

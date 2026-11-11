@@ -178,22 +178,25 @@ done
 
 Then add one `collect_list` entry per file in step 2.
 
-!!! warning "Events are stored before Bower redacts them"
-    In this path CloudWatch Logs and the S3 bucket hold the event as the server wrote it.
-    Bower's privacy profile runs later, in the collector. Don't write passwords, tokens or
-    session identifiers into the file; the framework helpers already drop secret-named fields.
-    Keep the log group and bucket retention short (the stack's `AppLogRetentionDays` sets the
-    bucket expiry), and limit who can read the copies:
+:::warning[Events are stored before Bower redacts them]
 
-    - Grant `logs:GetLogEvents`, `logs:FilterLogEvents`, `logs:StartQuery` and
-      `logs:StartLiveTail` on `/bower/app-events` only to the people who investigate these
-      events.
-    - Grant `s3:GetObject` on the app log bucket only to the `bower-cloud` agent (the stack's
-      `ConsumerPolicy`) and the same investigators. The stack encrypts the bucket with
-      S3-managed keys (`AES256`), so anyone with `s3:GetObject` can read the objects.
-    - Consider a KMS key for the log group
-      ([Encrypt log data in CloudWatch Logs using AWS KMS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)),
-      so reading the events also needs `kms:Decrypt`.
+In this path CloudWatch Logs and the S3 bucket hold the event as the server wrote it.
+Bower's privacy profile runs later, in the collector. Don't write passwords, tokens or
+session identifiers into the file; the framework helpers already drop secret-named fields.
+Keep the log group and bucket retention short (the stack's `AppLogRetentionDays` sets the
+bucket expiry), and limit who can read the copies:
+
+- Grant `logs:GetLogEvents`, `logs:FilterLogEvents`, `logs:StartQuery` and
+  `logs:StartLiveTail` on `/bower/app-events` only to the people who investigate these
+  events.
+- Grant `s3:GetObject` on the app log bucket only to the `bower-cloud` agent (the stack's
+  `ConsumerPolicy`) and the same investigators. The stack encrypts the bucket with
+  S3-managed keys (`AES256`), so anyone with `s3:GetObject` can read the objects.
+- Consider a KMS key for the log group
+  ([Encrypt log data in CloudWatch Logs using AWS KMS](https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html)),
+  so reading the events also needs `kms:Decrypt`.
+
+:::
 
 ## 2. Configure the CloudWatch agent
 
@@ -277,12 +280,15 @@ sudo /opt/aws/amazon-cloudwatch-agent/bin/amazon-cloudwatch-agent-ctl \
 
 ### Windows
 
-!!! note "How these steps are tested"
-    CI runs the commands in this section as written on Windows Server 2025
-    ([`test_windows_event_folder.ps1`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/test_windows_event_folder.ps1)).
-    It signs in as a second standard user, who is refused both reading the file and creating
-    one in the folder, and it runs the rotation task as SYSTEM. It doesn't run the
-    CloudWatch agent itself. Run the permission check below on your own servers too.
+:::note[How these steps are tested]
+
+CI runs the commands in this section as written on Windows Server 2025
+([`test_windows_event_folder.ps1`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/aws/test_windows_event_folder.ps1)).
+It signs in as a second standard user, who is refused both reading the file and creating
+one in the folder, and it runs the rotation task as SYSTEM. It doesn't run the
+CloudWatch agent itself. Run the permission check below on your own servers too.
+
+:::
 
 The event file is `C:\ProgramData\BowerEvents\events.jsonl`. A folder made under
 `C:\ProgramData` inherits an ACL that lets every local user create files (the Bower installer

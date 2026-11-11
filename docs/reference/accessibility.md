@@ -1,17 +1,20 @@
 # Accessibility
 
 The documentation is designed for keyboard use, narrow screens and light or dark
-appearance. Text remains available without animation. The search and navigation
-come from Material for MkDocs. The default appearance is dark navy; use the header
-appearance control to select light mode. Your choice is remembered across pages.
+appearance. Text remains available without animation or JavaScript. The navigation and
+search come from Docusaurus. The site follows your system appearance, opening in dark
+navy when there is none; the header control cycles light, dark and system, and your
+choice is remembered across pages. Every console screenshot exists in both appearances.
 
 ## Motion and keyboard controls
 
-- The homepage flow is an illustration, not live telemetry. Use **Pause animation** to stop it.
-- If your device requests reduced motion, moving particles are hidden and the illustration stays static.
+- The homepage has no animation. If your device requests reduced motion, hover transitions are turned off too.
 - Use Tab to move through links and controls. Focus is visibly outlined.
-- The five event-stage buttons work with Enter or Space. The selected explanation is announced politely by assistive technology.
-- Use the skip link to move past repeated navigation.
+- The console gallery on the homepage is a set of tabs: use the arrow keys, Home and End to change view.
+- Links inside running text are underlined, so they do not rely on colour alone.
+- Use the skip link to move past repeated navigation. Search opens with Ctrl+K or Cmd+K.
+- Browser tests run axe's default rules on 17 pages in both appearances, and check that
+  the homepage and guides fit a 320 px screen.
 
 ## Management console
 

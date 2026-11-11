@@ -982,7 +982,7 @@ Bower collector built from the branch, a loopback fault proxy and the
 [validation scripts](../../deploy/sentinel/analytics/validation/drive.py). The rules ran
 every 5 minutes with `maxIngestionDelayMinutes=120`. Synthetic data only.
 
-| | [First run, 31 Oct](../evidence/ws2-20261031-075516/README.md) | [Second run, 2 Nov](../evidence/ws2b-20261102-003156/README.md) |
+| Item | [First run, 31 Oct](../evidence/ws2-20261031-075516/README.md) | [Second run, 2 Nov](../evidence/ws2b-20261102-003156/README.md) |
 | --- | --- | --- |
 | Content | before the even-slot fix | commit `4dabe15` (this guide) |
 | Destination outage | 4,241.7 s | 4,029.8 s |

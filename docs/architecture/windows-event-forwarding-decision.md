@@ -12,7 +12,7 @@ need an agent on every Windows machine.
 
 ## Options
 
-| | (a) Native WEF endpoint in Bower | (b) Windows Server WEC host plus Bower |
+| Aspect | (a) Native WEF endpoint in Bower | (b) Windows Server WEC host plus Bower |
 |---|---|---|
 | What runs where | Bower implements the WS-Management and WS-Eventing collector, so it can run on Linux | The built-in Windows Event Collector service receives into `ForwardedEvents`; the Bower collector on the same host reads that channel |
 | New protocol surface | SOAP over HTTPS, Kerberos and SPNEGO, client certificate mapping, the subscription manager protocol, per-client bookmarks | None: the reader uses the event log API Bower already ships |

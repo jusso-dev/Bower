@@ -16,8 +16,8 @@ class SelectionTests(unittest.TestCase):
 
     def test_editorial_changes_do_not_build_product(self):
         self.assertEqual(set(), self.enabled([
-            "docs/getting-started/index.md", "docs-site/stylesheets/extra.css",
-            "tools/docs/check_links.py", "README.md", "mkdocs.yml",
+            "docs/getting-started/index.md", "website/src/css/custom.css",
+            "tools/docs/check_links.py", "README.md", "website/docusaurus.config.ts",
         ]))
 
     def test_cloudwatch_agent_guide_runs_its_windows_steps(self):

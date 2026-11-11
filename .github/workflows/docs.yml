@@ -4,14 +4,13 @@ on:
   pull_request:
     paths:
       - 'docs/**'
-      - 'docs-site/**'
+      - 'website/**'
       - 'tools/docs/**'
       - 'deploy/azure-webapp/**'
       - 'deploy/bicep/ama-syslog-dcr.bicep'
       - 'deploy/bicep/main.bicep'
       - 'deploy/docker/hosted/**'
       - 'deploy/kubernetes/deployment.yaml'
-      - 'mkdocs.yml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
       - 'src/Bower.Cli/Commands/CliHelp.cs'
       - '.github/workflows/docs.yml'
@@ -19,14 +18,13 @@ on:
     branches: [main]
     paths:
       - 'docs/**'
-      - 'docs-site/**'
+      - 'website/**'
       - 'tools/docs/**'
       - 'deploy/azure-webapp/**'
       - 'deploy/bicep/ama-syslog-dcr.bicep'
       - 'deploy/bicep/main.bicep'
       - 'deploy/docker/hosted/**'
       - 'deploy/kubernetes/deployment.yaml'
-      - 'mkdocs.yml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
       - 'src/Bower.Cli/Commands/CliHelp.cs'
       - '.github/workflows/docs.yml'
@@ -47,23 +45,31 @@ jobs:
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: '3.12'
-      - name: Install documentation build tools
+      - name: Install documentation check tools
         run: |
           uv venv .venv-docs
           uv pip install --python .venv-docs/bin/python --require-hashes -r tools/docs/requirements.txt
-      - name: Validate and build
-        run: |
-          .venv-docs/bin/python tools/docs/generate_glossary.py --check
-          .venv-docs/bin/python tools/docs/generate_cli_reference.py --check
-          .venv-docs/bin/python -m unittest discover -s tools/docs/tests -p 'test_*.py'
-          .venv-docs/bin/mkdocs build --strict
-          .venv-docs/bin/python tools/docs/check_links.py site
-          .venv-docs/bin/python tools/docs/check_diagrams.py site docs
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
           cache: npm
-          cache-dependency-path: tools/docs/package-lock.json
+          cache-dependency-path: |
+            website/package-lock.json
+            tools/docs/package-lock.json
+      - name: Validate generated pages and tools
+        run: |
+          .venv-docs/bin/python tools/docs/generate_glossary.py --check
+          .venv-docs/bin/python tools/docs/generate_cli_reference.py --check
+          .venv-docs/bin/python -m unittest discover -s tools/docs/tests -p 'test_*.py'
+      - name: Build the site
+        working-directory: website
+        run: |
+          npm ci
+          npm run typecheck
+          # Fails on any broken link, anchor, Markdown link or image.
+          npm run build
+      - name: Check links in the built site
+        run: .venv-docs/bin/python tools/docs/check_links.py website/build
       - name: Browser and accessibility checks
         working-directory: tools/docs
         run: |
@@ -81,7 +87,7 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: site
+          path: website/build
 
   bicep:
     runs-on: ubuntu-latest
