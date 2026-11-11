@@ -1,0 +1,38 @@
+{
+ "runId": "bower-resoak-20261106-092539",
+ "plan": "registered",
+ "planSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "registeredPlanSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "collectorManifestSha256": "2e16803ac3c8a00a332952e7e7e25626e36875b860b6d6c04154b8904129ff04",
+ "senderManifestSha256": "1fa09b2c21061ceae746b1a8303b3939eee624c7e01c8668d9081e606704beb1",
+ "toolSha256": "85b078868263ed7e32fc68aefc1a916841371baa20afa66809e1524810758d6b",
+ "probeSha256": "2efefc10254d6967c4cedc333cce2771dae5e4098de9833874430eaf8d9617e7",
+ "generatorSha256": "65bdcf41f55edfa88c99e479ccef3047968b8baf97d5eaaff31daa322b588ddd",
+ "packPublicKeySha256": "637f1b0dd30468b901e0a30f76798eb48f1daf8d3dd94e41435104618cf25a41",
+ "packs": {
+  "syslog-reliability": {
+   "name": "syslog-reliability-1.0.0.bowerpack",
+   "sha256": "fd49c58b23afa56f497957d9bb370ff05d2af4bc401c6a8e6c24a17e376d1efb"
+  },
+  "windows-security-logon": {
+   "name": "windows-security-logon-1.0.2.bowerpack",
+   "sha256": "5b219a2d23601ebc6e6af4cfc17fe1667ccf7a1c475da63578c729c3ed703560"
+  }
+ },
+ "caSha256": "d3e2d67e735d9d49bfa887a915031bb621cbd901d7a5b2bed65421f3631dfc51",
+ "serverNextSha256": "efcaa8ff3738f27db5b2bdcd7eb256ec207e29de8cb9ab622a0c16904099acf4",
+ "serverNextKeySha256": "93581cbe4e93650b9df40350739f9a7a6a0e37afcf7533d01b6b3bf4c1a0e3c7",
+ "ingestNextSha256": "063bb138c6ac18b3ab4fcc89e6f8ebcdbf490fbb35416c638fcf9485cb0969ed",
+ "certificates": {
+  "ca": "notAfter=Dec  6 09:30:08 2026 GMT",
+  "server": "notAfter=Dec  6 09:30:08 2026 GMT",
+  "server-next": "notAfter=Dec  6 09:30:08 2026 GMT",
+  "sender-r": "notAfter=Dec  6 09:30:08 2026 GMT"
+ },
+ "candidate": {
+  "ciRun": 42130604210,
+  "commit": "8f615b8ed10d84d6a4b19ff42415b24d9a89b623",
+  "buildNumber": 416,
+  "version": "0.1.1-dev.416"
+ }
+}

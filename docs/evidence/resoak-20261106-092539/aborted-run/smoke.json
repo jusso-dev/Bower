@@ -1,0 +1,354 @@
+{
+ "runId": "bower-resoak-20261105-234529",
+ "scope": "smoke",
+ "generatedAt": "2026-11-06T01:02:18.684896Z",
+ "planSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "registeredPlanSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "dryRun": false,
+ "window": [
+  "2026-11-06T00:45:00.000000Z",
+  "2026-11-06T01:01:00.000000Z"
+ ],
+ "ingestionCutoff": "2026-11-06T01:02:14.774782Z",
+ "verifierAppId": "ff1306de-f5fe-4f57-8e20-fd47bbd9920f",
+ "faultWindows": [],
+ "collectors": {
+  "linux": {
+   "native": 9000,
+   "accepted": 9000,
+   "sentinelDistinct": 9000,
+   "sentinelRows": 9000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "nativeSha256": "bb7d1ac35c7b548259e864edad887a088c864b13cb008fae405e354def84f6a0",
+   "acceptedSha256": "bb7d1ac35c7b548259e864edad887a088c864b13cb008fae405e354def84f6a0",
+   "sentinelSha256": "bb7d1ac35c7b548259e864edad887a088c864b13cb008fae405e354def84f6a0",
+   "exact": true,
+   "nativeDetail": {
+    "segments": [
+     {
+      "segment": 1,
+      "first": 0,
+      "count": 9000,
+      "rate": 10,
+      "sent": 9000,
+      "nftCounterDelta": 9000,
+      "actualRate": 9.999956973040687,
+      "plannedStart": 1793925900,
+      "startedAt": "2026-11-06T00:45:00.099909+00:00",
+      "endedAt": "2026-11-06T01:00:00.103787+00:00",
+      "lateSeconds": 0,
+      "exact": true
+     }
+    ],
+    "finishedSegments": 1,
+    "plannedSegments": 1,
+    "plannedEvents": 9000,
+    "scheduledPrefixFromRunningSegment": 0,
+    "allFinishedSegmentsExact": true,
+    "expected": 9000,
+    "problems": [],
+    "complete": true
+   },
+   "canaries": {
+    "sent": 0,
+    "notCountedExactly": [],
+    "minutesWithoutCanary": 0,
+    "native": 0,
+    "atSentinel": 0,
+    "missing": 0,
+    "latencySeconds": {
+     "count": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "max": null
+    },
+    "latencyOutsideFaultWindows": {
+     "count": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "max": null
+    },
+    "outsideFaultWindowsOver120s": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-06T00:43:00.000000Z",
+     "to": "2026-11-06T01:01:00.000000Z",
+     "distinct": 9000,
+     "rows": 9000,
+     "latencySeconds": {
+      "count": 9000,
+      "p50": 3.939,
+      "p95": 7.619,
+      "p99": 13.414,
+      "max": 18.701
+     }
+    }
+   ],
+   "latency": {
+    "limitSeconds": 13.3,
+    "outsideFaultWindows": {
+     "count": 9000,
+     "p50": 3.939,
+     "p95": 7.619,
+     "p99": 13.414,
+     "max": 18.701
+    },
+    "includingFaultWindows": {
+     "count": 9000,
+     "p50": 3.939,
+     "p95": 7.619,
+     "p99": 13.414,
+     "max": 18.701
+    },
+    "pass": false,
+    "hoursAboveLimit": [
+     -2
+    ],
+    "hourly": {
+     "-2": {
+      "count": 9000,
+      "p50": 3.939,
+      "p95": 7.619,
+      "p99": 13.414,
+      "max": 18.701
+     }
+    },
+    "perFault": {}
+   },
+   "queryHashes": [
+    "494314a154fbc863a758ad03a8d644bd8fae4a290ac55a8f5792859eae9a851e"
+   ]
+  },
+  "windows": {
+   "native": 9000,
+   "accepted": 9000,
+   "sentinelDistinct": 9000,
+   "sentinelRows": 9000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "nativeSha256": "033c3e2a409b779e38e9d434b20e231d56fd3948f2ffc7ef2cc40b908589908f",
+   "acceptedSha256": "033c3e2a409b779e38e9d434b20e231d56fd3948f2ffc7ef2cc40b908589908f",
+   "sentinelSha256": "033c3e2a409b779e38e9d434b20e231d56fd3948f2ffc7ef2cc40b908589908f",
+   "exact": true,
+   "nativeDetail": {
+    "windows": [
+     {
+      "window": "smoke",
+      "since": "2026-11-06T00:45:00+00:00",
+      "until": "2026-11-06T01:01:00+00:00",
+      "records": 9000,
+      "distinctOriginalIds": 9000,
+      "originalIdSetSha256": "033c3e2a409b779e38e9d434b20e231d56fd3948f2ffc7ef2cc40b908589908f",
+      "probeRedactedDistinct": 9000,
+      "probeRedactedDuplicates": 0,
+      "probeRedactionChangedIds": 3,
+      "probeRedactedSetSha256": "c658a774a5669fd1d45b497a6ce5dca1a676858d01d40b5570dbe0d57b3350db"
+     }
+    ],
+    "expected": 9000,
+    "originalIdDuplicates": 0,
+    "problems": [],
+    "complete": true,
+    "generator": {
+     "segments": 1,
+     "attempted": 9000,
+     "ldapResultCodes": {
+      "49": 9000
+     },
+     "allSegmentsClean": true
+    }
+   },
+   "canaries": {
+    "attempts": 0,
+    "ldap49": 0,
+    "otherResults": [],
+    "minutesWithoutCanary": 0,
+    "native": 0,
+    "atSentinel": 0,
+    "missing": 0,
+    "latencySeconds": {
+     "count": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "max": null
+    },
+    "latencyOutsideFaultWindows": {
+     "count": 0,
+     "p50": null,
+     "p95": null,
+     "p99": null,
+     "max": null
+    },
+    "outsideFaultWindowsOver120s": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-06T00:43:00.000000Z",
+     "to": "2026-11-06T01:01:00.000000Z",
+     "distinct": 9000,
+     "rows": 9000,
+     "latencySeconds": {
+      "count": 9000,
+      "p50": 6.812,
+      "p95": 10.959,
+      "p99": 16.305,
+      "max": 20.698
+     }
+    }
+   ],
+   "latency": {
+    "limitSeconds": 18.16,
+    "outsideFaultWindows": {
+     "count": 9000,
+     "p50": 6.812,
+     "p95": 10.959,
+     "p99": 16.305,
+     "max": 20.698
+    },
+    "includingFaultWindows": {
+     "count": 9000,
+     "p50": 6.812,
+     "p95": 10.959,
+     "p99": 16.305,
+     "max": 20.698
+    },
+    "pass": true,
+    "hoursAboveLimit": [],
+    "hourly": {
+     "-2": {
+      "count": 9000,
+      "p50": 6.812,
+      "p95": 10.959,
+      "p99": 16.305,
+      "max": 20.698
+     }
+    },
+    "perFault": {}
+   },
+   "queryHashes": [
+    "974288be587c5a140031243f1fea8c9dcfc64b5fd2b63a647b64f523897c6e16"
+   ]
+  }
+ },
+ "health": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Outcome": "Collector health: healthy",
+   "Records": 16,
+   "Earliest": "2026-11-06T00:45:55.1183192Z",
+   "Latest": "2026-11-06T01:00:55.3097354Z",
+   "MaxGapSeconds": 60
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Outcome": "Collector health: healthy",
+   "Records": 16,
+   "Earliest": "2026-11-06T00:45:02.608634Z",
+   "Latest": "2026-11-06T01:00:03.0537391Z",
+   "MaxGapSeconds": 61
+  }
+ ],
+ "healthGaps": {},
+ "privacy": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Rows": 9018,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Rows": 9018,
+   "Matches": 0
+  }
+ ],
+ "privacyQueryHash": "45a541bce6ea335c1c56bb27549baff27fffd1610c5fee762865535e8a069048",
+ "alerts": {
+  "alerts": [
+   {
+    "name": "bower-resoak-20261105-234529-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T00:20:00.424339Z",
+    "resolvedAt": "2026-11-06T00:50:57.9763443Z",
+    "activeDuringRun": true
+   },
+   {
+    "name": "bower-resoak-20261105-234529-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T00:20:00.4710983Z",
+    "resolvedAt": "2026-11-06T00:46:01.6699214Z",
+    "activeDuringRun": true
+   }
+  ],
+  "incidents": [],
+  "activeDuringRun": 2
+ },
+ "alertAccounting": {
+  "pass": false,
+  "violations": [
+   {
+    "kind": "alerts",
+    "rule": "collector-health-missing",
+    "startedAt": "2026-11-06T00:20:00.424339Z",
+    "state": "Resolved"
+   },
+   {
+    "kind": "alerts",
+    "rule": "collector-health-missing",
+    "startedAt": "2026-11-06T00:20:00.4710983Z",
+    "state": "Resolved"
+   }
+  ],
+  "excusedByFault": []
+ },
+ "versions": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Version": "0.1.1-dev.416",
+   "Rows": 9016
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Version": "0.1.1-dev.416",
+   "Rows": 9016
+  }
+ ],
+ "candidate": {
+  "ciRun": 42130604210,
+  "buildNumber": 416,
+  "commit": "8f615b8ed10d84d6a4b19ff42415b24d9a89b623",
+  "version": "0.1.1-dev.416",
+  "conclusion": "failure",
+  "jobsNotSucceeded": [
+   "ci-success",
+   "windows-event-log"
+  ],
+  "rpm": {
+   "name": "bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+   "path": "bower-packages-linux/bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+   "version": "0.1.1~dev.416-1",
+   "sha256": "7b02d15d9596d888ce5b7b0e9e794ec87fda4423c56c6c066d58aab04985f59e",
+   "bytes": 24885342
+  },
+  "msi": {
+   "name": "bower-collector-0.1.1-dev.416-x64.msi",
+   "path": "bower-packages-windows/bower-collector-0.1.1-dev.416-x64.msi",
+   "sha256": "f26c00ea2090c73bb5a80a9fc0f3f6de068953c98e8a31003159b526f73093b6",
+   "bytes": 18935808
+  },
+  "signature": "unsigned (release signing is deferred)"
+ },
+ "versionMatches": true
+}

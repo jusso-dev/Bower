@@ -1,0 +1,16 @@
+{
+ "smokeStart": 1793961000,
+ "smokeSeconds": 900,
+ "soakStart": 1793963100,
+ "soakSeconds": 259200,
+ "runId": "bower-resoak-20261106-092539",
+ "plan": "registered",
+ "planSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "startedAt": "2026-11-06T10:48:10.692446+00:00",
+ "soakEnd": 1794222300,
+ "guards": {
+  "hostsPowerOffAt": "2026-11-09T15:05:00Z",
+  "stackSchedulerAt": "2026-11-09T17:25:39Z",
+  "azureGroupDeleteAt": "2026-11-10T17:25:39Z"
+ }
+}

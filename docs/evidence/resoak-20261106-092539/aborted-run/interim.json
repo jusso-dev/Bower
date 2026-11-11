@@ -1,0 +1,735 @@
+{
+ "runId": "bower-resoak-20261105-234529",
+ "scope": "interim",
+ "generatedAt": "2026-11-06T03:36:24.378602Z",
+ "planSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "registeredPlanSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "dryRun": false,
+ "window": [
+  "2026-11-06T02:05:00.000000Z",
+  "2026-11-06T03:05:00.000000Z"
+ ],
+ "ingestionCutoff": "2026-11-06T03:36:23.261406Z",
+ "verifierAppId": "ff1306de-f5fe-4f57-8e20-fd47bbd9920f",
+ "faultWindows": [
+  {
+   "id": "F01",
+   "kind": "destination-outage",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1793935500,
+   "durationSeconds": 1800,
+   "start": 1793935500.955345,
+   "end": 1793937300.955345,
+   "impactEnd": 1793939100.955345,
+   "alertEnd": 1793942700.955345,
+   "executedOn": [
+    "Linux",
+    "Wec"
+   ],
+   "expectedHosts": [
+    "Linux",
+    "Wec"
+   ],
+   "steps": [
+    "done"
+   ],
+   "lateSeconds": 1.0,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "collector-health-missing",
+    "queue-backlog",
+    "destination-freshness",
+    "table-no-ingestion"
+   ],
+   "alertsRequiredAnyOf": [
+    "collector-health-missing",
+    "queue-backlog"
+   ]
+  },
+  {
+   "id": "F02",
+   "kind": "sender-restart",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1793946300,
+   "durationSeconds": 0,
+   "start": 1793946300,
+   "end": 1793946300,
+   "impactEnd": 1793947200,
+   "alertEnd": 1793950800,
+   "executedOn": [],
+   "expectedHosts": [
+    "Sender",
+    "Dc"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F03",
+   "kind": "log-rollover",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1793960700,
+   "durationSeconds": 0,
+   "start": 1793960700,
+   "end": 1793960700,
+   "impactEnd": 1793961600,
+   "alertEnd": 1793965200,
+   "executedOn": [],
+   "expectedHosts": [
+    "Sender",
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F04",
+   "kind": "credential-rotation-syslog-tls",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1793975100,
+   "durationSeconds": 0,
+   "start": 1793975100,
+   "end": 1793975100,
+   "impactEnd": 1793976000,
+   "alertEnd": 1793979600,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F05",
+   "kind": "collector-kill",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794025500,
+   "durationSeconds": 0,
+   "start": 1794025500,
+   "end": 1794025500,
+   "impactEnd": 1794026400,
+   "alertEnd": 1794030000,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "linux"
+   ],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F06",
+   "kind": "collector-kill",
+   "collectors": [
+    "windows"
+   ],
+   "plannedAt": 1794032700,
+   "durationSeconds": 0,
+   "start": 1794032700,
+   "end": 1794032700,
+   "impactEnd": 1794033600,
+   "alertEnd": 1794037200,
+   "executedOn": [],
+   "expectedHosts": [
+    "Wec"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "windows"
+   ],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F07",
+   "kind": "host-reboot",
+   "collectors": [
+    "windows"
+   ],
+   "plannedAt": 1794043500,
+   "durationSeconds": 0,
+   "start": 1794043500,
+   "end": 1794043500,
+   "impactEnd": 1794045300,
+   "alertEnd": 1794048900,
+   "executedOn": [],
+   "expectedHosts": [
+    "Wec"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "windows"
+   ],
+   "reboots": [
+    "windows"
+   ],
+   "alertsPermitted": [
+    "collector-health-missing",
+    "source-transport-errors",
+    "queue-backlog",
+    "source-overdue"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F08",
+   "kind": "host-reboot",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794050700,
+   "durationSeconds": 0,
+   "start": 1794050700,
+   "end": 1794050700,
+   "impactEnd": 1794052500,
+   "alertEnd": 1794056100,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "linux"
+   ],
+   "reboots": [
+    "linux"
+   ],
+   "alertsPermitted": [
+    "collector-health-missing",
+    "source-transport-errors",
+    "queue-backlog",
+    "source-overdue"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F09",
+   "kind": "credential-rotation-ingestion",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1794057900,
+   "durationSeconds": 0,
+   "start": 1794057900,
+   "end": 1794057900,
+   "impactEnd": 1794058800,
+   "alertEnd": 1794062400,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux",
+    "Wec"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "linux",
+    "windows"
+   ],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F10",
+   "kind": "sender-restart",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1794093900,
+   "durationSeconds": 0,
+   "start": 1794093900,
+   "end": 1794093900,
+   "impactEnd": 1794094800,
+   "alertEnd": 1794098400,
+   "executedOn": [],
+   "expectedHosts": [
+    "Sender",
+    "Dc"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F11",
+   "kind": "log-rollover",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794137100,
+   "durationSeconds": 0,
+   "start": 1794137100,
+   "end": 1794137100,
+   "impactEnd": 1794138000,
+   "alertEnd": 1794141600,
+   "executedOn": [],
+   "expectedHosts": [
+    "Sender",
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [],
+   "alertsRequiredAnyOf": []
+  }
+ ],
+ "collectors": {
+  "linux": {
+   "native": 36056,
+   "accepted": 33066,
+   "sentinelDistinct": 36060,
+   "sentinelRows": 36060,
+   "duplicateRows": 0,
+   "missingAtAccepted": 2990,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 4,
+   "nativeComplete": true,
+   "nativeSha256": "e4594acd393d50217b46e23073b439115aa2a1c26a091d693eb40bb5d34b28aa",
+   "acceptedSha256": "0801e28a6db59113d84af1c3117285bb8b3f9ba0b4c6c95b648eb90fbd4ca6ed",
+   "sentinelSha256": "6fe1588f1bed45eec0e19b20c9b91cedaa002e2337875a425a468ae3a4bad11d",
+   "exact": false,
+   "nativeDetail": {
+    "segments": [],
+    "finishedSegments": 0,
+    "plannedSegments": 54,
+    "plannedEvents": 2689200,
+    "scheduledPrefixFromRunningSegment": 36000,
+    "allFinishedSegmentsExact": true,
+    "expected": 36000,
+    "problems": [],
+    "complete": true
+   },
+   "canaries": {
+    "sent": 56,
+    "notCountedExactly": [],
+    "minutesWithoutCanary": 4,
+    "native": 56,
+    "atSentinel": 56,
+    "missing": 0,
+    "latencySeconds": {
+     "count": 56,
+     "p50": 4.085,
+     "p95": 9.599,
+     "p99": 21.927,
+     "max": 21.927
+    },
+    "latencyOutsideFaultWindows": {
+     "count": 56,
+     "p50": 4.085,
+     "p95": 9.599,
+     "p99": 21.927,
+     "max": 21.927
+    },
+    "outsideFaultWindowsOver120s": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-06T02:03:00.000000Z",
+     "to": "2026-11-06T03:03:00.000000Z",
+     "distinct": 34857,
+     "rows": 34857,
+     "latencySeconds": {
+      "count": 34857,
+      "p50": 4.122,
+      "p95": 10.161,
+      "p99": 25.434,
+      "max": 48.063
+     }
+    },
+    {
+     "from": "2026-11-06T03:03:00.000000Z",
+     "to": "2026-11-06T03:10:00.000000Z",
+     "distinct": 1203,
+     "rows": 1203,
+     "latencySeconds": {
+      "count": 1203,
+      "p50": 4.056,
+      "p95": 7.229,
+      "p99": 15.433,
+      "max": 18.733
+     }
+    }
+   ],
+   "latency": {
+    "limitSeconds": 13.3,
+    "outsideFaultWindows": {
+     "count": 36060,
+     "p50": 4.12,
+     "p95": 9.966,
+     "p99": 25.101,
+     "max": 48.063
+    },
+    "includingFaultWindows": {
+     "count": 36060,
+     "p50": 4.12,
+     "p95": 9.966,
+     "p99": 25.101,
+     "max": 48.063
+    },
+    "pass": false,
+    "hoursAboveLimit": [
+     0
+    ],
+    "hourly": {
+     "0": {
+      "count": 36059,
+      "p50": 4.12,
+      "p95": 9.967,
+      "p99": 25.101,
+      "max": 48.063
+     },
+     "1": {
+      "count": 1,
+      "p50": 6.015,
+      "p95": 6.015,
+      "p99": 6.015,
+      "max": 6.015
+     }
+    },
+    "perFault": {}
+   },
+   "queryHashes": [
+    "078ca659285280ae2fbcba40768e2ce227d4984c4341cf9596fe632df9ad7f78",
+    "0ddfa60c7bcec1746de837fdabc80a490f541243e74d7f05c5f51dcb0b28aa92"
+   ]
+  },
+  "windows": {
+   "native": 36059,
+   "accepted": 19225,
+   "sentinelDistinct": 36059,
+   "sentinelRows": 36059,
+   "duplicateRows": 0,
+   "missingAtAccepted": 16834,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "nativeSha256": "6900085251640bbaf43ede0e7e0bafb2c89fd5955daf66700368494a7d28da89",
+   "acceptedSha256": "ce440d938b653f529438068be7e988b068961d0e811ed5147c454978702e8fb9",
+   "sentinelSha256": "6900085251640bbaf43ede0e7e0bafb2c89fd5955daf66700368494a7d28da89",
+   "exact": false,
+   "nativeDetail": {
+    "windows": [
+     {
+      "window": "h00",
+      "since": "2026-11-06T02:05:00+00:00",
+      "until": "2026-11-06T03:05:00+00:00",
+      "records": 36059,
+      "distinctOriginalIds": 36059,
+      "originalIdSetSha256": "6900085251640bbaf43ede0e7e0bafb2c89fd5955daf66700368494a7d28da89",
+      "probeRedactedDistinct": 36059,
+      "probeRedactedDuplicates": 0,
+      "probeRedactionChangedIds": 19,
+      "probeRedactedSetSha256": "b388e8f8247d6018e1b65bb50fe5e1d7bac5962968ea6f0c9fdbaf5d1ade5328"
+     }
+    ],
+    "expected": 36059,
+    "originalIdDuplicates": 0,
+    "problems": [],
+    "complete": true,
+    "generator": {
+     "segments": 0,
+     "attempted": 0,
+     "ldapResultCodes": {},
+     "allSegmentsClean": true
+    }
+   },
+   "canaries": {
+    "attempts": 56,
+    "ldap49": 56,
+    "otherResults": [],
+    "minutesWithoutCanary": 4,
+    "native": 60,
+    "atSentinel": 60,
+    "missing": 0,
+    "latencySeconds": {
+     "count": 60,
+     "p50": 7.315,
+     "p95": 10.321,
+     "p99": 12.609,
+     "max": 12.609
+    },
+    "latencyOutsideFaultWindows": {
+     "count": 60,
+     "p50": 7.315,
+     "p95": 10.321,
+     "p99": 12.609,
+     "max": 12.609
+    },
+    "outsideFaultWindowsOver120s": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-06T02:03:00.000000Z",
+     "to": "2026-11-06T03:03:00.000000Z",
+     "distinct": 34857,
+     "rows": 34857,
+     "latencySeconds": {
+      "count": 34857,
+      "p50": 6.908,
+      "p95": 14.128,
+      "p99": 33.093,
+      "max": 49.333
+     }
+    },
+    {
+     "from": "2026-11-06T03:03:00.000000Z",
+     "to": "2026-11-06T03:05:00.000000Z",
+     "distinct": 1202,
+     "rows": 1202,
+     "latencySeconds": {
+      "count": 1202,
+      "p50": 6.822,
+      "p95": 9.29,
+      "p99": 11.345,
+      "max": 19.93
+     }
+    }
+   ],
+   "latency": {
+    "limitSeconds": 18.16,
+    "outsideFaultWindows": {
+     "count": 36059,
+     "p50": 6.905,
+     "p95": 13.861,
+     "p99": 32.841,
+     "max": 49.333
+    },
+    "includingFaultWindows": {
+     "count": 36059,
+     "p50": 6.905,
+     "p95": 13.861,
+     "p99": 32.841,
+     "max": 49.333
+    },
+    "pass": false,
+    "hoursAboveLimit": [
+     0
+    ],
+    "hourly": {
+     "0": {
+      "count": 36059,
+      "p50": 6.905,
+      "p95": 13.861,
+      "p99": 32.841,
+      "max": 49.333
+     }
+    },
+    "perFault": {}
+   },
+   "queryHashes": [
+    "f1b287c8b3e507fceb217a5cdbb9645caaaf31b289fa3ae2399d941adfc12463",
+    "3988cfa00104f80fde419b919207dcbdf0e718e58f0a37ccb291460842b5f05b"
+   ]
+  }
+ },
+ "health": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Outcome": "Collector health: healthy",
+   "Records": 60,
+   "Earliest": "2026-11-06T02:05:56.1964696Z",
+   "Latest": "2026-11-06T03:04:57.0926731Z",
+   "MaxGapSeconds": 61
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Outcome": "Collector health: healthy",
+   "Records": 60,
+   "Earliest": "2026-11-06T02:05:04.594859Z",
+   "Latest": "2026-11-06T03:04:09.0518337Z",
+   "MaxGapSeconds": 61
+  }
+ ],
+ "healthGaps": {},
+ "privacy": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Rows": 36121,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Rows": 36121,
+   "Matches": 0
+  }
+ ],
+ "privacyQueryHash": "2acaee23e32e6a4d9c5a873cc6041b1a06cbfe08f81e4f5237a5facfd07c51d6",
+ "alerts": {
+  "alerts": [
+   {
+    "name": "bower-resoak-20261105-234529-destination-freshness",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T02:04:36.11534Z",
+    "resolvedAt": "2026-11-06T02:20:36.1048163Z",
+    "activeDuringRun": true
+   },
+   {
+    "name": "bower-resoak-20261105-234529-destination-freshness",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T02:04:36.0374346Z",
+    "resolvedAt": "2026-11-06T02:20:36.060569Z",
+    "activeDuringRun": true
+   },
+   {
+    "name": "bower-resoak-20261105-234529-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T00:20:00.424339Z",
+    "resolvedAt": "2026-11-06T00:50:57.9763443Z",
+    "activeDuringRun": false
+   },
+   {
+    "name": "bower-resoak-20261105-234529-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T00:20:00.4710983Z",
+    "resolvedAt": "2026-11-06T00:46:01.6699214Z",
+    "activeDuringRun": false
+   }
+  ],
+  "incidents": [],
+  "activeDuringRun": 2
+ },
+ "alertAccounting": {
+  "pass": false,
+  "violations": [
+   {
+    "kind": "alerts",
+    "rule": "destination-freshness",
+    "startedAt": "2026-11-06T02:04:36.11534Z",
+    "state": "Resolved"
+   },
+   {
+    "kind": "alerts",
+    "rule": "destination-freshness",
+    "startedAt": "2026-11-06T02:04:36.0374346Z",
+    "state": "Resolved"
+   }
+  ],
+  "excusedByFault": []
+ },
+ "versions": [
+  {
+   "CollectorId": "bower-resoak-20261105-234529-linux",
+   "Version": "0.1.1-dev.416",
+   "Rows": 36119
+  },
+  {
+   "CollectorId": "bower-resoak-20261105-234529-windows",
+   "Version": "0.1.1-dev.416",
+   "Rows": 36119
+  }
+ ],
+ "candidate": {
+  "ciRun": 42130604210,
+  "buildNumber": 416,
+  "commit": "8f615b8ed10d84d6a4b19ff42415b24d9a89b623",
+  "version": "0.1.1-dev.416",
+  "conclusion": "failure",
+  "jobsNotSucceeded": [
+   "ci-success",
+   "windows-event-log"
+  ],
+  "rpm": {
+   "name": "bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+   "path": "bower-packages-linux/bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+   "version": "0.1.1~dev.416-1",
+   "sha256": "7b02d15d9596d888ce5b7b0e9e794ec87fda4423c56c6c066d58aab04985f59e",
+   "bytes": 24885342
+  },
+  "msi": {
+   "name": "bower-collector-0.1.1-dev.416-x64.msi",
+   "path": "bower-packages-windows/bower-collector-0.1.1-dev.416-x64.msi",
+   "sha256": "f26c00ea2090c73bb5a80a9fc0f3f6de068953c98e8a31003159b526f73093b6",
+   "bytes": 18935808
+  },
+  "signature": "unsigned (release signing is deferred)"
+ },
+ "versionMatches": true
+}
