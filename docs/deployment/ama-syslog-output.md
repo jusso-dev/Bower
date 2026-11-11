@@ -241,13 +241,44 @@ Tested on both: 50 messages from `bower.service` forwarded, 50 forged by another
 `CollectorId` it chose. Root can still forge, and anything running as `bower` can. A forged
 message stays in the journal.
 
+## A dedicated socket instead of /dev/log
+
+Bower can write to an rsyslog input of its own instead of `/dev/log`, so its events never pass
+through journald. That removes the journal copy, journald's rate limit (and the per-unit
+drop-in) and, on Debian and Ubuntu, journald's forward to rsyslog, which drops messages in a
+burst. It also limits who can send on this input to root and the `bower` account, the same
+boundary as the origin filter.
+
+1. Install
+   [`rsyslog-bower-socket.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/rsyslog-bower-socket.conf)
+   as `/etc/rsyslog.d/05-bower-socket.conf`, and
+   [`rsyslog-bower-socket-permissions.conf`](https://github.com/jusso-dev/Bower/blob/main/examples/cloud-agents/azure/rsyslog-bower-socket-permissions.conf)
+   as `/etc/systemd/system/rsyslog.service.d/bower-socket.conf`. rsyslog has no option for a
+   socket's owner, so the drop-in sets `root:bower 0660` after rsyslog creates it.
+2. `sudo systemctl daemon-reload && sudo systemctl restart rsyslog`
+3. Set `BOWER_AMA_SYSLOG_SOCKET=/run/bower/syslog.sock` in `/etc/bower/bower.env` and restart
+   Bower. Check with `bower doctor --syslog-socket /run/bower/syslog.sock`.
+
+Keep `11-bower-local-copies.conf`. rsyslog's own limits still apply: the input's rate limit
+is off, and `MaxMessageSize` still caps forwarded lines.
+
+Tested in Rocky Linux 9 and Debian 12 systemd containers with the CI-built package, using a
+stand-in for the agent's forward:
+- the socket was `root:bower 0660`; `bower` could send and `nobody` was refused;
+- 20,000 of 20,000 events posted to Bower were forwarded;
+- 0 Bower lines were in the journal or the local log file;
+- rsyslog logged nothing about drops or rate limits.
+
+Compared with `/dev/log`: no per-unit journald drop-in, no Debian `sysctl` change and no
+origin filter are needed. In exchange there are two more files to install.
+
 ## What stays on the server
 
 Besides the forward to the agent, the host keeps its own copies:
 
 | Copy | Where | Kept for | Readable by (tested defaults) |
 |---|---|---|---|
-| Journal | `/var/log/journal` (or `/run/log/journal` when volatile) | Until journald's size limits (`SystemMaxUse=`, `MaxRetentionSec=`) rotate it out | root, `systemd-journal` group (and often `adm`, `wheel`) |
+| Journal (not with [a dedicated socket](#a-dedicated-socket-instead-of-devlog)) | `/var/log/journal` (or `/run/log/journal` when volatile) | Until journald's size limits (`SystemMaxUse=`, `MaxRetentionSec=`) rotate it out | root, `systemd-journal` group (and often `adm`, `wheel`) |
 | Local file | `/var/log/messages` (RHEL family), `/var/log/syslog` (Debian, Ubuntu) | Four weekly rotations by default | root only (Rocky); `adm` group (Debian) |
 | Agent queue | rsyslog work directory | Until the agent is reachable | root |
 
