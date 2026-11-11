@@ -160,6 +160,32 @@ public sealed record CollectorContext
     public string? BatchId { get; init; }
 
     public required DateTimeOffset ReceivedAt { get; init; }
+
+    /// <summary>
+    /// Where the event entered Bower, recorded by Bower, never by the producer: the processor
+    /// rebuilds <see cref="CollectorContext"/> on every event, so a producer cannot set it.
+    /// Stored in the table's <c>Origin</c> column.
+    /// </summary>
+    public EventOrigin? Origin { get; init; }
+}
+
+/// <summary>
+/// The path an event took into Bower, for tracing a row to the system that wrote it (#228, #253).
+/// <see cref="Kind"/> is <c>cloudwatch-logs</c> (set by the collector from the trusted cloud
+/// forwarder) or <c>ama-syslog</c> (set by the collection rule from the agent's host).
+/// </summary>
+public sealed record EventOrigin
+{
+    public required string Kind { get; init; }
+
+    /// <summary>The machine Azure Monitor Agent recorded (ama-syslog).</summary>
+    public string? Host { get; init; }
+
+    /// <summary>The CloudWatch Logs log group (cloudwatch-logs).</summary>
+    public string? LogGroup { get; init; }
+
+    /// <summary>The CloudWatch Logs log stream, for example the instance ID (cloudwatch-logs).</summary>
+    public string? LogStream { get; init; }
 }
 
 [JsonConverter(typeof(DefinedEnumConverter<EventResult>))]

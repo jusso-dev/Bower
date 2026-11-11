@@ -141,6 +141,41 @@ public sealed class CliCommandTests
     }
 
     [Fact]
+    public void DoctorSyslogSocket_FailsForAMissingPathOrAFileAndPassesForAListeningSocket()
+    {
+        Assert.SkipUnless(OperatingSystem.IsLinux() || OperatingSystem.IsMacOS(), "Datagram Unix sockets exist only on Linux and macOS.");
+        string directory = Path.Combine("/tmp", $"bwd-{Guid.NewGuid():N}"[..12]);
+        Directory.CreateDirectory(directory);
+        try
+        {
+            List<(string Status, string Detail)> checks = [];
+            void Check(string path) => DoctorCommand.CheckSyslogSocket(
+                path, (_, detail) => checks.Add(("PASS", detail)), (_, detail) => checks.Add(("FAIL", detail)));
+            string socketPath = Path.Combine(directory, "log.sock");
+            string filePath = Path.Combine(directory, "plain");
+            File.WriteAllText(filePath, "");
+            using System.Net.Sockets.Socket daemon = new(
+                System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Unspecified);
+            daemon.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(socketPath));
+
+            Check(Path.Combine(directory, "missing.sock"));
+            Check(filePath);
+            Check(socketPath);
+            Check("relative/log");
+
+            Assert.Equal(["FAIL", "FAIL", "PASS", "FAIL"], checks.Select(check => check.Status));
+            Assert.Contains("does not exist", checks[0].Detail, StringComparison.Ordinal);
+            Assert.Contains("is not a listening syslog socket", checks[1].Detail, StringComparison.Ordinal);
+            Assert.Contains("accepts connections", checks[2].Detail, StringComparison.Ordinal);
+            Assert.Contains("absolute path", checks[3].Detail, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task AzureResources_ReadEachResourceTypeWithItsProvidersApiVersion()
     {
         const string rule = "/subscriptions/s/resourceGroups/g/providers/Microsoft.Insights/dataCollectionRules/r";

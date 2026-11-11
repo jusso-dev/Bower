@@ -263,7 +263,7 @@ it starts answering 503 (code 9) or 429 (codes 26 and 27).
 - `/v1/status` reports `"output":"http"` and the last failure code under
   `deliveryActivity.lastFailureCode`.
 - `bower evidence run` reads `/v1/status` **before** sending anything. Only
-  `azure-logs-ingestion`, `ama-spool` and `syslog` (both through Azure Monitor Agent) are
+  `azure-logs-ingestion`, `ama-spool` and `ama-syslog` (both through Azure Monitor Agent) are
   known to deliver to Sentinel; `relay`, a
   missing `output` or an unreadable status proceed, with the Sentinel query still the
   only proof. For an `http` output no canary or probe is sent and Sentinel is not

@@ -86,7 +86,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.File", "src\Bo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Output.Http", "src\Bower.Output.Http\Bower.Output.Http.csproj", "{2482B137-1B29-4735-A2C4-0192E3DC9640}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Output.Syslog", "src\Bower.Output.Syslog\Bower.Output.Syslog.csproj", "{1E3E68D8-CEAB-4FDC-B4A1-2D9295940122}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Output.AmaSyslog", "src\Bower.Output.AmaSyslog\Bower.Output.AmaSyslog.csproj", "{1E3E68D8-CEAB-4FDC-B4A1-2D9295940122}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

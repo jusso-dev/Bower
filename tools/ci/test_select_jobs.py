@@ -20,6 +20,9 @@ class SelectionTests(unittest.TestCase):
             "tools/docs/check_links.py", "README.md", "mkdocs.yml",
         ]))
 
+    def test_cloudwatch_agent_guide_runs_its_windows_steps(self):
+        self.assertEqual({"infrastructure"}, self.enabled(["docs/getting-started/aws-cloudwatch-agent.md"]))
+
     def test_ui_runs_browser_tests_without_platform_matrix(self):
         self.assertEqual({"ui", "e2e"}, self.enabled(["ui/Bower.Management.Web/src/App.tsx"]))
 
@@ -68,6 +71,10 @@ class SelectionTests(unittest.TestCase):
                      "tests/installers/linux.sh", "deploy/ansible/roles/bower/tasks/main.yml"):
             with self.subTest(path=path):
                 self.assertTrue({"dotnet", "platforms", "packaging", "powershell"} <= self.enabled([path]))
+
+    def test_syslog_output_changes_run_the_installer_syslog_test(self):
+        # tests/installers/ama-syslog-output-linux.sh runs it under the packaged unit (#245).
+        self.assertTrue({"dotnet", "platforms", "packaging"} <= self.enabled(["src/Bower.Output.AmaSyslog/AmaSyslogOutput.cs"]))
 
     def test_relay_and_enrolment_keep_container_integration(self):
         for path in ("src/Bower.Collector/Relay/Listener.cs", "src/Bower.Forwarding/Client.cs",

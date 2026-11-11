@@ -122,7 +122,7 @@ public static class ProbeOutcomes
     /// spool and local syslog (both collected by Azure Monitor Agent), plus <c>relay</c> (the relay's own output is unknown here, so the query stays
     /// the only proof). An allowlist: any other value, including future outputs, refuses.
     /// </summary>
-    public static IReadOnlyList<string> SentinelOutputs { get; } = ["azure-logs-ingestion", "ama-spool", "syslog", "relay"];
+    public static IReadOnlyList<string> SentinelOutputs { get; } = ["azure-logs-ingestion", "ama-spool", "ama-syslog", "relay"];
 
     /// <summary>
     /// The output a collector status body reports when it is not on the Sentinel allowlist,

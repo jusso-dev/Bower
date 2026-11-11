@@ -33,7 +33,9 @@ candidate events to a Bower collector. Event selection stays in collector policy
 - S3 reads only from buckets in `BOWER_AWS_S3_BUCKETS`, with `ExpectedBucketOwner`,
   bounded compressed and decompressed size.
 - Never log message bodies, attributes, tokens or object contents; ids, counts and
-  failure types only.
+  failure types only. Log lines in an S3 object that are not usable envelopes are
+  counted (`CloudPassResult.Skipped`, the pass summary) and warned per object by
+  bucket, key and count, never content.
 - Unit tests use fakes for queues, S3 and credential HTTP (`HttpMessageHandler`); no
   live cloud calls.
 - Exit with a status code on fatal errors (PID 1 aborts can hang).

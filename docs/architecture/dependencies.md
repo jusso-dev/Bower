@@ -114,10 +114,14 @@ references only `Bower.Abstractions`. Alternatives considered: a Splunk SDK (add
 dependency for a single documented POST) and a generic log shipper (out of scope: Bower
 is not a log forwarder).
 
-### Local syslog output (`BOWER_OUTPUT=syslog`)
+### Local syslog output (`BOWER_OUTPUT=ama-syslog`)
 
-`src/Bower.Output.Syslog` adds no NuGet packages: it sends datagrams on a Unix socket with
-`System.Net.Sockets` and references only `Bower.Abstractions`. Alternatives considered: a
+`src/Bower.Output.AmaSyslog` adds no NuGet packages: it sends datagrams on a Unix socket with
+`System.Net.Sockets`. It references `Bower.Abstractions` and `Bower.Dcr`, the second for the
+same record checks the Logs Ingestion output runs (`IngestionPreflight`, `SentinelSchema`)
+before a record reaches `BowerSecurity_CL`, and `Bower.Dcr` has no package references of its
+own. `Bower.Cli` references this project for the `bower doctor --syslog-socket` check.
+Alternatives considered: a
 syslog client library (a dependency for one message format on one local socket) and calling
 `syslog(3)` through P/Invoke (process-wide state, no error per message, so a full socket would
 be silent).

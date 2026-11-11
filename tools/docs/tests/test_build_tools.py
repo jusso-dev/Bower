@@ -48,6 +48,32 @@ class LinkCheckTests(unittest.TestCase):
         self.assertIn('[Missing](missing.md)', output)
         self.assertIn('```md\n[Example](../../README.md)\n```', output)
 
+class DiagramCheckTests(unittest.TestCase):
+    def build(self, html, markdown="# Page\n\n```mermaid\nflowchart LR\n  A --> B\n```\n"):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        root = Path(directory.name)
+        (root / "docs/guide").mkdir(parents=True)
+        (root / "docs/guide/page.md").write_text(markdown)
+        (root / "site/guide/page").mkdir(parents=True)
+        (root / "site/guide/page/index.html").write_text(html)
+        return root / "site", root / "docs"
+
+    def test_rendered_diagram_passes(self):
+        site, docs = self.build('<pre class="mermaid"><code>flowchart LR</code></pre>')
+        self.assertEqual(load("check_diagrams").check(site, docs), 1)
+
+    def test_code_listing_fails(self):
+        # What pymdownx.superfences writes without the mermaid custom fence.
+        site, docs = self.build('<div class="language-mermaid highlight"><pre><code>flowchart LR</code></pre></div>')
+        with self.assertRaises(SystemExit):
+            load("check_diagrams").check(site, docs)
+
+    def test_page_without_a_diagram_is_ignored(self):
+        site, docs = self.build("<p>No diagram</p>", markdown="# Page\n\n```bash\necho hi\n```\n")
+        self.assertEqual(load("check_diagrams").check(site, docs), 0)
+
+
 class GlossaryEncodingTests(unittest.TestCase):
     def test_generation_and_stale_check_with_a_legacy_default_encoding(self):
         with tempfile.TemporaryDirectory() as directory:

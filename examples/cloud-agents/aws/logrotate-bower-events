@@ -1,13 +1,24 @@
 # /etc/logrotate.d/bower-events: rotate the Bower event file the CloudWatch agent tails.
-# The agent follows a renamed file to its end, then continues with the new one.
+# Checked in a container by examples/cloud-agents/aws/test_logrotate.sh.
 /var/log/bower/events.jsonl {
+    # The directory is group-writable (root:bower-events, 2770). Without this line logrotate
+    # refuses the file: "parent directory has insecure permissions".
+    su root bower-events
     daily
     rotate 7
     maxsize 100M
     missingok
     notifempty
     compress
+    # Keeps yesterday's file uncompressed for people reading it. The CloudWatch agent does not
+    # go back to it: measured live, it stops at the rename, so lines it had not read yet are
+    # lost (see the quick start, "Rotate the file").
     delaycompress
-    # Same owner, group and mode as the original, so the application can keep appending.
+    # Same owner, group and mode as the original. A writer that opens the file for each event
+    # (as emit_event.py does) moves to the new file at once. A writer that keeps the file open
+    # goes on appending to events.jsonl.1 until it reopens: signal it here, for example
+    #   postrotate
+    #       systemctl kill -s HUP orders-api.service
+    #   endscript
     create 0660 root bower-events
 }

@@ -117,12 +117,12 @@ const types: SourceTypeDefinition[] = [
   {
     id: "ama",
     title: "Azure Monitor Agent",
-    summary: "Switches delivery to files AMA collects.",
+    summary: "Switches delivery to AMA: local syslog on Linux, or local files.",
     why: "Some estates allow only AMA.",
     needs: ["AMA on the collector host."],
     fields: [],
-    checkDescription: "Bower watches the ama-spool output.",
-    guide: "docs/deployment/ama-companion.md"
+    checkDescription: "Bower watches the output you chose (ama-syslog or ama-spool).",
+    guide: "docs/getting-started/azure-monitor-agent.md"
   }
 ];
 

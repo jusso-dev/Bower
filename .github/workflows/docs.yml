@@ -8,6 +8,7 @@ on:
       - 'tools/docs/**'
       - 'deploy/azure-webapp/**'
       - 'deploy/bicep/ama-syslog-dcr.bicep'
+      - 'deploy/bicep/main.bicep'
       - 'deploy/docker/hosted/**'
       - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
@@ -22,6 +23,7 @@ on:
       - 'tools/docs/**'
       - 'deploy/azure-webapp/**'
       - 'deploy/bicep/ama-syslog-dcr.bicep'
+      - 'deploy/bicep/main.bicep'
       - 'deploy/docker/hosted/**'
       - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
@@ -56,6 +58,7 @@ jobs:
           .venv-docs/bin/python -m unittest discover -s tools/docs/tests -p 'test_*.py'
           .venv-docs/bin/mkdocs build --strict
           .venv-docs/bin/python tools/docs/check_links.py site
+          .venv-docs/bin/python tools/docs/check_diagrams.py site docs
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '24'
@@ -87,10 +90,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build and lint the Web App and AMA syslog templates
+      - name: Build and lint the Web App, Sentinel and AMA syslog templates
         run: |
           az bicep install --version v0.45.6
-          for template in deploy/azure-webapp/main.bicep deploy/bicep/ama-syslog-dcr.bicep; do
+          for template in deploy/azure-webapp/main.bicep deploy/bicep/main.bicep deploy/bicep/ama-syslog-dcr.bicep; do
             az bicep build --file "$template" --stdout > /dev/null
             # Lint exits non-zero only on errors; fail on any linter finding, warnings included.
             az bicep lint --file "$template" --diagnostics-format sarif > "$RUNNER_TEMP/bicep-lint.sarif"

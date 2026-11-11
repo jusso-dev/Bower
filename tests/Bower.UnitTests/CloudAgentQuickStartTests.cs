@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Bower.Output.Syslog;
+using Bower.Dcr;
+using Bower.Output.AmaSyslog;
 using Bower.Source.Aws;
 
 namespace Bower.UnitTests;
@@ -50,25 +51,15 @@ public sealed partial class CloudAgentQuickStartTests
     }
 
     [Fact]
-    public void AmaSyslogRule_ProjectsTheSameColumnsAsTheIngestionRuleFromTheDecodedEnvelope()
+    public void AmaSyslogRule_IsGeneratedFromTheSchemaModel()
     {
-        string main = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"));
+        // #236: one definition. Adding a column to SentinelSchema changes both rules or fails here.
         string syslog = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
-        string transform = Normalise(Transform(syslog));
+        string expected = SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, new AmaSyslogOutputOptions { Id = "ama-syslog" }.AppName);
 
-        // Every main.bicep projection, read from the decoded envelope e instead of the stream.
-        string[] columns = StreamColumnNames(main);
-        string expected = Regex.Replace(Normalise(Transform(main)).Split("| project ", 2)[1], $@"(?<![.\w])({string.Join('|', columns.OrderByDescending(name => name.Length))})(?!\w)", "e.$1")
-            .Replace("pack_all()", "e", StringComparison.Ordinal)
-            .Replace("TimeGenerated = e.timeGenerated", "TimeGenerated = todatetime(e.timeGenerated)", StringComparison.Ordinal)
-            .Replace("TimeObserved = e.timeObserved", "TimeObserved = todatetime(e.timeObserved)", StringComparison.Ordinal);
-        Assert.Equal(expected, transform.Split("| project ", 2)[1]);
-
-        Assert.StartsWith(
-            "source | where SyslogMessage contains_cs \"bower-b64:\" | extend e = parse_json(base64_decodestring(substring(SyslogMessage, indexof(SyslogMessage, \"bower-b64:\") + 10))) | where tostring(e.schemaVersion) == \"1.0.0\"",
-            transform,
-            StringComparison.Ordinal);
-        Assert.Contains($"\"{SyslogOutput.MessagePrefix}\") + {SyslogOutput.MessagePrefix.Length})", transform, StringComparison.Ordinal);
+        Assert.True(
+            Normalise(expected) == Normalise(Transform(syslog)),
+            "deploy/bicep/ama-syslog-dcr.bicep transformKql differs from SentinelSchema.SyslogTransformKql. Regenerate it:\n" + expected);
         Assert.Contains("outputStream: 'Custom-BowerSecurity_CL'", syslog, StringComparison.Ordinal);
         Assert.Contains("streams: ['Microsoft-Syslog']", syslog, StringComparison.Ordinal);
         Assert.Contains("param facility string = 'local4'", syslog, StringComparison.Ordinal);
@@ -77,26 +68,137 @@ public sealed partial class CloudAgentQuickStartTests
     }
 
     [Fact]
-    public void SyslogOutputDefaults_MatchTheRule()
+    public void AmaSyslogRule_ProjectsTheSameColumnsAsTheIngestionRule()
     {
-        SyslogOutputOptions options = new() { Id = "syslog" };
+        // The generated projection reads each main.bicep column from the decoded envelope e.
+        string main = Normalise(Transform(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "main.bicep"))));
+        string syslog = Normalise(SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, "bower"));
+        string[] Columns(string kql) => [.. Regex.Matches(kql.Split("| project ", 2)[1], @"(?:^|, )(?<name>\w+) = ").Select(match => match.Groups["name"].Value)];
+
+        Assert.Equal(Columns(main), Columns(syslog));
+        Assert.Equal(SentinelSchema.Default.TableColumns.Select(column => column.Name), Columns(syslog));
+        Assert.Contains("TimeGenerated = todatetime(e.timeGenerated)", syslog, StringComparison.Ordinal);
+        Assert.Contains("RawEnvelope = e,", syslog, StringComparison.Ordinal);
+        Assert.Contains("ActorUsername = substring(tostring(e.actor.username), 0, 256)", syslog, StringComparison.Ordinal);
+        Assert.DoesNotContain("tostring(eventId)", syslog, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("bower-b64:eyJhIjoxfQ==", true)]
+    [InlineData("  bower-b64:eyJhIjoxfQ==\n", true)]
+    [InlineData("bower-b64:eyJhIjoxfQ== trailing", false)]
+    [InlineData("prefix bower-b64:eyJhIjoxfQ==", false)]
+    [InlineData("bower-b64:eyJhIjo", true)]
+    [InlineData("bower-b64:", false)]
+    public void AmaSyslogRule_DecodesOnlyAMessageThatIsTheMarkerAndOneBase64Value(string message, bool kept)
+    {
+        // The extract pattern, read with .NET's regex engine, which matches RE2 for this pattern.
+        // Whether Azure accepts and runs it the same way is check 1 of the live run (#249).
+        string transform = SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, "bower");
+        string pattern = Regex.Match(transform, "extract\\(@\"(?<pattern>[^\"]+)\"").Groups["pattern"].Value;
+
+        Assert.Equal(kept, Regex.IsMatch(message, pattern.Replace("$", @"\n?\z", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void AmaSyslogRule_SendsWhatItCannotDecodeToTheSyslogTable()
+    {
+        // #231: the second data flow is generated too, and keeps a bower message out of
+        // BowerSecurity_CL only by putting it in Syslog.
+        string syslog = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
+        string[] transforms = [.. Regex.Matches(syslog, "transformKql: '''(?<kql>.*?)'''", RegexOptions.Singleline).Select(match => match.Groups["kql"].Value)];
+        string expected = SentinelSchema.Default.SyslogUndecodedTransformKql(AmaSyslogOutput.MessagePrefix, new AmaSyslogOutputOptions { Id = "ama-syslog" }.AppName);
+
+        Assert.Equal(2, transforms.Length);
+        Assert.True(
+            Normalise(expected) == Normalise(transforms[1]),
+            "deploy/bicep/ama-syslog-dcr.bicep second transformKql differs from SentinelSchema.SyslogUndecodedTransformKql. Regenerate it:\n" + expected);
+        Assert.Contains("outputStream: 'Microsoft-Syslog'", syslog, StringComparison.Ordinal);
+        Assert.Contains("param keepUndecodedInSyslog bool = true", syslog, StringComparison.Ordinal);
+        // Same pattern and schema filter as the first flow, negated, so no message lands in both.
+        string decode = SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, "bower");
+        string Pattern(string kql) => Regex.Match(kql, "extract\\(@\"(?<pattern>[^\"]+)\"").Groups["pattern"].Value;
+        Assert.Equal(Pattern(decode), Pattern(expected));
+        Assert.Contains("| where tostring(e.schemaVersion) == \"1.0.0\"", decode, StringComparison.Ordinal);
+        Assert.Contains("| where isempty(b64) or v != \"1.0.0\"", expected, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AmaSyslogOutputDefaults_MatchTheRule()
+    {
+        AmaSyslogOutputOptions options = new() { Id = "ama-syslog" };
 
         Assert.Equal((20, 5, "/dev/log"), (options.Facility, options.Severity, options.SocketPath));
     }
 
-    private static string[] StreamColumnNames(string bicep)
+    [Fact]
+    public async Task EmitEventScript_AppendsALineThatMatchesTheEnvelopeSchema()
     {
-        int start = bicep.IndexOf("'Custom-BowerSecurity': {", StringComparison.Ordinal);
-        Assert.True(start >= 0);
-        int end = bicep.IndexOf(']', start);
-        return [.. ColumnPattern().Matches(bicep[start..end]).Select(match => match.Groups["name"].Value)];
+        string? python = FindOnPath(OperatingSystem.IsWindows() ? "python3.exe" : "python3");
+        Assert.SkipWhen(python is null, "python3 is not on PATH.");
+        string directory = Directory.CreateTempSubdirectory("bower-emit-").FullName;
+        try
+        {
+            string target = Path.Combine(directory, "events.jsonl");
+            // A fragment left by a cut-short writer: the script must start its event on a new line.
+            await File.WriteAllTextAsync(target, "{\"schemaVersion\":\"1.0.0\",\"eventId\":\"cut-sh", TestContext.Current.CancellationToken);
+
+            await RunEmitEvent(python!, target, "--application", "billing-api", "--environment", "staging");
+            await RunEmitEvent(python!, target);
+
+            string[] lines = (await File.ReadAllTextAsync(target, TestContext.Current.CancellationToken)).Split('\n');
+            Assert.Equal(4, lines.Length);
+            Assert.Equal("", lines[^1]);
+            using JsonDocument schema = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "schemas", "envelope", "security-event.schema.json")));
+            foreach (string line in lines[1..^1])
+            {
+                using JsonDocument written = JsonDocument.Parse(line);
+                List<string> errors = [];
+                AsvsExampleContractTests.Validate(written.RootElement, schema.RootElement, schema.RootElement, "$", errors);
+                Assert.True(errors.Count == 0, string.Join("; ", errors));
+                Assert.Equal(line, FirehoseLogObjectReader.TryExtractEnvelope(line));
+            }
+
+            using JsonDocument first = JsonDocument.Parse(lines[1]);
+            Assert.Equal("billing-api", first.RootElement.GetProperty("application").GetProperty("name").GetString());
+            Assert.Equal("staging", first.RootElement.GetProperty("application").GetProperty("environment").GetString());
+            using JsonDocument second = JsonDocument.Parse(lines[2]);
+            Assert.Equal("orders-api", second.RootElement.GetProperty("application").GetProperty("name").GetString());
+            Assert.NotEqual(first.RootElement.GetProperty("eventId").GetString(), second.RootElement.GetProperty("eventId").GetString());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
+
+    private static async Task RunEmitEvent(string python, params string[] arguments)
+    {
+        System.Diagnostics.ProcessStartInfo start = new(python)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (string argument in (string[])["-I", Path.Combine(Examples, "emit_event.py"), .. arguments])
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using System.Diagnostics.Process process = System.Diagnostics.Process.Start(start)!;
+        Task<string> output = process.StandardOutput.ReadToEndAsync(TestContext.Current.CancellationToken);
+        string error = await process.StandardError.ReadToEndAsync(TestContext.Current.CancellationToken);
+        await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        Assert.True(process.ExitCode == 0, $"emit_event.py exited {process.ExitCode}: {error}");
+        Assert.StartsWith("appended event ", await output, StringComparison.Ordinal);
+    }
+
+    private static string? FindOnPath(string executable) =>
+        (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(directory => Path.Combine(directory, executable))
+            .FirstOrDefault(File.Exists);
 
     private static string Transform(string bicep) =>
         Regex.Match(bicep, "transformKql: '''(?<kql>.*?)'''", RegexOptions.Singleline).Groups["kql"].Value;
 
     private static string Normalise(string kql) => Regex.Replace(kql, @"\s+", " ").Trim();
-
-    [GeneratedRegex(@"\{ name: '(?<name>[^']+)', type: '(?<type>[^']+)' \}")]
-    private static partial Regex ColumnPattern();
 }

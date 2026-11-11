@@ -170,6 +170,13 @@
           "Bower.Abstractions": "[1.0.0, )"
         }
       },
+      "bower.output.amasyslog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Dcr": "[1.0.0, )"
+        }
+      },
       "bower.output.azurelogsingestion": {
         "type": "Project",
         "dependencies": {
@@ -190,12 +197,6 @@
         "dependencies": {
           "AWSSDK.S3": "[4.0.104.7, )",
           "AWSSDK.SecurityToken": "[4.0.101.7, )",
-          "Bower.Abstractions": "[1.0.0, )"
-        }
-      },
-      "bower.output.syslog": {
-        "type": "Project",
-        "dependencies": {
           "Bower.Abstractions": "[1.0.0, )"
         }
       },

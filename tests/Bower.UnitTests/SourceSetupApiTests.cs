@@ -176,6 +176,7 @@ public sealed class SourceSetupApiTests
                 ["ingestTokenFile"] = tokenFile
             }),
         ("ama", new()),
+        ("ama", new() { ["delivery"] = "syslog", ["facility"] = "local5" }),
         ("windows-eventlog", new()),
         ("file", FileSourceSetupTests.Values()),
         (
@@ -234,8 +235,22 @@ public sealed class SourceSetupApiTests
                     Assert.Equal("gcp-security/production", plan.Verification.ReportId);
                     break;
                 case "ama":
-                    Assert.Equal(new SourceSetupVerification("output", "ama-spool", plan.Verification.Description), plan.Verification);
-                    Assert.Contains(plan.Variables, variable => variable is { Name: "BOWER_OUTPUT", Value: "ama-spool" });
+                    // The heartbeat output the check watches is the output the plan switches to.
+                    string output = plan.Variables.Single(variable => variable.Name == "BOWER_OUTPUT").Value;
+                    Assert.Equal(new SourceSetupVerification("output", output, plan.Verification.Description), plan.Verification);
+                    Assert.Contains(output, plan.Verification.Description, StringComparison.Ordinal);
+                    if (values.GetValueOrDefault("delivery") == "syslog")
+                    {
+                        Assert.Equal("ama-syslog", output);
+                        Assert.Contains(plan.Variables, variable => variable is { Name: "BOWER_AMA_SYSLOG_FACILITY", Value: "local5" });
+                        Assert.DoesNotContain(plan.Variables, variable => variable.Name == "BOWER_AMA_SPOOL_PATH");
+                        Assert.Contains("facility=local5", plan.Snippets[0].Content, StringComparison.Ordinal);
+                    }
+                    else
+                    {
+                        Assert.Equal("ama-spool", output);
+                    }
+
                     break;
                 case "http-sdk":
                     string scopes = Path.Combine(directory.Path, "scopes.json");
@@ -525,6 +540,21 @@ public sealed class SourceSetupApiTests
             "/api/sources/requests", new SourceSetupSubmission("ama", "edge-01", [], "One more"), cancellationToken);
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Plan_AmaSyslogRefusesAFacilityOutsideLocal0ToLocal7()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+
+        SourceSetupPlanResult result = await PlanAsync(
+            app, "ama", "edge-01", new() { ["delivery"] = "syslog", ["facility"] = "auth" }, cancellationToken);
+
+        Assert.False(result.Valid);
+        Assert.Contains(result.Checks, check => check is { Id: "facility", State: SetupCheckStates.Fail });
     }
 
     [Theory]

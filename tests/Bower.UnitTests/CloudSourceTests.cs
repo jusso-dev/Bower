@@ -236,6 +236,9 @@ public sealed class CloudSourceTests
         Assert.Equal(3, result.Envelopes.Count);
         Assert.Equal(1, result.Skipped);
         Assert.All(result.Envelopes, item => Assert.Contains("\"eventId\":\"app-1\"", item, StringComparison.Ordinal));
+        // #253: each envelope keeps the log group and stream of its subscription payload.
+        Assert.Equal(result.Envelopes.Count, result.Origins.Count);
+        Assert.All(result.Origins, origin => Assert.Equal(new CloudWatchLogsOrigin("/aws/lambda/app", "stream"), origin));
     }
 
     [Fact]
@@ -250,6 +253,8 @@ public sealed class CloudSourceTests
 
         Assert.Single(result.Envelopes);
         Assert.Equal(2, result.Skipped);
+        // Extracted lines carry no subscription payload, so no log group or stream.
+        Assert.Null(Assert.Single(result.Origins));
     }
 
     [Fact]

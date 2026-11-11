@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using Bower.Contracts;
 using Bower.Core;
+using Bower.Output.AmaSyslog;
 using Bower.Packs;
 using Bower.Redaction.Privacy;
 
@@ -124,14 +125,21 @@ public sealed record CollectorSettings
 
     public string AmaSpoolPath { get; init; } = Path.Combine(AppContext.BaseDirectory, "spool");
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_SOCKET: the local syslog daemon's datagram socket (BOWER_OUTPUT=syslog).</summary>
-    public string SyslogOutputSocket { get; init; } = "/dev/log";
+    /// <summary>BOWER_AMA_SYSLOG_SOCKET: the local syslog daemon's datagram socket (BOWER_OUTPUT=ama-syslog).</summary>
+    public string AmaSyslogSocket { get; init; } = "/dev/log";
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_FACILITY: syslog facility number (20, local4, by default).</summary>
-    public int SyslogOutputFacility { get; init; } = 20;
+    /// <summary>
+    /// BOWER_AMA_SYSLOG_FACILITY: <c>local0</c> to <c>local7</c> (numbers 16 to 23 also
+    /// accepted), <c>local4</c> by default. The collection rule's <c>facility</c> must match.
+    /// Held as the facility number; null when the value was not one of those.
+    /// </summary>
+    public int? AmaSyslogFacility { get; init; } = 20;
 
-    /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole message limit; match the daemon's MaxMessageSize.</summary>
-    public int SyslogOutputMaximumBytes { get; init; } = 8_192;
+    /// <summary>BOWER_AMA_SYSLOG_MAX_BYTES: whole datagram limit; keep it at least 512 below rsyslog's MaxMessageSize.</summary>
+    public int AmaSyslogMaximumBytes { get; init; } = AmaSyslogOutputOptions.DefaultMaximumMessageBytes;
+
+    /// <summary>BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS: how long one message may wait for a full daemon queue.</summary>
+    public TimeSpan AmaSyslogBusyWait { get; init; } = AmaSyslogOutputOptions.DefaultBusyWait;
 
     public string StreamName { get; init; } = "Custom-BowerSecurity";
 
@@ -229,6 +237,14 @@ public sealed record CollectorSettings
     /// BOWER_INGEST_TOKEN ("default"). Producer credentials cannot tap unless listed.
     /// </summary>
     public IReadOnlyList<string> TapProducers { get; init; } = [];
+
+    /// <summary>
+    /// BOWER_ORIGIN_PRODUCERS: tokens-file producer ids trusted to report where an event came
+    /// from (the cloud forwarder's X-Bower-Origin header: CloudWatch Logs log group and stream).
+    /// Any other producer's header is ignored, so an application cannot choose its own origin.
+    /// Empty by default: no producer is trusted.
+    /// </summary>
+    public IReadOnlyList<string> OriginProducers { get; init; } = [];
 
     public EventTapOptions TapOptions() => new()
     {
@@ -352,24 +368,27 @@ public sealed record CollectorSettings
                 read("BOWER_ALLOW_UNAUTHENTICATED_INGEST"),
                 "true",
                 StringComparison.OrdinalIgnoreCase),
-            IngestRequestsPerSecond = (int)ReadInt64(read, "BOWER_INGEST_RATE_PER_SECOND", 500),
-            MaximumDeliveryAttempts = (int)ReadInt64(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
+            IngestRequestsPerSecond = ReadInt32(read, "BOWER_INGEST_RATE_PER_SECOND", 500),
+            MaximumDeliveryAttempts = ReadInt32(read, "BOWER_MAX_DELIVERY_ATTEMPTS", 20),
             DeliveryLeaseDuration = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_LEASE_SECONDS", 300)),
             DeliveryTimeout = TimeSpan.FromSeconds(ReadInt64(read, "BOWER_DELIVERY_TIMEOUT_SECONDS", 240)),
             StorageWatermarks = new Bower.Persistence.StorageWatermarkOptions
             {
                 WarningFreeBytes = ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_BYTES", 1024L * 1024 * 1024),
-                WarningFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_WARNING_FREE_PERCENT", 10), -1, 101),
+                WarningFreePercent = ReadInt32(read, "BOWER_STORAGE_WARNING_FREE_PERCENT", 10),
                 CriticalFreeBytes = ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_BYTES", 256L * 1024 * 1024),
-                CriticalFreePercent = (int)Math.Clamp(ReadInt64(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5), -1, 101)
+                CriticalFreePercent = ReadInt32(read, "BOWER_STORAGE_CRITICAL_FREE_PERCENT", 5)
             },
             OutputType = (read("BOWER_OUTPUT") ?? "none").ToLowerInvariant(),
             HttpOutput = HttpOutputSettings.FromEnvironment(read),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
-            SyslogOutputSocket = Blank(read("BOWER_SYSLOG_OUTPUT_SOCKET")) ?? "/dev/log",
-            SyslogOutputFacility = (int)ReadInt64(read, "BOWER_SYSLOG_OUTPUT_FACILITY", 20),
-            SyslogOutputMaximumBytes = (int)ReadInt64(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", 8_192),
+            AmaSyslogSocket = Blank(read("BOWER_AMA_SYSLOG_SOCKET")) ?? "/dev/log",
+            AmaSyslogFacility = Blank(read("BOWER_AMA_SYSLOG_FACILITY")) is { } facility
+                ? AmaSyslogOutputOptions.TryParseFacility(facility, out int number) ? number : null
+                : 20,
+            AmaSyslogMaximumBytes = ReadInt32(read, "BOWER_AMA_SYSLOG_MAX_BYTES", AmaSyslogOutputOptions.DefaultMaximumMessageBytes),
+            AmaSyslogBusyWait = TimeSpan.FromSeconds(ReadInt32(read, "BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS", 2)),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
             DceEndpoint = string.IsNullOrWhiteSpace(dceEndpoint)
                 ? null
@@ -411,12 +430,13 @@ public sealed record CollectorSettings
                 : null,
             SyslogConfigPath = Blank(read("BOWER_SYSLOG_CONFIG")),
             TapEnabled = ReadBoolean(read, "BOWER_TAP_ENABLED", true),
-            TapMaximumSessions = (int)ReadInt64(read, "BOWER_TAP_MAX_SESSIONS", 2),
-            TapMaximumEventsPerSecond = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20),
-            TapMaximumDurationSeconds = (int)ReadInt64(read, "BOWER_TAP_MAX_DURATION_SECONDS", 300),
-            TapMaximumEvents = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENTS", 1000),
-            TapMaximumEventBytes = (int)ReadInt64(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
+            TapMaximumSessions = ReadInt32(read, "BOWER_TAP_MAX_SESSIONS", 2),
+            TapMaximumEventsPerSecond = ReadInt32(read, "BOWER_TAP_MAX_EVENTS_PER_SECOND", 20),
+            TapMaximumDurationSeconds = ReadInt32(read, "BOWER_TAP_MAX_DURATION_SECONDS", 300),
+            TapMaximumEvents = ReadInt32(read, "BOWER_TAP_MAX_EVENTS", 1000),
+            TapMaximumEventBytes = ReadInt32(read, "BOWER_TAP_MAX_EVENT_BYTES", 16_384),
             TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
+            OriginProducers = SplitList(read("BOWER_ORIGIN_PRODUCERS")),
             WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
             FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG"))
         };
@@ -508,26 +528,46 @@ public sealed record CollectorSettings
                 "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
         }
 
-        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http" or "syslog"))
+        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http" or "ama-syslog"))
         {
             throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {OutputType}");
         }
 
-        if (OutputType == "syslog")
+        if (OutputType == "ama-syslog")
         {
-            if (!Path.IsPathFullyQualified(SyslogOutputSocket) || System.Text.Encoding.UTF8.GetByteCount(SyslogOutputSocket) > 103)
+            if (OperatingSystem.IsWindows())
             {
-                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_SOCKET must be an absolute path of at most 103 bytes.");
+                // Windows has no datagram Unix sockets and no /dev/log.
+                throw new InvalidOperationException(
+                    "BOWER_OUTPUT=ama-syslog writes to a local syslog socket and runs on Linux only. On Windows use BOWER_OUTPUT=azure-logs-ingestion.");
             }
 
-            if (SyslogOutputFacility is < 0 or > 23)
+            if (AmaSyslogOutputOptions.SocketPathProblem(AmaSyslogSocket) is { } problem)
             {
-                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_FACILITY must be between 0 and 23.");
+                throw new InvalidOperationException($"BOWER_AMA_SYSLOG_SOCKET {problem}.");
             }
 
-            if (SyslogOutputMaximumBytes is < 1_024 or > 65_507)
+            if (AmaSyslogFacility is null)
             {
-                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_MAX_BYTES must be between 1024 and 65507.");
+                throw new InvalidOperationException(
+                    $"BOWER_AMA_SYSLOG_FACILITY must be one of {string.Join(", ", AmaSyslogOutputOptions.FacilityNames)} (or 16 to 23), the facilities the collection rule can collect.");
+            }
+
+            if (AmaSyslogMaximumBytes < AmaSyslogOutputOptions.MinimumMessageBytes
+                || AmaSyslogMaximumBytes > AmaSyslogOutputOptions.MaximumMessageBytesLimit)
+            {
+                throw new InvalidOperationException(
+                    $"BOWER_AMA_SYSLOG_MAX_BYTES must be between {AmaSyslogOutputOptions.MinimumMessageBytes} and {AmaSyslogOutputOptions.MaximumMessageBytesLimit}.");
+            }
+
+            // One message may wait this long, and the batch must still settle inside the
+            // delivery timeout and lease: keep it well below BOWER_DELIVERY_TIMEOUT_SECONDS.
+            if (AmaSyslogBusyWait < TimeSpan.FromSeconds(1)
+                || AmaSyslogBusyWait > AmaSyslogOutputOptions.MaximumBusyWait
+                || AmaSyslogBusyWait >= DeliveryTimeout)
+            {
+                throw new InvalidOperationException(
+                    "BOWER_AMA_SYSLOG_BUSY_WAIT_SECONDS must be between 1 and 30 and below BOWER_DELIVERY_TIMEOUT_SECONDS.");
             }
         }
 
@@ -611,6 +651,13 @@ public sealed record CollectorSettings
         if (TapProducers.Any(producer => producer.Length is < 1 or > 64 || producer.Contains(' ', StringComparison.Ordinal)))
         {
             throw new InvalidOperationException("BOWER_TAP_PRODUCERS must list producer ids of 1 to 64 characters.");
+        }
+
+        if (OriginProducers.Any(producer => producer.Length is < 1 or > 64 || producer.Contains(' ', StringComparison.Ordinal)
+            || producer is "anonymous"))
+        {
+            throw new InvalidOperationException(
+                "BOWER_ORIGIN_PRODUCERS must list tokens-file producer ids of 1 to 64 characters; anonymous cannot be trusted.");
         }
     }
 
@@ -1039,6 +1086,23 @@ public sealed record CollectorSettings
 
         return IPAddress.TryParse(host.Trim('[', ']'), out IPAddress? address)
             && IPAddress.IsLoopback(address);
+    }
+
+    /// <summary>
+    /// A 32-bit setting. Anything outside the 32-bit range is refused here, never narrowed:
+    /// a cast from a 64-bit value would wrap 4294967316 to 20 and pass the range check.
+    /// </summary>
+    private static int ReadInt32(Func<string, string?> read, string name, int fallback)
+    {
+        string? value = read(name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
+            ? parsed
+            : throw new InvalidOperationException($"{name} must be an integer between {int.MinValue} and {int.MaxValue}.");
     }
 
     private static long ReadInt64(Func<string, string?> read, string name, long fallback)

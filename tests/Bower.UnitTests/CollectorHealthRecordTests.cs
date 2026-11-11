@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Bower.Abstractions;
 using Bower.Collector;
@@ -861,6 +862,125 @@ public sealed class CollectorHealthRecordTests
         Assert.Equal(2, storage.GetProperty("pressurePurgedEvents").GetInt64());
         Assert.Equal(second.At, baseline.At);
         Assert.Same(third, CollectorHealthRecord.NextBaseline(third, baseline));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    [InlineData(4)]
+    [InlineData(25)]
+    public async Task RecordForTheSyslogOutput_FitsItsMessageLimitAfterTheProcessorAddsItsContext(int listed)
+    {
+        // #230: the syslog output fits 5,730 bytes of envelope JSON at its default. A record with
+        // four or more overdue sources plus listeners used to exceed it and be dead-lettered, so
+        // the collector looked stopped on that output alone. Lists are shortened to fit.
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        FakeClock clock = new(TestEvents.Now);
+        SqliteEventStore store = new(Path.Combine(directory.Path, "queue.db"), 1_048_576, clock);
+        await store.InitializeAsync(cancellationToken);
+        SecurityEventProcessor processor = new(
+            new JsonEventRedactor(), new DeterministicPolicyEvaluator([PolicyLoader.LoadFile(HealthPolicyFile)]), store, clock);
+        using Bower.Output.AmaSyslog.AmaSyslogOutput output = new(new Bower.Output.AmaSyslog.AmaSyslogOutputOptions { Id = "ama-syslog" });
+        CollectorHealthSample sample = LargeSample(listed);
+        int limit = output.MaximumJsonBytes - CollectorHealthWorker.ProcessorContextAllowance;
+
+        string candidate = CollectorHealthRecord.CreateJson(sample, Identity.Id, "production", null, limit);
+        ProcessingResult result = await processor.ProcessCollectorHealthAsync(
+            candidate, Identity with { SourceAdapter = CollectorHealthRecord.SourceAdapter }, cancellationToken);
+        QueuedEvent queued = Assert.Single(await store.LeaseAsync(10, TimeSpan.FromMinutes(1), cancellationToken));
+        int queuedBytes = Encoding.UTF8.GetByteCount(queued.Payload);
+        int added = queuedBytes - Encoding.UTF8.GetByteCount(candidate);
+
+        Assert.True(result.Queued, string.Join(",", result.Reasons));
+        Assert.True(queuedBytes <= output.MaximumJsonBytes, $"{listed} listed: {queuedBytes} bytes queued, limit {output.MaximumJsonBytes}.");
+        Assert.InRange(added, 1, CollectorHealthWorker.ProcessorContextAllowance);
+        using JsonDocument document = JsonDocument.Parse(queued.Payload);
+        JsonElement attributes = document.RootElement.GetProperty("attributes");
+        // Counts stay complete even when the lists are cut.
+        Assert.Equal(listed, attributes.GetProperty("sources").GetProperty("silent").GetInt64());
+        bool shortened = attributes.GetProperty("monitoringCoverage").TryGetProperty("listedLimit", out JsonElement keep);
+        int expectedListed = shortened ? Math.Min(listed, keep.GetInt32()) : listed;
+        Assert.Equal(expectedListed, attributes.GetProperty("sources").GetProperty("overdue").GetArrayLength());
+        Assert.Equal(expectedListed, attributes.GetProperty("syslog").GetArrayLength());
+        // Nothing is cut when it already fits; a full record (25 of each) must be cut.
+        Assert.False(listed == 0 && shortened);
+        Assert.True(listed < 25 || shortened);
+    }
+
+    [Fact]
+    public void RecordAtTheLimit_ListsInFullThenCountsTheRest()
+    {
+        // #230 decision: list the first entries in full, then a count of the rest, always fitting.
+        CollectorHealthSample sample = LargeSample(10);
+        string full = CollectorHealthRecord.CreateJson(sample, "edge-01", "production");
+        int fullBytes = Encoding.UTF8.GetByteCount(full);
+
+        // Exactly at its own size: nothing is summarised.
+        Assert.Equal(full, CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, fullBytes));
+
+        // One byte under: summarised, within the limit, listing as many as fit, counting the rest.
+        string summarised = CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, fullBytes - 1);
+        Assert.True(Encoding.UTF8.GetByteCount(summarised) <= fullBytes - 1);
+        using JsonDocument document = JsonDocument.Parse(summarised);
+        JsonElement attributes = document.RootElement.GetProperty("attributes");
+        JsonElement coverage = attributes.GetProperty("monitoringCoverage");
+        int listed = coverage.GetProperty("listedLimit").GetInt32();
+        Assert.Equal(9, listed);
+        Assert.Equal(listed, attributes.GetProperty("sources").GetProperty("overdue").GetArrayLength());
+        Assert.Equal(10 - listed, attributes.GetProperty("sources").GetProperty("overdueNotListed").GetInt64());
+        Assert.Equal(listed, attributes.GetProperty("syslog").GetArrayLength());
+        Assert.Equal(10 - listed, coverage.GetProperty("syslogNotListed").GetInt64());
+        Assert.Equal(10, attributes.GetProperty("sources").GetProperty("silent").GetInt64());
+        Assert.False(coverage.GetProperty("syslogComplete").GetBoolean());
+
+        // The most that fits: a limit just big enough for the summarised record keeps the same
+        // count, and the full record (one more of each) is over the limit by construction.
+        Assert.Equal(summarised, CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, Encoding.UTF8.GetByteCount(summarised)));
+    }
+
+    [Fact]
+    public void RecordAtATinyLimit_StillListsNothingAndCountsEverything()
+    {
+        CollectorHealthSample sample = LargeSample(25);
+
+        string summarised = CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, 100);
+
+        using JsonDocument document = JsonDocument.Parse(summarised);
+        JsonElement attributes = document.RootElement.GetProperty("attributes");
+        Assert.Equal(0, attributes.GetProperty("monitoringCoverage").GetProperty("listedLimit").GetInt32());
+        Assert.Equal(0, attributes.GetProperty("sources").GetProperty("overdue").GetArrayLength());
+        Assert.Equal(25, attributes.GetProperty("sources").GetProperty("overdueNotListed").GetInt64());
+        Assert.Equal(25, attributes.GetProperty("monitoringCoverage").GetProperty("syslogNotListed").GetInt64());
+    }
+
+    [Fact]
+    public void RecordWithoutALimit_KeepsEveryListUpToTheCap()
+    {
+        CollectorHealthSample sample = LargeSample(25);
+
+        string unlimited = CollectorHealthRecord.CreateJson(sample, "edge-01", "production");
+
+        Assert.Equal(unlimited, CollectorHealthRecord.CreateJson(sample, "edge-01", "production", null, null));
+        Assert.DoesNotContain("listedLimit", unlimited, StringComparison.Ordinal);
+        // 25 overdue sources and 25 listeners: far over the syslog output's 5,730-byte limit.
+        Assert.True(Encoding.UTF8.GetByteCount(unlimited) > 20_000, $"{Encoding.UTF8.GetByteCount(unlimited)} bytes");
+    }
+
+    private static CollectorHealthSample LargeSample(int listed)
+    {
+        string name = new('a', 8);
+        return Sample(TestEvents.Now, sequence: 9_999_999) with
+        {
+            Queue = new QueueSnapshot(9_999_999, 9_999_999, 9_999_999, 9_999_999, 9_999_999, 9_999_999_999, TestEvents.Now.AddDays(-400), 9_999_999_999),
+            Intake = Intake(capacityRefusals: 9_999_999),
+            SourcesConfigured = listed > 0,
+            Sources = [.. Enumerable.Range(0, listed).Select(index =>
+                new SourceSilenceStatus($"{name}{index}", "production", "silent", TestEvents.Now.AddDays(-1), 9_999_999, 300))],
+            Syslog = [.. Enumerable.Range(0, listed).Select(index => Listener(9_999_999, 9_999_999) with { Id = $"{name}{index}" })],
+            LastDeliveryFailure = new DeliveryFailureActivity("destination-azure-credential-failed", TestEvents.Now),
+            Storage = Volume("critical", intakePaused: true, freeBytes: 1, refusals: 9_999_999, purged: 9_999_999)
+        };
     }
 
     private static QueueStorageStatus Volume(string state, bool intakePaused, long freeBytes, long refusals, long purged) =>

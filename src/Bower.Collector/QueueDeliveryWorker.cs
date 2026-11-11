@@ -364,7 +364,8 @@ public sealed partial class QueueDeliveryWorker(
         "destination-azure-credential-failed" or "destination-azure-http-401" or "destination-azure-http-403"
             or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
             or "destination-output-timeout" or "output-adapter-failure" or "output-result-missing"
-            or "destination-syslog-unavailable" => code,
+            or "destination-ama-syslog-unavailable" or "destination-ama-syslog-busy" or "destination-ama-syslog-access-denied"
+            or "destination-ama-syslog-cancelled" => code,
         _ when IsS3Code(code) => code,
         _ when IsHttpOutputCode(Uncapped(code)) => Uncapped(code),
         _ => "delivery-failure"
@@ -391,7 +392,7 @@ public sealed partial class QueueDeliveryWorker(
         }
 
         DateTimeOffset retryAt = clock.GetUtcNow().Add(failure.IsDestinationFailure
-            ? TimeSpan.FromSeconds(30)
+            ? DestinationRetryDelay(safeCode)
             : CalculateRetryDelay(item.DeliveryAttempts));
         if (failure.RetryAfter > retryAt) retryAt = failure.RetryAfter.Value;
         DateTimeOffset maximum = clock.GetUtcNow().AddHours(1);
@@ -405,6 +406,13 @@ public sealed partial class QueueDeliveryWorker(
         return new FailureSettlement(item.EventId, code, retryAt, item.LeaseToken);
     }
 
+    /// <summary>
+    /// A busy local syslog daemon is draining (back-pressure, not an outage) and was already
+    /// waited on, so its events come back sooner than a missing destination's.
+    /// </summary>
+    internal static TimeSpan DestinationRetryDelay(string code) =>
+        code == "destination-ama-syslog-busy" ? TimeSpan.FromSeconds(5) : TimeSpan.FromSeconds(30);
+
     private static string SafePersistedFailureCode(string code, bool destination)
     {
         const string capped = ":retry-after-capped";
@@ -414,7 +422,8 @@ public sealed partial class QueueDeliveryWorker(
         {
             "destination-azure-credential-failed" or "destination-azure-paused" or "destination-azure-unavailable"
                 or "destination-azure-cancelled" or "destination-output-timeout" or "destination-ama-cancelled"
-                or "destination-syslog-unavailable"
+                or "destination-ama-syslog-unavailable" or "destination-ama-syslog-busy" or "destination-ama-syslog-access-denied"
+                or "destination-ama-syslog-cancelled"
                 or "destination-relay-unavailable" or "destination-relay-response-invalid" or "destination-relay-result-missing"
                 or "payload-invalid-json" or "payload-event-id-mismatch" or "payload-too-large"
                 or "preflight-record-too-large" or "preflight-field-too-large" or "preflight-type-mismatch"

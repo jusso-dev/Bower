@@ -208,6 +208,13 @@
       "bower.integrity": {
         "type": "Project"
       },
+      "bower.output.amasyslog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Dcr": "[1.0.0, )"
+        }
+      },
       "bower.packs": {
         "type": "Project",
         "dependencies": {

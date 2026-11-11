@@ -1,0 +1,45 @@
+// Bower: events each collector queued against rows that arrived in BowerSecurity_CL, per CollectorId.
+// For outputs that cannot confirm arrival (BOWER_OUTPUT=ama-syslog: the daemon, Azure Monitor Agent
+// and the collection rule's transform can each drop an event after Bower counted it delivered).
+// Run live on 10-11-2026 (#249): no false alarm (304 reported, 306 arrived), but a loss of 100
+// events that also lost the health record covering them did not show here.
+// delivery-sequence-gaps.kql catches that case. Not wired into monitoring.bicep.
+//
+// Reported: sum of pipeline.eventsQueued from collector_health records in the window. That counter
+// is events queued since the previous queued record (duplicates and suppressed events excluded),
+// not a per-output sent count, which the record does not carry. Arrived: distinct EventId per
+// CollectorId ingested in the window plus the lag allowance (delivery is at-least-once, so
+// duplicates are removed). Health records themselves are queued and counted on both sides.
+// Expect small differences at the window edges, after a restart (events queued after the last
+// record of the old process are never reported) and for events still in the queue or
+// dead-lettered (DeadLetteredNow, the newest record's queue.deadLettered). Anything queued
+// outside the selection counters shows as extra arrivals, never as missing rows.
+// Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy.
+let lookback = 24h;
+let lag = 30m;                 // allowance for queue, agent and ingestion delay
+let tolerancePercent = 0.5;    // rows missing as a share of reported, before a row is returned
+let windowEnd = now() - lag;
+let windowStart = windowEnd - lookback;
+let reported = BowerSecurity_CL
+    | where EventType == "collector_health" and isnotempty(CollectorId)
+    | where TimeGenerated between (windowStart .. windowEnd)
+    | summarize
+        Reported = sum(tolong(Attributes.pipeline.eventsQueued)),
+        Records = count(),
+        Output = take_any(tostring(Attributes.delivery.output)),
+        arg_max(TimeGenerated, DeadLetteredNow = tolong(Attributes.queue.deadLettered))
+        by CollectorId;
+let arrived = BowerSecurity_CL
+    | where isnotempty(CollectorId)
+    | where ingestion_time() between (windowStart .. windowEnd + lag)
+    | distinct CollectorId, EventId
+    | summarize Arrived = count() by CollectorId;
+reported
+| join kind=leftouter arrived on CollectorId
+| extend Arrived = coalesce(Arrived, 0)
+| extend Missing = Reported - Arrived
+| extend MissingPercent = iff(Reported == 0, real(0), round(100.0 * Missing / Reported, 2))
+| where MissingPercent > tolerancePercent
+| project CollectorId, Output, Records, Reported, Arrived, Missing, MissingPercent, DeadLetteredNow,
+    WindowStart = windowStart, WindowEnd = windowEnd
+| order by MissingPercent desc

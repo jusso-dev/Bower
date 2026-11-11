@@ -289,7 +289,7 @@ public sealed class QueueDeliveryWorkerTests
         (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
         await EnqueueAsync(store, clock, ["a"], cancellationToken);
         FakeOutput output = new(events => new DeliveryResult([], [.. events.Select(item =>
-            new DeliveryFailure(item.EventId, Bower.Output.Syslog.SyslogOutput.SocketUnavailableCode, true, null))], null));
+            new DeliveryFailure(item.EventId, Bower.Output.AmaSyslog.AmaSyslogOutput.SocketUnavailableCode, true, null))], null));
         DeliveryActivity activity = new();
         RecordingLogger logger = new();
         QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), logger, activity);
@@ -297,9 +297,41 @@ public sealed class QueueDeliveryWorkerTests
         await worker.DeliverOnceAsync(cancellationToken);
 
         // Persisted, logged and shown in /v1/status under its own name, not "delivery-failure".
-        Assert.Equal("destination-syslog-unavailable", activity.LastFailure?.Code);
-        Assert.Contains(logger.Messages, line => line.Contains("destination-syslog-unavailable", StringComparison.Ordinal));
+        Assert.Equal("destination-ama-syslog-unavailable", activity.LastFailure?.Code);
+        Assert.Contains(logger.Messages, line => line.Contains("destination-ama-syslog-unavailable", StringComparison.Ordinal));
         Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
+    }
+
+    [Theory]
+    [InlineData("destination-ama-syslog-busy")]
+    [InlineData("destination-ama-syslog-access-denied")]
+    [InlineData("destination-ama-syslog-cancelled")]
+    public async Task DeliveryActivity_ReportsEachAmaSyslogOutputFailureByName(string code)
+    {
+        // #225, #227, #229: every code the adapter returns is on both allow-lists, so status,
+        // logs and the queue show it instead of "destination-output-failure".
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        (SqliteEventStore store, FakeClock clock) = await CreateStoreAsync(directory, cancellationToken);
+        await EnqueueAsync(store, clock, ["a"], cancellationToken);
+        FakeOutput output = new(events => new DeliveryResult([], [.. events.Select(item => new DeliveryFailure(item.EventId, code, true, null))], null));
+        DeliveryActivity activity = new();
+        RecordingLogger logger = new();
+        QueueDeliveryWorker worker = new(store, output, clock, new QueueDeliveryOptions(), logger, activity);
+
+        await worker.DeliverOnceAsync(cancellationToken);
+
+        Assert.Equal(code, activity.LastFailure?.Code);
+        Assert.Contains(logger.Messages, line => line.Contains(code, StringComparison.Ordinal));
+        Assert.Equal(1, (await store.GetSnapshotAsync(cancellationToken)).Retrying);
+    }
+
+    [Fact]
+    public void DestinationRetryDelay_IsShorterForABusySyslogDaemonThanForAnOutage()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), QueueDeliveryWorker.DestinationRetryDelay("destination-ama-syslog-busy"));
+        Assert.Equal(TimeSpan.FromSeconds(30), QueueDeliveryWorker.DestinationRetryDelay("destination-ama-syslog-unavailable"));
+        Assert.Equal(TimeSpan.FromSeconds(30), QueueDeliveryWorker.DestinationRetryDelay("destination-azure-unavailable"));
     }
 
     [Fact]

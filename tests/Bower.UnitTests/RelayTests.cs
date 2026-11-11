@@ -882,6 +882,55 @@ public sealed class RelayEndToEndTests
         return app;
     }
 
+    [Fact]
+    public async Task ARelayDeliversThroughTheAmaSyslogOutput()
+    {
+        // #251 item 7: a relay's own output can be BOWER_OUTPUT=ama-syslog. The edge's
+        // redacted envelope crosses the relay unchanged and leaves as one bower-b64: datagram.
+        Assert.SkipUnless(OperatingSystem.IsLinux() || OperatingSystem.IsMacOS(), "Datagram Unix sockets exist only on Linux and macOS.");
+        CancellationToken ct = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        string socketDirectory = Path.Combine("/tmp", $"bwr-{Guid.NewGuid():N}"[..12]);
+        Directory.CreateDirectory(socketDirectory);
+        try
+        {
+            string socketPath = Path.Combine(socketDirectory, "log.sock");
+            using System.Net.Sockets.Socket daemon = new(
+                System.Net.Sockets.AddressFamily.Unix, System.Net.Sockets.SocketType.Dgram, System.Net.Sockets.ProtocolType.Unspecified);
+            daemon.Bind(new System.Net.Sockets.UnixDomainSocketEndPoint(socketPath));
+            daemon.ReceiveTimeout = 15_000;
+            RelayPki pki = new(directory.Path);
+            var client = pki.CreateClient("edge-01");
+            CollectorSettings relaySettings = RelayHosts.Relay(directory.Path, pki, pki.WriteDownstreams(("edge-01", client.Pin)), 0) with
+            {
+                OutputType = "ama-syslog",
+                AmaSyslogSocket = socketPath
+            };
+            await using WebApplication relay = await RelayHosts.StartAsync(relaySettings, ct);
+            CollectorSettings edgeSettings = RelayHosts.Downstream(directory.Path, pki, client, RelayHosts.RelayPort(relay));
+            await using WebApplication edge = await RelayHosts.StartAsync(edgeSettings, ct);
+
+            using HttpRequestMessage request = Post(RelayHosts.Event("relay-ama-syslog-1"));
+            using HttpResponseMessage response = await edge.GetTestClient().SendAsync(request, ct);
+            Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+
+            byte[] buffer = new byte[70_000];
+            int length = await Task.Run(() => daemon.Receive(buffer), ct);
+            string message = Encoding.ASCII.GetString(buffer, 0, length);
+            Assert.StartsWith("<165>", message, StringComparison.Ordinal);
+            string json = Encoding.UTF8.GetString(Convert.FromBase64String(message[(message.IndexOf("bower-b64:", StringComparison.Ordinal) + 10)..]));
+            using JsonDocument envelope = JsonDocument.Parse(json);
+            Assert.Equal("relay-ama-syslog-1", envelope.RootElement.GetProperty("eventId").GetString());
+            // Decided and redacted at the edge: the relay forwards the edge's envelope unchanged.
+            Assert.Equal("edge-01", envelope.RootElement.GetProperty("collector").GetProperty("id").GetString());
+            Assert.Equal(RelayHosts.Rows(edgeSettings.QueuePath).Single(row => row.EventId == "relay-ama-syslog-1").Payload, json);
+        }
+        finally
+        {
+            Directory.Delete(socketDirectory, recursive: true);
+        }
+    }
+
     private static HttpRequestMessage Post(SecurityEventEnvelope candidate)
     {
         HttpRequestMessage request = new(HttpMethod.Post, "/v1/events")

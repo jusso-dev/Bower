@@ -397,7 +397,9 @@ internal static class SourceSetupEndpoints
                     "Needs attention",
                     [new SetupCheck("report", SetupCheckStates.Fail,
                         $"The collector reports the {verification.ReportId} output as {output.Status}.",
-                        "Check the spool directory's permissions and free space on the collector host.")],
+                        verification.ReportId == "ama-syslog"
+                            ? "Check that rsyslog is running and /dev/log accepts connections on the collector host (bower doctor --syslog-socket /dev/log)."
+                            : "Check the spool directory's permissions and free space on the collector host.")],
                     output.LastAcknowledgedAt, collector.LastSeenAt, now)
             };
         }

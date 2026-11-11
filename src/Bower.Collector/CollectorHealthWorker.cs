@@ -28,8 +28,15 @@ public sealed partial class CollectorHealthWorker(
     SyslogSource? syslog = null,
     WindowsEventLogSource? windowsEventLog = null,
     ManagedPrivacyProfileState? managedPrivacy = null,
-    QueueStoragePressure? storagePressure = null) : BackgroundService
+    QueueStoragePressure? storagePressure = null,
+    IOutputAdapter? output = null) : BackgroundService
 {
+    /// <summary>
+    /// Bytes the processor adds to a health record (security decision and collector context)
+    /// before it reaches the output, with room to spare: 600 to 700 measured, so 1,000.
+    /// </summary>
+    internal const int ProcessorContextAllowance = 1_000;
+
     private CollectorHealthSample? previous;
     private long sequence;
 
@@ -102,7 +109,12 @@ public sealed partial class CollectorHealthWorker(
             pages,
             deliveryActivity.LastFailure,
             storage);
-        string record = CollectorHealthRecord.CreateJson(sample, identity.Id, settings.Environment, previous);
+        // The collector adds its policy and collector context (about 600 bytes) before the
+        // record reaches the output, so leave room for it within the output's JSON limit.
+        int? recordLimit = output is Bower.Output.AmaSyslog.AmaSyslogOutput syslogOutput
+            ? syslogOutput.MaximumJsonBytes - ProcessorContextAllowance
+            : null;
+        string record = CollectorHealthRecord.CreateJson(sample, identity.Id, settings.Environment, previous, recordLimit);
         try
         {
             ProcessingResult result = await processor.ProcessCollectorHealthAsync(

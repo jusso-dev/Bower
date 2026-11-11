@@ -694,47 +694,104 @@ internal sealed partial class GcpSourceSetup : SourceSetupType
     private static partial Regex SubscriptionPattern();
 }
 
-/// <summary>AMA companion: the collector writes ready files the Azure Monitor Agent collects (docs/deployment/ama-companion.md).</summary>
+/// <summary>
+/// Azure Monitor Agent on the collector host. Two deliveries: local syslog with the ready-made
+/// rule (Linux, docs/deployment/ama-syslog-output.md) or ready files AMA collects with a rule the
+/// operator writes (docs/deployment/ama-companion.md). The output, check and heartbeat output
+/// name follow the choice.
+/// </summary>
 internal sealed partial class AmaSourceSetup : SourceSetupType
 {
+    private const string Spool = "spool";
+
+    private const string Syslog = "syslog";
+
+    private static readonly SourceFieldOption[] Deliveries =
+    [
+        new(Spool, "Ready files (Linux or Windows; you write the collection rule)"),
+        new(Syslog, "Local syslog (Linux only; ready-made collection rule)")
+    ];
+
+    private static readonly string[] SpoolOnly = [Spool];
+
+    private static readonly string[] SyslogOnly = [Syslog];
+
+    private static readonly SourceFieldOption[] Facilities =
+        [.. Enumerable.Range(0, 8).Select(index => new SourceFieldOption($"local{index}", $"local{index}"))];
+
     public override string Id => "ama";
 
     public override string Title => "Azure Monitor Agent";
 
     public override string Summary =>
-        "Switches this collector's delivery to local files that the Azure Monitor Agent already on the host collects into your workspace.";
+        "Switches this collector's delivery to the Azure Monitor Agent already on the host: local syslog on Linux, or local files on Linux and Windows.";
 
     public override string Why =>
         "Some estates allow only the Azure Monitor Agent to send to Log Analytics. Bower still redacts and selects; AMA carries the result.";
 
     public override IReadOnlyList<string> Needs =>
     [
-        "The Azure Monitor Agent installed on the collector host and associated with a data collection rule.",
-        "A custom table in the workspace for Bower's records.",
-        "A local directory with restrictive permissions and a disk quota for the spool.",
-        "Someone who can edit the data collection rule in Azure."
+        "The Azure Monitor Agent installed on the collector host.",
+        "The BowerSecurity_CL table from deploy/bicep/main.bicep, or another custom table for the ready-file delivery.",
+        "For local syslog: rsyslog on the host, and the collection rule deploy/bicep/ama-syslog-dcr.bicep created and associated before the switch.",
+        "For local syslog: trust in every local account on the host, which can also write rows to the table unless the origin filter is installed.",
+        "For ready files: a local directory with restrictive permissions and a disk quota, and someone who can edit the data collection rule in Azure."
     ];
 
     public override IReadOnlyList<SourceFieldRule> Fields { get; } =
     [
         new(new SourceFieldDefinition(
+            "delivery", "Delivery", SourceFieldKinds.Choice, true,
+            "Local syslog uses the ready-made rule but works on Linux only. Ready files work on Windows too.",
+            Spool, Options: Deliveries, MaximumLength: 8)),
+        new(new SourceFieldDefinition(
+            "facility", "Syslog facility", SourceFieldKinds.Choice, true,
+            "The facility Bower writes to. Pass the same value to the rule's facility parameter, and pick one nothing else on the host uses.",
+            "local4", Options: Facilities, MaximumLength: 6, ShownWhenField: "delivery", ShownWhenValues: SyslogOnly)),
+        new(new SourceFieldDefinition(
             "spoolPath", "Spool directory", SourceFieldKinds.FilePath, true,
             "Where the collector writes ready files for AMA. Keep it on local disk with restrictive permissions.",
-            "/var/lib/bower/ama-spool", MaximumLength: 260)),
+            "/var/lib/bower/ama-spool", MaximumLength: 260, ShownWhenField: "delivery", ShownWhenValues: SpoolOnly)),
         new(
             new SourceFieldDefinition(
                 "table", "Custom table", SourceFieldKinds.Text, true,
-                "The workspace table AMA writes to. Custom table names end in _CL.", "BowerSecurity_CL", MaximumLength: 45),
+                "The workspace table AMA writes to. Custom table names end in _CL.", "BowerSecurity_CL", MaximumLength: 45,
+                ShownWhenField: "delivery", ShownWhenValues: SpoolOnly),
             TablePattern(),
             "Use letters, digits and underscores, ending in _CL.")
     ];
 
     public override string CheckDescription =>
-        "Bower watches the collector's heartbeat for the ama-spool output. It turns green when the collector reports it healthy. AMA's own collection is checked in Azure Monitor, not here.";
+        "Bower watches the collector's heartbeat for the output you chose (ama-syslog or ama-spool). It turns green when the collector reports it healthy. That proves only the hand-off on the host: AMA's own collection is checked in Azure Monitor, and arrival only by a Sentinel query.";
 
-    public override string Guide => "docs/deployment/ama-companion.md";
+    public override string Guide => "docs/getting-started/azure-monitor-agent.md";
 
-    public override SourceSetupBuild Build(IReadOnlyDictionary<string, string> values, string collectorId)
+    public override SourceSetupBuild Build(IReadOnlyDictionary<string, string> values, string collectorId) =>
+        values["delivery"] == Syslog ? BuildSyslog(values) : BuildSpool(values);
+
+    private static SourceSetupBuild BuildSyslog(IReadOnlyDictionary<string, string> values)
+    {
+        string facility = values["facility"];
+        return new SourceSetupBuild(
+            [],
+            [
+                new("collector", "BOWER_OUTPUT", "ama-syslog"),
+                new("collector", "BOWER_AMA_SYSLOG_FACILITY", facility)
+            ],
+            [new SourceSetupSnippet(
+                "Azure: create the collection rule (before approving)",
+                "Run on an admin workstation with a checkout of the Bower repository, then associate the rule with the collector host. Do this before the collector switches, or events handed to syslog are not collected.",
+                "bash",
+                "az deployment group create --resource-group <resource-group> --name bower-ama-syslog \\\n" +
+                "  --template-file deploy/bicep/ama-syslog-dcr.bicep \\\n" +
+                $"  --parameters workspaceName=<workspace> facility={facility}\n")],
+            new SourceSetupVerification(
+                "output",
+                "ama-syslog",
+                "The collector's heartbeat reports the ama-syslog output as healthy (the local daemon accepted events)."));
+    }
+
+    private static SourceSetupBuild BuildSpool(IReadOnlyDictionary<string, string> values)
     {
         string spool = values["spoolPath"].TrimEnd('/', '\\');
         string separator = spool.Contains('\\', StringComparison.Ordinal) ? "\\" : "/";
@@ -773,7 +830,7 @@ internal sealed partial class AmaSourceSetup : SourceSetupType
         ["application"] = new JsonObject { ["name"] = "finance-portal", ["environment"] = "production" },
         ["actor"] = new JsonObject { ["username"] = "casey.example@example.com" },
         ["target"] = new JsonObject { ["type"] = "group", ["name"] = "Payments approvers" },
-        ["attributes"] = new JsonObject { ["ama.table"] = values["table"] }
+        ["attributes"] = new JsonObject { ["ama.delivery"] = values["delivery"] }
     };
 
     [GeneratedRegex("^[A-Za-z][A-Za-z0-9_]{0,41}_CL$")]

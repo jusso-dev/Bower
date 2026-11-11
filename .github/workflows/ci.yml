@@ -210,6 +210,25 @@ jobs:
           dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj
           --configuration Release --no-build
           --filter-class "Bower.UnitTests.WindowsSettingsFileTests"
+      # The syslog output is Linux only (#233, #240). On Windows its tests must report a skip
+      # with a reason, never pass by returning early, and the start-up refusal must run.
+      - name: Syslog output tests skip on Windows with a reason
+        shell: pwsh
+        run: |
+          $results = Join-Path $env:RUNNER_TEMP 'syslog-tests'
+          dotnet test --project tests/Bower.UnitTests/Bower.UnitTests.csproj `
+            --configuration Release --no-build `
+            --filter-class "Bower.UnitTests.AmaSyslogOutputTests" `
+            --report-xunit-ctrf --report-xunit-ctrf-filename syslog.ctrf.json --results-directory $results
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $report = Get-ChildItem -Recurse -Filter syslog.ctrf.json -LiteralPath $results | Select-Object -First 1
+          $tests = @((Get-Content -Raw -LiteralPath $report.FullName | ConvertFrom-Json).results.tests)
+          $tests | Sort-Object name | ForEach-Object { Write-Output "$($_.status): $($_.name) $($_.message)" }
+          $problems = @($tests | Where-Object { $_.status -notin @('passed', 'skipped') -or ($_.status -eq 'skipped' -and -not $_.message) })
+          $refusal = @($tests | Where-Object { $_.name -like '*.Settings_RefuseTheAmaSyslogOutputOnWindowsAndNameThePlatform' -and $_.status -eq 'passed' })
+          if ($tests.Count -eq 0 -or $problems.Count -or $refusal.Count -ne 1) {
+            throw "Expected every syslog test to pass or skip with a reason, and the Windows refusal test to pass: $($problems.name -join ', ')"
+          }
       - name: Build Windows lab position probe
         shell: pwsh
         run: |
@@ -262,12 +281,16 @@ jobs:
           python3 -m compileall -q lab/aws/monitoring
           for script in lab/aws/scripts/*.sh; do bash -n "$script"; done
           python3 lab/aws/scripts/template.py "$RUNNER_TEMP/bower-lab.json"
+      # The quick start's logrotate config against the guide's directory permissions (#226).
+      # The script adds users and writes /var/log, so it runs in a throwaway container.
+      - name: Rotate the CloudWatch agent quick start's event file
+        run: docker run --rm -v "$GITHUB_WORKSPACE/examples/cloud-agents:/ex:ro" ubuntu:24.04 bash /ex/aws/test_logrotate.sh
       - name: Test Sentinel analytics validation harness
         run: python3 -m unittest discover -s deploy/sentinel/analytics/validation -v
       - name: Check Windows lab script syntax
         shell: pwsh
         run: |
-          foreach ($file in Get-ChildItem @('lab/aws/scripts/*.ps1', 'lab/aws/monitoring/*.ps1', 'lab/aws/tests/*.ps1')) {
+          foreach ($file in Get-ChildItem @('lab/aws/scripts/*.ps1', 'lab/aws/monitoring/*.ps1', 'lab/aws/tests/*.ps1', 'examples/cloud-agents/aws/*.ps1')) {
             $tokens = $null
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
@@ -323,6 +346,11 @@ jobs:
           $configuration.Run.Exit = $true
           $configuration.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $configuration
+      # The CloudWatch agent quick start's Windows steps, run as written: the folder lockdown
+      # checked as a second standard user, and the rotation task run as SYSTEM (#246).
+      - name: Lock down and rotate the CloudWatch agent quick start's Windows event folder
+        shell: pwsh
+        run: ./examples/cloud-agents/aws/test_windows_event_folder.ps1
       - name: Test qualification harness and native ACL rollback on PowerShell 5.1 and 7
         shell: pwsh
         run: |

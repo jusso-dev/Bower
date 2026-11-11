@@ -123,6 +123,58 @@ public static class CollectorHealthRecord
         JsonSerializer.Serialize(Create(sample, collectorId, environment, previous), BowerJson.Envelope);
 
     /// <summary>
+    /// The record as JSON within <paramref name="maximumBytes"/> (UTF-8). An output with a small
+    /// message limit (BOWER_OUTPUT=ama-syslog) would otherwise refuse a record that lists many
+    /// sources, and a missing health record looks like a stopped collector. Past the limit the
+    /// record is summarised: the first entries of each list (overdue sources worst first, syslog
+    /// listeners, Windows subscriptions) are written in full, as many as fit, and the rest are a
+    /// count (<c>overdueNotListed</c>, <c>syslogNotListed</c>, <c>windowsEventLogNotListed</c>).
+    /// Every other count and problem code stays complete. Null limit: as
+    /// <see cref="CreateJson(CollectorHealthSample, string, string, CollectorHealthSample?)"/>.
+    /// </summary>
+    public static string CreateJson(
+        CollectorHealthSample sample,
+        string collectorId,
+        string environment,
+        CollectorHealthSample? previous,
+        int? maximumBytes)
+    {
+        string json = CreateJson(sample, collectorId, environment, previous);
+        if (maximumBytes is not { } limit || System.Text.Encoding.UTF8.GetByteCount(json) <= limit)
+        {
+            return json;
+        }
+
+        // The size grows with the number listed, so find the largest number that fits.
+        string Render(int listed) =>
+            JsonSerializer.Serialize(Create(sample, collectorId, environment, previous, listed), BowerJson.Envelope);
+        int low = 0;
+        int high = MaximumListed - 1;
+        string best = Render(0);
+        while (low <= high)
+        {
+            int middle = (low + high + 1) / 2;
+            string candidate = Render(middle);
+            if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= limit)
+            {
+                best = candidate;
+                low = middle + 1;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+
+            if (middle == 0)
+            {
+                break;
+            }
+        }
+
+        return best;
+    }
+
+    /// <summary>
     /// The record for <paramref name="sample"/>. Counters are reported as the change since
     /// <paramref name="previous"/>, the last sample of this process that was queued; without
     /// one (or after a restart) they count from process start.
@@ -131,7 +183,15 @@ public static class CollectorHealthRecord
         CollectorHealthSample sample,
         string collectorId,
         string environment,
-        CollectorHealthSample? previous = null)
+        CollectorHealthSample? previous = null) =>
+        Create(sample, collectorId, environment, previous, MaximumListed);
+
+    private static SecurityEventEnvelope Create(
+        CollectorHealthSample sample,
+        string collectorId,
+        string environment,
+        CollectorHealthSample? previous,
+        int listed)
     {
         ArgumentNullException.ThrowIfNull(sample);
         ArgumentException.ThrowIfNullOrWhiteSpace(collectorId);
@@ -166,7 +226,7 @@ public static class CollectorHealthRecord
             {
                 ["healthRecordVersion"] = RecordVersion
             },
-            Attributes = Attributes(sample, baseline, problems)
+            Attributes = Attributes(sample, baseline, problems, listed)
         };
     }
 
@@ -261,7 +321,8 @@ public static class CollectorHealthRecord
     private static Dictionary<string, JsonElement> Attributes(
         CollectorHealthSample sample,
         CollectorHealthSample? baseline,
-        IReadOnlyList<string> problems)
+        IReadOnlyList<string> problems,
+        int listed)
     {
         using MemoryStream stream = new();
         using (Utf8JsonWriter writer = new(stream))
@@ -384,13 +445,21 @@ public static class CollectorHealthRecord
             writer.WriteEndObject();
 
             writer.WriteStartObject("monitoringCoverage");
-            writer.WriteBoolean("syslogComplete", (sample.Syslog?.Count ?? 0) <= MaximumListed);
-            writer.WriteBoolean("windowsEventLogComplete", (sample.WindowsEventLog?.Count ?? 0) <= MaximumListed);
+            writer.WriteBoolean("syslogComplete", (sample.Syslog?.Count ?? 0) <= listed);
+            writer.WriteBoolean("windowsEventLogComplete", (sample.WindowsEventLog?.Count ?? 0) <= listed);
+            if (listed < MaximumListed)
+            {
+                // Summarised to fit the output's message limit: the rest of each list is a count.
+                Number(writer, "listedLimit", listed);
+                Number(writer, "syslogNotListed", Math.Max(0, (sample.Syslog?.Count ?? 0) - listed));
+                Number(writer, "windowsEventLogNotListed", Math.Max(0, (sample.WindowsEventLog?.Count ?? 0) - listed));
+            }
+
             writer.WriteEndObject();
 
-            WriteSources(writer, sample);
-            WriteSyslog(writer, sample.Syslog, baseline?.Syslog);
-            WriteWindowsEventLog(writer, sample.WindowsEventLog, baseline?.WindowsEventLog);
+            WriteSources(writer, sample, listed);
+            WriteSyslog(writer, sample.Syslog, baseline?.Syslog, listed);
+            WriteWindowsEventLog(writer, sample.WindowsEventLog, baseline?.WindowsEventLog, listed);
             writer.WriteEndObject();
         }
 
@@ -404,7 +473,7 @@ public static class CollectorHealthRecord
         return attributes;
     }
 
-    private static void WriteSources(Utf8JsonWriter writer, CollectorHealthSample sample)
+    private static void WriteSources(Utf8JsonWriter writer, CollectorHealthSample sample, int listed)
     {
         IReadOnlyList<SourceSilenceStatus> sources = sample.Sources;
         writer.WriteStartObject("sources");
@@ -419,7 +488,7 @@ public static class CollectorHealthRecord
             .OrderByDescending(item => item.SilentSeconds)
             .ThenBy(item => item.Application, StringComparer.Ordinal)
             .ThenBy(item => item.Environment, StringComparer.Ordinal)
-            .Take(MaximumListed))
+            .Take(listed))
         {
             writer.WriteStartObject();
             writer.WriteString("application", source.Application);
@@ -432,16 +501,22 @@ public static class CollectorHealthRecord
         }
 
         writer.WriteEndArray();
+        if (listed < MaximumListed)
+        {
+            Number(writer, "overdueNotListed", Math.Max(0, sources.Count(item => item.IsOverdue) - listed));
+        }
+
         writer.WriteEndObject();
     }
 
     private static void WriteSyslog(
         Utf8JsonWriter writer,
         IReadOnlyList<SyslogListenerStatus>? listeners,
-        IReadOnlyList<SyslogListenerStatus>? baseline)
+        IReadOnlyList<SyslogListenerStatus>? baseline,
+        int listed)
     {
         writer.WriteStartArray("syslog");
-        foreach (SyslogListenerStatus item in (listeners ?? []).Take(MaximumListed))
+        foreach (SyslogListenerStatus item in (listeners ?? []).Take(listed))
         {
             // The endpoint is configuration, not health; it stays in the token-protected status.
             SyslogListenerStatus? before = Match(baseline, item.Id);
@@ -494,10 +569,11 @@ public static class CollectorHealthRecord
     private static void WriteWindowsEventLog(
         Utf8JsonWriter writer,
         IReadOnlyList<WindowsEventSubscriptionStatus>? subscriptions,
-        IReadOnlyList<WindowsEventSubscriptionStatus>? baseline)
+        IReadOnlyList<WindowsEventSubscriptionStatus>? baseline,
+        int listed)
     {
         writer.WriteStartArray("windowsEventLog");
-        foreach (WindowsEventSubscriptionStatus item in (subscriptions ?? []).Take(MaximumListed))
+        foreach (WindowsEventSubscriptionStatus item in (subscriptions ?? []).Take(listed))
         {
             WindowsEventSubscriptionStatus? before = Match(baseline, item.Id);
             writer.WriteStartObject();

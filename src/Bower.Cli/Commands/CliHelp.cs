@@ -21,6 +21,7 @@ internal static class CliHelp
           bower doctor [--policy-directory DIR] [--pack FILE --trusted-key PUB] [--privacy-profile FILE]
                        [--hmac-key-file FILE] [--collector-url URL] [--database FILE]
                        [--ingestion-endpoint URL] [--dcr-resource-id ID] [--workspace-resource-id ID]
+                       [--syslog-socket PATH]
                        [--credential azure-cli|managed-identity|workload-identity|environment] [--json]
 
           bower dcr generate [--out FILE] [--rule-name NAME] [--retention-days N] [--total-retention-days N]

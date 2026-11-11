@@ -4,5 +4,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+    <ProjectReference Include="../Bower.Dcr/Bower.Dcr.csproj" />
   </ItemGroup>
 </Project>

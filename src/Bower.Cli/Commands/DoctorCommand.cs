@@ -5,6 +5,7 @@ using Bower.Abstractions;
 using Bower.Contracts;
 using Bower.Dcr;
 using Bower.Evidence;
+using Bower.Output.AmaSyslog;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
@@ -144,6 +145,12 @@ internal static class DoctorCommand
             await CheckCollectorAsync(collectorUrl, CollectorTimeout, Pass, Warn, Fail);
         }
 
+        // Local syslog output (BOWER_OUTPUT=ama-syslog): the socket the collector will write to.
+        if (CliOptions.Get(args, "--syslog-socket") is { } syslogSocket)
+        {
+            CheckSyslogSocket(syslogSocket, Pass, Fail);
+        }
+
         // Local queue ledger.
         if (CliOptions.Get(args, "--database") is { } database)
         {
@@ -274,6 +281,43 @@ internal static class DoctorCommand
         {
             fail("collector", $"Unreachable: {exception.Message}");
         }
+    }
+
+    /// <summary>
+    /// The syslog output's socket: path exists, is a socket and accepts a connection (no
+    /// message is sent). A collector with an unusable socket starts and queues events, so
+    /// this is where the operator finds out before delivery does.
+    /// </summary>
+    internal static void CheckSyslogSocket(string path, Action<string, string> pass, Action<string, string> fail)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            fail("ama-syslog", "BOWER_OUTPUT=ama-syslog runs on Linux only; use azure-logs-ingestion on Windows.");
+            return;
+        }
+
+        if (AmaSyslogOutputOptions.SocketPathProblem(path) is { } problem)
+        {
+            fail("ama-syslog", $"{path} {problem}.");
+            return;
+        }
+
+        // File.Exists follows /dev/log's symbolic link and is false for a dangling one.
+        if (!File.Exists(path))
+        {
+            fail("ama-syslog", $"{path} does not exist. Is the syslog daemon running? In a container, mount the host's /dev/log.");
+            return;
+        }
+
+        // Connecting to a path that is not a socket fails with ConnectionRefused on Linux and
+        // macOS, the same as a socket nobody listens on, so both are reported together.
+        if (AmaSyslogOutput.Probe(path) is { } error)
+        {
+            fail("ama-syslog", $"{path} is not a listening syslog socket ({error}).");
+            return;
+        }
+
+        pass("ama-syslog", $"{path} is a socket and accepts connections.");
     }
 
     private static void Report(

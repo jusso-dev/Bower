@@ -54,7 +54,11 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.inlinehilite
@@ -99,9 +103,10 @@ nav:
           - Relay networks: deployment/relay.md
           - Amazon S3 output: deployment/s3-output.md
           - Splunk HEC and NDJSON output: deployment/http-splunk-hec-output.md
+          - Syslog output for Azure Monitor Agent: deployment/ama-syslog-output.md
           - Azure Arc extension: deployment/azure-arc-extension.md
       - Connect a source:
-          - Syslog: deployment/syslog-source.md
+          - Syslog source: deployment/syslog-source.md
           - Windows Event Log: deployment/windows-event-log-source.md
           - Windows Event Forwarding: deployment/windows-event-forwarding.md
           - Local files: deployment/file-tail-source.md
@@ -162,6 +167,7 @@ nav:
   - Reference:
       - reference/index.md
       - bower CLI: reference/cli.md
+      - BowerSecurity_CL columns: reference/sentinel-table.md
       - Architecture: architecture/overview.md
       - Collector enrolment: architecture/collector-enrolment.md
       - Heartbeats: architecture/heartbeat-v2.md

@@ -25,6 +25,10 @@ WEC_POSITION_INPUTS = {
 def select(paths, full=False):
     selected = set(JOBS) if full else set()
     for path in paths:
+        # The Windows steps of this guide are run as written by the monitoring-windows job (#246).
+        if path == "docs/getting-started/aws-cloudwatch-agent.md":
+            selected.add("infrastructure")
+            continue
         # Known editorial inputs cannot affect product builds. Check this before
         # the unknown-file fallback, but never ignore Markdown under source/tests.
         if path.startswith(("docs/", "docs-site/", "tools/docs/")) or path in {
@@ -56,6 +60,9 @@ def select(paths, full=False):
             selected.update(("infrastructure", "dotnet"))
         elif path.startswith("deploy/"):
             selected.add("infrastructure")
+        elif path.startswith("src/Bower.Output.AmaSyslog/"):
+            # The installer test runs this output under the packaged unit and journald (#245).
+            selected.update(("dotnet", "windows", "e2e", "platforms", "packaging"))
         elif path.startswith(("src/", "tests/")):
             selected.update(("dotnet", "windows", "e2e"))
             if path.startswith(WEC_PROBE_PROJECTS):

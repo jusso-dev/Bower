@@ -27,6 +27,12 @@ public interface ICloudMessageSource
 /// <summary>Candidate event JSON for the collector, or a reason the message is not a security event.</summary>
 public sealed record CloudTranslation(IReadOnlyList<string> Events, int Skipped, string? UnsupportedReason)
 {
+    /// <summary>
+    /// The <c>X-Bower-Origin</c> value for each event (same index), or empty when the source
+    /// carries none (#253). Shorter than <see cref="Events"/> means "no origin" for the rest.
+    /// </summary>
+    public IReadOnlyList<string?> Origins { get; init; } = [];
+
     public static CloudTranslation Unsupported(string reason) => new([], 0, reason);
 }
 

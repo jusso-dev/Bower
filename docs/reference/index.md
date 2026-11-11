@@ -7,6 +7,7 @@ to understand the contract, implementation or operating assumptions.
 
 - [Configuration schemas](https://github.com/jusso-dev/Bower/tree/main/schemas): versioned JSON schemas in the repository.
 - [bower CLI reference](cli.md): every command and option, generated from the CLI's own help text and checked in CI.
+- [BowerSecurity_CL columns](sentinel-table.md): the Sentinel table, including the `Origin` column, checked against the schema model in CI.
 - [CLI implementation](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Cli): the command definitions.
 - [Management API](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Management.Api): endpoint definitions, role enforcement and management contracts.
 - [Collector API](https://github.com/jusso-dev/Bower/tree/main/src/Bower.Collector): intake and collector host implementation.

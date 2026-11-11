@@ -10,10 +10,10 @@ using Bower.Core;
 using Bower.Forwarding;
 using Bower.Jobs;
 using Bower.Output.AmaSpool;
+using Bower.Output.AmaSyslog;
 using Bower.Output.AzureLogsIngestion;
 using Bower.Output.Http;
 using Bower.Output.S3;
-using Bower.Output.Syslog;
 using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
@@ -128,7 +128,8 @@ public static partial class CollectorApplication
                 services.GetService<SyslogSource>(),
                 services.GetService<WindowsEventLogSource>(),
                 services.GetRequiredService<ManagedPrivacyProfileState>(),
-                services.GetRequiredService<QueueStoragePressure>()));
+                services.GetRequiredService<QueueStoragePressure>(),
+                services.GetService<IOutputAdapter>()));
         }
         builder.Services.AddHostedService<QueueStorageMonitor>();
         if (sources.Syslog is { } syslog)
@@ -224,10 +225,23 @@ public static partial class CollectorApplication
             builder.Services.AddSingleton(relayHttp);
         }
 
+        bool ownsOutput = output is null;
         output ??= CreateOutput(settings, credential, relayHttp);
         if (output is not null)
         {
-            builder.Services.AddSingleton(output);
+            if (ownsOutput)
+            {
+                // A factory registration: the container disposes what it built (the syslog
+                // socket, the S3 and HTTP clients) when the host stops. An instance passed in by
+                // a caller stays the caller's to dispose.
+                IOutputAdapter created = output;
+                builder.Services.AddSingleton(_ => created);
+            }
+            else
+            {
+                builder.Services.AddSingleton(output);
+            }
+
             builder.Services.AddSingleton(settings.DeliveryOptions());
             builder.Services.AddHostedService<QueueDeliveryWorker>();
         }
@@ -317,6 +331,19 @@ public static partial class CollectorApplication
         if (settings.IngestToken is null && !settings.IsLoopbackListener)
         {
             LogUnauthenticatedIngest(app.Logger);
+        }
+
+        if (app.Services.GetService<IOutputAdapter>() is AmaSyslogOutput syslog)
+        {
+            // Do not stop start-up: the daemon may come up later and the queue is durable. Say
+            // once, by path and error class, what delivery will report as unavailable.
+            if (syslog.Probe() is { } problem)
+            {
+                LogSyslogSocketUnavailable(app.Logger, settings.AmaSyslogSocket, problem);
+            }
+
+            string facility = AmaSyslogOutputOptions.FacilityName(settings.AmaSyslogFacility!.Value);
+            LogSyslogOutput(app.Logger, settings.AmaSyslogSocket, facility, settings.AmaSyslogMaximumBytes);
         }
 
         IDurableEventStore queue = app.Services.GetRequiredService<IDurableEventStore>();
@@ -445,9 +472,14 @@ public static partial class CollectorApplication
                     ProcessingResult result;
                     try
                     {
+                        // Origin only from a producer the operator trusts to report it (the cloud
+                        // forwarder); never from the event, so an application cannot choose it.
+                        EventOrigin? origin = OriginHeader.Read(
+                            context.Request.Headers[OriginHeader.Name].ToString(), producer,
+                            context.RequestServices.GetRequiredService<CollectorSettings>().OriginProducers);
                         result = await processor.ProcessAsync(
                             candidate.GetRawText(),
-                            identity with { SourceAdapter = $"local-http:{producer}" },
+                            identity with { SourceAdapter = $"local-http:{producer}", Origin = origin },
                             cancellationToken);
                     }
                     catch (QueueCapacityExceededException)
@@ -675,12 +707,13 @@ public static partial class CollectorApplication
                 },
                 settings.CollectorId),
             "s3" => new S3Output(settings.S3Output! with { CollectorId = settings.CollectorId }),
-            "syslog" => new SyslogOutput(new SyslogOutputOptions
+            "ama-syslog" => new AmaSyslogOutput(new AmaSyslogOutputOptions
             {
-                Id = "syslog",
-                SocketPath = settings.SyslogOutputSocket,
-                Facility = settings.SyslogOutputFacility,
-                MaximumMessageBytes = settings.SyslogOutputMaximumBytes
+                Id = "ama-syslog",
+                SocketPath = settings.AmaSyslogSocket,
+                Facility = settings.AmaSyslogFacility!.Value,
+                MaximumMessageBytes = settings.AmaSyslogMaximumBytes,
+                BusyWait = settings.AmaSyslogBusyWait
             }),
             // The token and CA bundle are read here, so a bad file stops start-up.
             HttpOutput.OutputId => new HttpOutput(
@@ -695,4 +728,16 @@ public static partial class CollectorApplication
         Message = "Collector ingest authentication is disabled on a non-loopback listener. " +
             "Use BOWER_ALLOW_UNAUTHENTICATED_INGEST only on an isolated network.")]
     private static partial void LogUnauthenticatedIngest(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1010,
+        Level = LogLevel.Warning,
+        Message = "AMA syslog output socket {SocketPath} does not accept connections ({SocketError}). Events stay queued and are retried; check that the syslog daemon is running and the path is right.")]
+    private static partial void LogSyslogSocketUnavailable(ILogger logger, string socketPath, string socketError);
+
+    [LoggerMessage(
+        EventId = 1011,
+        Level = LogLevel.Information,
+        Message = "AMA syslog output writes to {SocketPath} on facility {Facility}, at most {MaximumBytes} bytes per message. The collection rule's facility must match.")]
+    private static partial void LogSyslogOutput(ILogger logger, string socketPath, string facility, int maximumBytes);
 }
