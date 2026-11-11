@@ -35,7 +35,7 @@ RUN apt-get update \
     && getcap /app/Bower.Agent.Docker \
     && mkdir -p /state
 
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.15-noble-chiseled AS runtime
 ARG BOWER_VERSION=
 LABEL org.opencontainers.image.version="${BOWER_VERSION}"
 WORKDIR /app

@@ -29,7 +29,7 @@ RUN RID="linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64)" \
     && rm -f /app/*.dbg /app/*.pdb
 
 # Chiseled runtime-deps: no shell, no package manager, no ICU (InvariantGlobalization).
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.15-noble-chiseled AS runtime
 ARG BOWER_VERSION=
 LABEL org.opencontainers.image.version="${BOWER_VERSION}"
 WORKDIR /app
