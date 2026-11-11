@@ -4,12 +4,12 @@
     "net10.0": {
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
-        "requested": "[18.11.0, )",
-        "resolved": "18.11.0",
-        "contentHash": "xf/bR0LNkhK0SnadDRlZIQmC4sac5Wk0e1WAdiQjRN3MSo6gQ9M2c4c1XRNnVGjfOvckh704W5CJ19AL0/Xsdg==",
+        "requested": "[18.11.1, )",
+        "resolved": "18.11.1",
+        "contentHash": "WhRZZb+oLAB2neaTa773vfPl+eIyfaMtDSZBHFJtWccty0OZbPXimIzDv1/dux5/Sr2/GqKEzOT8U4295g1GJg==",
         "dependencies": {
-          "Microsoft.CodeCoverage": "18.11.0",
-          "Microsoft.TestPlatform.TestHost": "18.11.0"
+          "Microsoft.CodeCoverage": "18.11.1",
+          "Microsoft.TestPlatform.TestHost": "18.11.1"
         }
       },
       "xunit.runner.visualstudio": {
@@ -129,15 +129,15 @@
       },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
-        "resolved": "18.11.0",
-        "contentHash": "MhN9wpvL1Es4hfIYslrsVgIsUdDFxuOBTbAl9mGIMvFo8PP5CLf4DrGdNrfwWSyn0lqi6sssm+I/qkkLL3MU+g=="
+        "resolved": "18.11.1",
+        "contentHash": "E3VdeksrrkN0fp/Fjsfr3yraNGHbgxRx3k2pjVIohYiZcCcrXQ/Dz6YX7KcZpx8NCf4G8yqnGA5OnMalds/qjg=="
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
-        "resolved": "10.0.14",
-        "contentHash": "1p9rO3Q2X/L/9YrYog3vaDzi8u+WZfJCOkDYoHqmofqYP0DLPLPyZcS2Rnh/79JXAodgbs1AgsaNwLpIvC3Xew==",
+        "resolved": "11.0.0",
+        "contentHash": "aWaF2LDjuFZwE9UsAGRYGNyS48xqaXoKPAjwpJI85fsaM/43s5NTRnl4xtqbTGKq8of2M/W8mo7DJk7v4zzHGQ==",
         "dependencies": {
-          "SQLitePCLRaw.core": "2.1.13"
+          "SQLitePCLRaw.core": "3.0.5"
         }
       },
       "Microsoft.Extensions.Configuration": {
@@ -505,15 +505,15 @@
       },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
-        "resolved": "18.11.0",
-        "contentHash": "BXBHYnwSOljKute8UYCMXOLAdB7awxEMppPSpqOF1ZxLD/W/OH+vTBgFaXA7q0aditJTVXSMVenel+wOkEIyNg=="
+        "resolved": "18.11.1",
+        "contentHash": "CWP0wn6kt1LYKTPIlQZbklsZVZDurjszhX5+ijQaxFTJ4p6SNygniudtTcwIxPU1mDTHba7H3AwQ1AC40AA6bw=="
       },
       "Microsoft.TestPlatform.TestHost": {
         "type": "Transitive",
-        "resolved": "18.11.0",
-        "contentHash": "AKjwKpyRBwoQFQmpcchtoYlfJEBlaY/40uxBRi+qXP4NR7xT8t+XTJtOyEyumfvfJcH5pASs75LwNdXYRr4XNA==",
+        "resolved": "18.11.1",
+        "contentHash": "dVQMb8GArL+vWgTbYhOgsCA1gKI1l52jfdw9pvQiaet5IbzwioQDCzbGDVt9QeeHCrMnheW2FA+Sm92mxGr+3w==",
         "dependencies": {
-          "Microsoft.TestPlatform.ObjectModel": "18.11.0"
+          "Microsoft.TestPlatform.ObjectModel": "18.11.1"
         }
       },
       "Microsoft.Win32.Registry": {
@@ -658,7 +658,7 @@
       "bower.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.contracts": {
@@ -667,10 +667,10 @@
       "bower.core": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )"
         }
       },
       "bower.dcr": {
@@ -679,16 +679,16 @@
       "bower.detection": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.functions.collector": {
         "type": "Project",
         "dependencies": {
-          "Bower.Core": "[1.0.0, )",
-          "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
-          "Bower.Packs": "[1.0.0, )",
+          "Bower.Core": "[0.1.1-dev.0, )",
+          "Bower.Output.AzureLogsIngestion": "[0.1.1-dev.0, )",
+          "Bower.Packs": "[0.1.1-dev.0, )",
           "Microsoft.Azure.Functions.Worker": "[2.52.0, )",
           "Microsoft.Azure.Functions.Worker.Extensions.Http": "[3.3.0, )",
           "Microsoft.Azure.Functions.Worker.Sdk": "[2.1.0, )",
@@ -704,48 +704,48 @@
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Ingestion": "[1.2.0, )",
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )"
         }
       },
       "bower.packs": {
         "type": "Project",
         "dependencies": {
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Detection": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Detection": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.persistence": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Microsoft.Data.Sqlite": "[10.0.14, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Microsoft.Data.Sqlite": "[11.0.0, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"
         }
       },
       "bower.pipeline": {
         "type": "Project",
         "dependencies": {
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.policyengine": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
@@ -799,20 +799,20 @@
       },
       "Microsoft.Data.Sqlite": {
         "type": "CentralTransitive",
-        "requested": "[10.0.14, )",
-        "resolved": "10.0.14",
-        "contentHash": "muyroan6rKrf0omZL8UF7Kw5uOGp/yBg1L/XWvkFN3WhKaNtK2IWqRZw93nIwVqjhTVDO0l4CEGhHIh+mb+sKg==",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "K3hceHG5pxWJ+mytesLiGxmJ988YFrKnMGml0xbq//UWsM79KD8nQ5sBwTSLKgWecT6Saict/jIB8O6lDL0M2g==",
         "dependencies": {
-          "Microsoft.Data.Sqlite.Core": "10.0.14",
-          "SQLitePCLRaw.bundle_e_sqlite3": "2.1.13",
-          "SQLitePCLRaw.core": "2.1.13"
+          "Microsoft.Data.Sqlite.Core": "[11.0.0, 12.0.0-a)",
+          "SQLitePCLRaw.bundle_e_sqlite3": "3.0.5",
+          "SQLitePCLRaw.core": "3.0.5"
         }
       },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",
-        "requested": "[10.0.14, )",
-        "resolved": "10.0.14",
-        "contentHash": "QtpQzuSZVyTPCuHW058yCs9Nj0394uUkNyFHS813nOmK9UgUdBdaprJ5PPsBgsQIpxADTsTkbaMMonykem6qdw=="
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "a2c4Kp55miXT6G+DSb75pczXQJHgNMzPyZEyMxrrKxuQrgvctcDWJWD9fVe/uGbQdu4Z0c3B7AVKp1DXmD64nQ=="
       },
       "Microsoft.IdentityModel.JsonWebTokens": {
         "type": "CentralTransitive",
