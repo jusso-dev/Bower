@@ -1,0 +1,917 @@
+{
+ "runId": "bower-resoak-20261106-092539",
+ "scope": "interim",
+ "generatedAt": "2026-11-07T01:18:43.771440Z",
+ "planSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "registeredPlanSha256": "b06e344f786d89bedfabc4f76908916103270225f7a2a52daa271754e7299d6e",
+ "dryRun": false,
+ "window": [
+  "2026-11-06T11:05:00.000000Z",
+  "2026-11-06T12:05:00.000000Z"
+ ],
+ "ingestionCutoff": "2026-11-07T01:18:40.746879Z",
+ "verifierAppId": "ab936791-5a81-4f04-a5a8-d89232fa18d7",
+ "faultWindows": [
+  {
+   "id": "F01",
+   "kind": "destination-outage",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1793967900,
+   "durationSeconds": 1800,
+   "start": 1793967900.412751,
+   "end": 1793969701.872371,
+   "impactEnd": 1793971501.872371,
+   "alertEnd": 1793975101.872371,
+   "executedOn": [
+    "Linux",
+    "Wec"
+   ],
+   "expectedHosts": [
+    "Linux",
+    "Wec"
+   ],
+   "steps": [
+    "done",
+    "restored"
+   ],
+   "lateSeconds": 1,
+   "restores": [
+    {
+     "restoredAt": "2026-11-06T12:55:00.452113+00:00",
+     "by": "tick",
+     "blockedPackets": 200,
+     "error": null
+    },
+    {
+     "restoredAt": "2026-11-06T12:55:01.8723716+00:00",
+     "by": "tick",
+     "blockedPackets": null,
+     "error": null
+    }
+   ],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "collector-health-missing",
+    "queue-backlog",
+    "destination-freshness",
+    "table-no-ingestion"
+   ],
+   "alertsRequiredAnyOf": [
+    "collector-health-missing",
+    "queue-backlog"
+   ]
+  },
+  {
+   "id": "F02",
+   "kind": "sender-restart",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1793978700,
+   "durationSeconds": 0,
+   "start": 1793978700.47889,
+   "end": 1793978700.47889,
+   "impactEnd": 1793979600.47889,
+   "alertEnd": 1793983200.47889,
+   "executedOn": [
+    "Dc",
+    "Sender"
+   ],
+   "expectedHosts": [
+    "Sender",
+    "Dc"
+   ],
+   "steps": [
+    "done"
+   ],
+   "lateSeconds": 1,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F03",
+   "kind": "log-rollover",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1793993100,
+   "durationSeconds": 0,
+   "start": 1793993100.404257,
+   "end": 1793993100.404257,
+   "impactEnd": 1793994000.404257,
+   "alertEnd": 1793997600.404257,
+   "executedOn": [
+    "Linux",
+    "Sender"
+   ],
+   "expectedHosts": [
+    "Sender",
+    "Linux"
+   ],
+   "steps": [
+    "done"
+   ],
+   "lateSeconds": 0.5,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F04",
+   "kind": "credential-rotation-syslog-tls",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794007500,
+   "durationSeconds": 0,
+   "start": 1794007500.403599,
+   "end": 1794007500.403599,
+   "impactEnd": 1794008400.403599,
+   "alertEnd": 1794012000.403599,
+   "executedOn": [
+    "Linux"
+   ],
+   "expectedHosts": [
+    "Linux"
+   ],
+   "steps": [
+    "done"
+   ],
+   "lateSeconds": 0.4,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F05",
+   "kind": "collector-kill",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794057900,
+   "durationSeconds": 0,
+   "start": 1794057900,
+   "end": 1794057900,
+   "impactEnd": 1794058800,
+   "alertEnd": 1794062400,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "linux"
+   ],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F06",
+   "kind": "collector-kill",
+   "collectors": [
+    "windows"
+   ],
+   "plannedAt": 1794065100,
+   "durationSeconds": 0,
+   "start": 1794065100,
+   "end": 1794065100,
+   "impactEnd": 1794066000,
+   "alertEnd": 1794069600,
+   "executedOn": [],
+   "expectedHosts": [
+    "Wec"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "windows"
+   ],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F07",
+   "kind": "host-reboot",
+   "collectors": [
+    "windows"
+   ],
+   "plannedAt": 1794075900,
+   "durationSeconds": 0,
+   "start": 1794075900,
+   "end": 1794075900,
+   "impactEnd": 1794077700,
+   "alertEnd": 1794081300,
+   "executedOn": [],
+   "expectedHosts": [
+    "Wec"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "windows"
+   ],
+   "reboots": [
+    "windows"
+   ],
+   "alertsPermitted": [
+    "collector-health-missing",
+    "source-transport-errors",
+    "queue-backlog",
+    "source-overdue"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F08",
+   "kind": "host-reboot",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794083100,
+   "durationSeconds": 0,
+   "start": 1794083100,
+   "end": 1794083100,
+   "impactEnd": 1794084900,
+   "alertEnd": 1794088500,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "linux"
+   ],
+   "reboots": [
+    "linux"
+   ],
+   "alertsPermitted": [
+    "collector-health-missing",
+    "source-transport-errors",
+    "queue-backlog",
+    "source-overdue"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F09",
+   "kind": "credential-rotation-ingestion",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1794090300,
+   "durationSeconds": 0,
+   "start": 1794090300,
+   "end": 1794090300,
+   "impactEnd": 1794091200,
+   "alertEnd": 1794094800,
+   "executedOn": [],
+   "expectedHosts": [
+    "Linux",
+    "Wec"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [
+    "linux",
+    "windows"
+   ],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F10",
+   "kind": "sender-restart",
+   "collectors": [
+    "linux",
+    "windows"
+   ],
+   "plannedAt": 1794126300,
+   "durationSeconds": 0,
+   "start": 1794126300,
+   "end": 1794126300,
+   "impactEnd": 1794127200,
+   "alertEnd": 1794130800,
+   "executedOn": [],
+   "expectedHosts": [
+    "Sender",
+    "Dc"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [
+    "source-transport-errors"
+   ],
+   "alertsRequiredAnyOf": []
+  },
+  {
+   "id": "F11",
+   "kind": "log-rollover",
+   "collectors": [
+    "linux"
+   ],
+   "plannedAt": 1794169500,
+   "durationSeconds": 0,
+   "start": 1794169500,
+   "end": 1794169500,
+   "impactEnd": 1794170400,
+   "alertEnd": 1794174000,
+   "executedOn": [],
+   "expectedHosts": [
+    "Sender",
+    "Linux"
+   ],
+   "steps": [],
+   "lateSeconds": null,
+   "restores": [],
+   "afterReboot": [],
+   "errors": [],
+   "restarts": [],
+   "reboots": [],
+   "alertsPermitted": [],
+   "alertsRequiredAnyOf": []
+  }
+ ],
+ "collectors": {
+  "linux": {
+   "native": 526260,
+   "accepted": 517087,
+   "sentinelDistinct": 39059,
+   "sentinelRows": 39059,
+   "duplicateRows": 0,
+   "missingAtAccepted": 9173,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 487201,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "nativeSha256": "9c0c3d818cd69fe7dc8c9904ee8ca85b1e8225887ce2d08dbec4e997d8814b61",
+   "acceptedSha256": "9e79922517fcec9791bc093b48b32c904411f8c0c8c994867ceac1ffcbae965d",
+   "sentinelSha256": "1f584c3ae326d8e211686d3ca55788d98549560fe3d93f0853b2e58b7303d31b",
+   "exact": false,
+   "nativeDetail": {
+    "segments": [
+     {
+      "segment": 1,
+      "first": 100000,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999994772312455,
+      "plannedStart": 1793963100,
+      "startedAt": "2026-11-06T11:05:00.100046+00:00",
+      "endedAt": "2026-11-06T13:05:00.103816+00:00",
+      "lateSeconds": 0,
+      "exact": true
+     },
+     {
+      "segment": 2,
+      "first": 172000,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99389692749797,
+      "plannedStart": 1793970300,
+      "startedAt": "2026-11-06T13:05:02.159824+00:00",
+      "endedAt": "2026-11-06T13:06:02.163492+00:00",
+      "lateSeconds": 2.159,
+      "exact": true
+     },
+     {
+      "segment": 3,
+      "first": 178000,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999994716836126,
+      "plannedStart": 1793970360,
+      "startedAt": "2026-11-06T13:06:04.105697+00:00",
+      "endedAt": "2026-11-06T15:06:04.109507+00:00",
+      "lateSeconds": 4.105,
+      "exact": true
+     },
+     {
+      "segment": 4,
+      "first": 250000,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.99999475994252,
+      "plannedStart": 1793977560,
+      "startedAt": "2026-11-06T15:06:06.051707+00:00",
+      "endedAt": "2026-11-06T17:05:06.055452+00:00",
+      "lateSeconds": 6.051,
+      "exact": true
+     },
+     {
+      "segment": 5,
+      "first": 321400,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99388854185946,
+      "plannedStart": 1793984700,
+      "startedAt": "2026-11-06T17:05:07.997604+00:00",
+      "endedAt": "2026-11-06T17:06:08.001275+00:00",
+      "lateSeconds": 7.997,
+      "exact": true
+     },
+     {
+      "segment": 6,
+      "first": 327400,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.999994654050083,
+      "plannedStart": 1793984760,
+      "startedAt": "2026-11-06T17:06:09.943438+00:00",
+      "endedAt": "2026-11-06T19:06:09.947295+00:00",
+      "lateSeconds": 9.942,
+      "exact": true
+     },
+     {
+      "segment": 7,
+      "first": 399400,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.99999472387533,
+      "plannedStart": 1793991960,
+      "startedAt": "2026-11-06T19:06:11.889312+00:00",
+      "endedAt": "2026-11-06T21:05:11.893084+00:00",
+      "lateSeconds": 11.888,
+      "exact": true
+     },
+     {
+      "segment": 8,
+      "first": 470800,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99381920204932,
+      "plannedStart": 1793999100,
+      "startedAt": "2026-11-06T21:05:13.835264+00:00",
+      "endedAt": "2026-11-06T21:06:13.838978+00:00",
+      "lateSeconds": 13.834,
+      "exact": true
+     },
+     {
+      "segment": 9,
+      "first": 476800,
+      "count": 72000,
+      "rate": 10,
+      "sent": 72000,
+      "nftCounterDelta": 72000,
+      "actualRate": 9.99999481996796,
+      "plannedStart": 1793999160,
+      "startedAt": "2026-11-06T21:06:15.780987+00:00",
+      "endedAt": "2026-11-06T23:06:15.784722+00:00",
+      "lateSeconds": 15.78,
+      "exact": true
+     },
+     {
+      "segment": 10,
+      "first": 548800,
+      "count": 71400,
+      "rate": 10,
+      "sent": 71400,
+      "nftCounterDelta": 71400,
+      "actualRate": 9.999994860135695,
+      "plannedStart": 1794006360,
+      "startedAt": "2026-11-06T23:06:17.725964+00:00",
+      "endedAt": "2026-11-07T01:05:17.729638+00:00",
+      "lateSeconds": 17.726,
+      "exact": true
+     },
+     {
+      "segment": 11,
+      "first": 620200,
+      "count": 6000,
+      "rate": 100,
+      "sent": 6000,
+      "nftCounterDelta": 6000,
+      "actualRate": 99.99385839388243,
+      "plannedStart": 1794013500,
+      "startedAt": "2026-11-07T01:05:19.733236+00:00",
+      "endedAt": "2026-11-07T01:06:19.736926+00:00",
+      "lateSeconds": 19.732,
+      "exact": true
+     }
+    ],
+    "finishedSegments": 11,
+    "plannedSegments": 54,
+    "plannedEvents": 2689200,
+    "scheduledPrefixFromRunningSegment": 0,
+    "allFinishedSegmentsExact": true,
+    "expected": 526200,
+    "problems": [],
+    "complete": true
+   },
+   "canaries": {
+    "sent": 60,
+    "notCountedExactly": [],
+    "minutesWithoutCanary": 0,
+    "native": 60,
+    "atSentinel": 60,
+    "missing": 0,
+    "latencySeconds": {
+     "count": 60,
+     "p50": 3.924,
+     "p95": 5.887,
+     "p99": 7.773,
+     "max": 7.773
+    },
+    "latencyOutsideFaultWindows": {
+     "count": 60,
+     "p50": 3.924,
+     "p95": 5.887,
+     "p99": 7.773,
+     "max": 7.773
+    },
+    "outsideFaultWindowsOver120s": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-06T11:03:00.000000Z",
+     "to": "2026-11-06T12:03:00.000000Z",
+     "distinct": 34857,
+     "rows": 34857,
+     "latencySeconds": {
+      "count": 34857,
+      "p50": 3.772,
+      "p95": 5.932,
+      "p99": 7.144,
+      "max": 10.894
+     }
+    },
+    {
+     "from": "2026-11-06T12:03:00.000000Z",
+     "to": "2026-11-06T12:10:00.000000Z",
+     "distinct": 4202,
+     "rows": 4202,
+     "latencySeconds": {
+      "count": 4202,
+      "p50": 3.894,
+      "p95": 6.018,
+      "p99": 6.788,
+      "max": 10.541
+     }
+    }
+   ],
+   "latency": {
+    "limitSeconds": 13.3,
+    "outsideFaultWindows": {
+     "count": 39059,
+     "p50": 3.786,
+     "p95": 5.944,
+     "p99": 7.1,
+     "max": 10.894
+    },
+    "includingFaultWindows": {
+     "count": 39059,
+     "p50": 3.786,
+     "p95": 5.944,
+     "p99": 7.1,
+     "max": 10.894
+    },
+    "pass": true,
+    "hoursAboveLimit": [],
+    "hourly": {
+     "0": {
+      "count": 36059,
+      "p50": 3.786,
+      "p95": 5.937,
+      "p99": 7.113,
+      "max": 10.894
+     },
+     "1": {
+      "count": 3000,
+      "p50": 3.785,
+      "p95": 6.008,
+      "p99": 6.853,
+      "max": 10.541
+     }
+    },
+    "perFault": {}
+   },
+   "queryHashes": [
+    "24442ec29b5460418298593629f9e80f3e37bc4e3acf962e529432431b0cc106",
+    "fbea9daba95db1652784d413c0b8dab80e82e32c1db033cf8afbc49a4e1b9882"
+   ]
+  },
+  "windows": {
+   "native": 36059,
+   "accepted": 54062,
+   "sentinelDistinct": 36059,
+   "sentinelRows": 36059,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "extraAtAccepted": 18003,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "nativeSha256": "f9c908d5ca43a22abf9f91ee3814b54eae65e1417ad5e0a49576977486b1633f",
+   "acceptedSha256": "11d2ada878ae5190e0539a7cb6b2b2baa342f48c6ee6a5b7e5efd22498c4cc38",
+   "sentinelSha256": "f9c908d5ca43a22abf9f91ee3814b54eae65e1417ad5e0a49576977486b1633f",
+   "exact": false,
+   "nativeDetail": {
+    "windows": [
+     {
+      "window": "h00",
+      "since": "2026-11-06T11:05:00+00:00",
+      "until": "2026-11-06T12:05:00+00:00",
+      "records": 36059,
+      "distinctOriginalIds": 36059,
+      "originalIdSetSha256": "f9c908d5ca43a22abf9f91ee3814b54eae65e1417ad5e0a49576977486b1633f",
+      "probeRedactedDistinct": 36059,
+      "probeRedactedDuplicates": 0,
+      "probeRedactionChangedIds": 28,
+      "probeRedactedSetSha256": "267c197a1f119a27917a9482e80b645415cecd442550b680a7e24249c93b13d4"
+     }
+    ],
+    "expected": 36059,
+    "originalIdDuplicates": 0,
+    "problems": [],
+    "complete": true,
+    "generator": {
+     "segments": 11,
+     "attempted": 526200,
+     "ldapResultCodes": {
+      "49": 526200
+     },
+     "allSegmentsClean": true
+    }
+   },
+   "canaries": {
+    "attempts": 60,
+    "ldap49": 60,
+    "otherResults": [],
+    "minutesWithoutCanary": 0,
+    "native": 60,
+    "atSentinel": 60,
+    "missing": 0,
+    "latencySeconds": {
+     "count": 60,
+     "p50": 6.341,
+     "p95": 8.656,
+     "p99": 10.768,
+     "max": 10.768
+    },
+    "latencyOutsideFaultWindows": {
+     "count": 60,
+     "p50": 6.341,
+     "p95": 8.656,
+     "p99": 10.768,
+     "max": 10.768
+    },
+    "outsideFaultWindowsOver120s": 0
+   },
+   "hours": [
+    {
+     "from": "2026-11-06T11:03:00.000000Z",
+     "to": "2026-11-06T12:03:00.000000Z",
+     "distinct": 34857,
+     "rows": 34857,
+     "latencySeconds": {
+      "count": 34857,
+      "p50": 6.589,
+      "p95": 8.924,
+      "p99": 9.9,
+      "max": 15.378
+     }
+    },
+    {
+     "from": "2026-11-06T12:03:00.000000Z",
+     "to": "2026-11-06T12:05:00.000000Z",
+     "distinct": 1202,
+     "rows": 1202,
+     "latencySeconds": {
+      "count": 1202,
+      "p50": 6.536,
+      "p95": 9.234,
+      "p99": 10.289,
+      "max": 11.065
+     }
+    }
+   ],
+   "latency": {
+    "limitSeconds": 18.16,
+    "outsideFaultWindows": {
+     "count": 36059,
+     "p50": 6.587,
+     "p95": 8.936,
+     "p99": 9.926,
+     "max": 15.378
+    },
+    "includingFaultWindows": {
+     "count": 36059,
+     "p50": 6.587,
+     "p95": 8.936,
+     "p99": 9.926,
+     "max": 15.378
+    },
+    "pass": true,
+    "hoursAboveLimit": [],
+    "hourly": {
+     "0": {
+      "count": 36059,
+      "p50": 6.587,
+      "p95": 8.936,
+      "p99": 9.926,
+      "max": 15.378
+     }
+    },
+    "perFault": {}
+   },
+   "queryHashes": [
+    "d89d8ea3141811ab68071522c3c84c0ad7ca7a0bab1f07439daa5906719dd108",
+    "93094bc18b849bc58daa48dea5f52110f499eee7b97a6a109594b4220f3c2196"
+   ]
+  }
+ },
+ "health": [
+  {
+   "CollectorId": "bower-resoak-20261106-092539-linux",
+   "Outcome": "Collector health: healthy",
+   "Records": 60,
+   "Earliest": "2026-11-06T11:05:38.0834496Z",
+   "Latest": "2026-11-06T12:04:38.8711658Z",
+   "MaxGapSeconds": 60
+  },
+  {
+   "CollectorId": "bower-resoak-20261106-092539-windows",
+   "Outcome": "Collector health: healthy",
+   "Records": 60,
+   "Earliest": "2026-11-06T11:05:39.0260902Z",
+   "Latest": "2026-11-06T12:04:41.1623948Z",
+   "MaxGapSeconds": 61
+  }
+ ],
+ "healthGaps": {},
+ "privacy": [
+  {
+   "CollectorId": "bower-resoak-20261106-092539-linux",
+   "Rows": 36121,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-resoak-20261106-092539-windows",
+   "Rows": 36121,
+   "Matches": 0
+  }
+ ],
+ "privacyQueryHash": "098fc8b7305fdcd99929c7e7d40562a8d53c7f5113ce18f30ac9c2adaf4ba6e7",
+ "alerts": {
+  "alerts": [
+   {
+    "name": "bower-resoak-20261106-092539-queue-backlog",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T12:57:25.4137241Z",
+    "resolvedAt": "2026-11-06T13:23:58.0687965Z",
+    "activeDuringRun": false
+   },
+   {
+    "name": "bower-resoak-20261106-092539-queue-backlog",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T12:57:25.3717153Z",
+    "resolvedAt": "2026-11-06T13:23:58.0323478Z",
+    "activeDuringRun": false
+   },
+   {
+    "name": "bower-resoak-20261106-092539-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T12:40:40.7892288Z",
+    "resolvedAt": "2026-11-06T13:11:42.0801072Z",
+    "activeDuringRun": false
+   },
+   {
+    "name": "bower-resoak-20261106-092539-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T12:40:40.8547938Z",
+    "resolvedAt": "2026-11-06T13:06:42.5072099Z",
+    "activeDuringRun": false
+   },
+   {
+    "name": "bower-resoak-20261106-092539-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T09:30:44.8670388Z",
+    "resolvedAt": "2026-11-06T10:01:44.0863123Z",
+    "activeDuringRun": false
+   },
+   {
+    "name": "bower-resoak-20261106-092539-collector-health-missing",
+    "state": "Resolved",
+    "startedAt": "2026-11-06T09:30:44.9171185Z",
+    "resolvedAt": "2026-11-06T09:56:42.1868513Z",
+    "activeDuringRun": false
+   }
+  ],
+  "incidents": [],
+  "activeDuringRun": 0
+ },
+ "alertAccounting": {
+  "pass": true,
+  "violations": [],
+  "excusedByFault": []
+ },
+ "versions": [
+  {
+   "CollectorId": "bower-resoak-20261106-092539-linux",
+   "Version": "0.1.1-dev.416",
+   "Rows": 36119
+  },
+  {
+   "CollectorId": "bower-resoak-20261106-092539-windows",
+   "Version": "0.1.1-dev.416",
+   "Rows": 36119
+  }
+ ],
+ "candidate": {
+  "ciRun": 42130604210,
+  "buildNumber": 416,
+  "commit": "8f615b8ed10d84d6a4b19ff42415b24d9a89b623",
+  "version": "0.1.1-dev.416",
+  "conclusion": "failure",
+  "jobsNotSucceeded": [
+   "ci-success",
+   "windows-event-log"
+  ],
+  "rpm": {
+   "name": "bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+   "path": "bower-packages-linux/bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+   "version": "0.1.1~dev.416-1",
+   "sha256": "7b02d15d9596d888ce5b7b0e9e794ec87fda4423c56c6c066d58aab04985f59e",
+   "bytes": 24885342
+  },
+  "msi": {
+   "name": "bower-collector-0.1.1-dev.416-x64.msi",
+   "path": "bower-packages-windows/bower-collector-0.1.1-dev.416-x64.msi",
+   "sha256": "f26c00ea2090c73bb5a80a9fc0f3f6de068953c98e8a31003159b526f73093b6",
+   "bytes": 18935808
+  },
+  "signature": "unsigned (release signing is deferred)"
+ },
+ "versionMatches": true
+}

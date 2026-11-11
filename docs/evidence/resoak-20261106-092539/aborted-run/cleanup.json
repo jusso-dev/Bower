@@ -1,0 +1,194 @@
+{
+ "schemaVersion": 1,
+ "runId": "bower-resoak-20261105-234529",
+ "checkedAt": "2026-11-06T09:25:18.327662+00:00",
+ "accountId": "959038055523",
+ "region": "ap-southeast-2",
+ "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "checks": [
+  {
+   "check": "cloudformation stack bower-resoak-20261105-234529",
+   "absent": true
+  },
+  {
+   "check": "S3 bucket bower-resoak-20261105-234529-artifacts-q4opvltoh5xn",
+   "absent": true,
+   "errorCode": "404"
+  },
+  {
+   "check": "instance i-0b1f940371b5449dc (terminated)",
+   "absent": true
+  },
+  {
+   "check": "expiry schedule bower-resoak-20261105-234529-expiry",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "IAM role bower-resoak-20261105-234529-ExpiryRole-Vrgw3UZwItN2",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "security group sg-02582c6594716d98d",
+   "absent": true,
+   "errorCode": "InvalidGroup.NotFound"
+  },
+  {
+   "check": "instance profile bower-resoak-20261105-234529-HostProfile-l7B7fT6rQeLo",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "IAM role bower-resoak-20261105-234529-HostRole-RFhNAU8J0MXc",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "instance i-05fea3588e681e939 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "route table rtb-0dd3d7e73dfd6584a",
+   "absent": true,
+   "errorCode": "InvalidRouteTableID.NotFound"
+  },
+  {
+   "check": "secret arn:aws:secretsmanager:ap-southeast-2:959038055523:secret:Secret-hhcXXmNMtxfI-Hy9VT6",
+   "absent": true,
+   "errorCode": "ResourceNotFoundException"
+  },
+  {
+   "check": "instance i-0f0c674914bb65133 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "instance profile bower-resoak-20261105-234529-SenderProfile-J18Yvd7EoBfD",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "IAM role bower-resoak-20261105-234529-SenderRole-CV55hBJDt0ln",
+   "absent": true,
+   "errorCode": "NoSuchEntity"
+  },
+  {
+   "check": "subnet subnet-05c067e365ab10e24",
+   "absent": true,
+   "errorCode": "InvalidSubnetID.NotFound"
+  },
+  {
+   "check": "instance i-0c0cc900f79a383a2 (terminated)",
+   "absent": true
+  },
+  {
+   "check": "S3 bucket bower-resoak-20261105-234529-ids",
+   "absent": true,
+   "errorCode": "404"
+  },
+  {
+   "check": "EBS volume vol-097656d1706ca7387",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-076acdbfe5fe1010f",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-0cf193c7cf3cb35ad",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS volume vol-0a0acdd79b28c8a3d",
+   "absent": true,
+   "errorCode": "InvalidVolume.NotFound"
+  },
+  {
+   "check": "EBS snapshots tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "CloudWatch log groups with the run prefix",
+   "absent": true
+  },
+  {
+   "check": "Secrets Manager secrets tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "AWS resources tagged RunId (tagging API, region; listed ARNs re-verified)",
+   "absent": true,
+   "listedByTaggingApi": [
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0b1f940371b5449dc",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0c0cc900f79a383a2",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-097656d1706ca7387",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0a0acdd79b28c8a3d",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-0f0c674914bb65133",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-0cf193c7cf3cb35ad",
+    "arn:aws:ec2:ap-southeast-2:959038055523:instance/i-05fea3588e681e939",
+    "arn:aws:ec2:ap-southeast-2:959038055523:volume/vol-076acdbfe5fe1010f"
+   ],
+   "notConfirmedGone": []
+  },
+  {
+   "check": "Azure resource group rg-bower-resoak-20261105-234529",
+   "absent": true
+  },
+  {
+   "check": "Azure resources tagged RunId",
+   "absent": true
+  },
+  {
+   "check": "soft-deleted workspace bower-resoak-20261105-234529-logs",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-resoak-20261105-234529-ingest",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-resoak-20261105-234529-ingest",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 53f5d673-807e-45ef-a01d-5f9d9b92d013",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal 28954333-3f00-43cb-bfdd-6a6c78f77a04",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-resoak-20261105-234529-ingest",
+   "absent": true
+  },
+  {
+   "check": "Entra application bower-resoak-20261105-234529-verifier",
+   "absent": true
+  },
+  {
+   "check": "service principal of bower-resoak-20261105-234529-verifier",
+   "absent": true
+  },
+  {
+   "check": "deleted-items application 6bd1aaff-611e-4eb5-a3ca-df4896b0352d",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "deleted-items service principal de1d6367-b00f-43c1-a060-944962171705",
+   "absent": true,
+   "errorCode": "Request_ResourceNotFound"
+  },
+  {
+   "check": "role assignments of bower-resoak-20261105-234529-verifier",
+   "absent": true
+  }
+ ],
+ "allAbsent": true
+}

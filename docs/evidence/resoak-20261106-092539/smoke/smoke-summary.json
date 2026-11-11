@@ -1,0 +1,88 @@
+{
+ "scope": "smoke",
+ "summary": {
+  "linux": {
+   "native": 9000,
+   "accepted": 9000,
+   "sentinelDistinct": 9000,
+   "sentinelRows": 9000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "exact": true,
+   "latencyOutside": {
+    "count": 9000,
+    "p50": 3.713,
+    "p95": 5.947,
+    "p99": 7.124,
+    "max": 9.843
+   },
+   "canaries": {
+    "native": 0,
+    "atSentinel": 0,
+    "missing": 0
+   },
+   "problems": []
+  },
+  "windows": {
+   "native": 9000,
+   "accepted": 9000,
+   "sentinelDistinct": 9000,
+   "sentinelRows": 9000,
+   "duplicateRows": 0,
+   "missingAtAccepted": 0,
+   "extraAtAccepted": 0,
+   "missingAtSentinel": 0,
+   "extraAtSentinel": 0,
+   "nativeComplete": true,
+   "exact": true,
+   "latencyOutside": {
+    "count": 9000,
+    "p50": 6.6,
+    "p95": 8.987,
+    "p99": 10.038,
+    "max": 11.978
+   },
+   "canaries": {
+    "native": 0,
+    "atSentinel": 0,
+    "missing": 0
+   },
+   "problems": []
+  }
+ },
+ "privacy": [
+  {
+   "CollectorId": "bower-resoak-20261106-092539-linux",
+   "Rows": 9018,
+   "Matches": 0
+  },
+  {
+   "CollectorId": "bower-resoak-20261106-092539-windows",
+   "Rows": 9018,
+   "Matches": 0
+  }
+ ],
+ "alertAccounting": {
+  "pass": true,
+  "violations": [],
+  "excusedByFault": []
+ },
+ "versions": [
+  {
+   "CollectorId": "bower-resoak-20261106-092539-linux",
+   "Version": "0.1.1-dev.416",
+   "Rows": 9016
+  },
+  {
+   "CollectorId": "bower-resoak-20261106-092539-windows",
+   "Version": "0.1.1-dev.416",
+   "Rows": 9016
+  }
+ ],
+ "verdict": null,
+ "faults": []
+}

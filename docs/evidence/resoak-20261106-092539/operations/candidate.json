@@ -1,0 +1,33 @@
+{
+ "ciRun": 42130604210,
+ "ciRunUrl": "https://github.com/jusso-dev/Bower/actions/runs/42130604210",
+ "buildNumber": 416,
+ "event": "workflow_dispatch",
+ "ref": "main",
+ "commit": "8f615b8ed10d84d6a4b19ff42415b24d9a89b623",
+ "conclusion": "failure",
+ "jobsNotSucceeded": [
+  "ci-success",
+  "windows-event-log"
+ ],
+ "harnessCommit": "de3ca08d944c38e6550db7d821109e0d16d55e9e",
+ "version": "0.1.1-dev.416",
+ "rpm": {
+  "name": "bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+  "path": "bower-packages-linux/bower-collector-0.1.1~dev.416-1.x86_64.rpm",
+  "version": "0.1.1~dev.416-1",
+  "sha256": "7b02d15d9596d888ce5b7b0e9e794ec87fda4423c56c6c066d58aab04985f59e",
+  "bytes": 24885342
+ },
+ "msi": {
+  "name": "bower-collector-0.1.1-dev.416-x64.msi",
+  "path": "bower-packages-windows/bower-collector-0.1.1-dev.416-x64.msi",
+  "sha256": "f26c00ea2090c73bb5a80a9fc0f3f6de068953c98e8a31003159b526f73093b6",
+  "bytes": 18935808
+ },
+ "cli": {
+  "path": "bower-osx-arm64/cli/bower",
+  "reports": "bower 0.1.1-dev.416"
+ },
+ "signature": "unsigned (release signing is deferred)"
+}
