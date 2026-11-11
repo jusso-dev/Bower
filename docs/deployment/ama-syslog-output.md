@@ -355,10 +355,16 @@ trust boundary.
 
 ## Limits
 
-- Linux with rsyslog only. syslog-ng also reads `/dev/log`, but these limits and snippets are
-  for rsyslog.
+- The limits and snippets on this page are for rsyslog. syslog-ng was run once, live on
+  11-11-2026 (Ubuntu 24.04, syslog-ng 4.3.1 in place of rsyslog, agent 1.45.1): the agent wrote
+  `/etc/syslog-ng/conf.d/azuremonitoragent-tcp.conf` (TCP 28330 from `s_src`, with
+  flow control), and 20 of 20 events posted to Bower arrived in `BowerSecurity_CL` with the
+  VM's name in `Origin.host`; syslog-ng's own counters showed 0 dropped. The rsyslog snippets
+  do not apply there: syslog-ng still wrote each event to `/var/log/syslog` and journald still
+  kept a copy, so on syslog-ng hosts filter `local4` out of the local log in syslog-ng's own
+  configuration. Bursts and restarts were not measured with syslog-ng.
 - Live on Oracle Linux 9.8 with SELinux enforcing, agent 1.45.1 wrote the TCP file
   (`10-azuremonitoragent-omfwd.conf`, port 28330), not the Unix-socket variant
   (`10-azuremonitoragent.conf`). Hosts where it uses the socket file were not tested.
 - Live on two distributions and one agent version, once, plus once behind Private Link.
-  syslog-ng, Arc machines and other agent versions were not run.
+  Arc machines and other agent versions were not run.
