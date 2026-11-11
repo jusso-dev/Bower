@@ -193,6 +193,12 @@
           "Bower.Abstractions": "[1.0.0, )"
         }
       },
+      "bower.output.syslog": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
+        }
+      },
       "bower.packs": {
         "type": "Project",
         "dependencies": {

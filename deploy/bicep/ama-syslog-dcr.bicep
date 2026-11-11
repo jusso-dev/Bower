@@ -1,0 +1,100 @@
+// Azure Monitor Agent collection of Bower events from local syslog on Linux
+// (docs/getting-started/azure-monitor-agent.md). A collector with BOWER_OUTPUT=syslog writes each
+// policy-approved, redacted envelope to /dev/log as "bower: bower-b64:<base64 JSON>" on local4.
+// This rule collects that facility, decodes the envelope and maps it into BowerSecurity_CL with
+// the same columns as main.bicep's Logs Ingestion rule (tests derive one from the other).
+// Other local4 messages match no row here and are not stored. Plan-only until deployed.
+targetScope = 'resourceGroup'
+
+@description('Region matching the Log Analytics workspace.')
+param location string = resourceGroup().location
+
+@description('Existing Log Analytics workspace name, already holding BowerSecurity_CL from main.bicep.')
+param workspaceName string
+
+@description('Bower resource name prefix.')
+@minLength(3)
+@maxLength(40)
+param namePrefix string = 'bower'
+
+@description('Syslog facility Bower writes to (BOWER_SYSLOG_OUTPUT_FACILITY 20 is local4).')
+@allowed(['local0', 'local1', 'local2', 'local3', 'local4', 'local5', 'local6', 'local7'])
+param facility string = 'local4'
+
+@description('Optional data collection endpoint resource ID, for example when the agent reaches Azure Monitor over Private Link.')
+param dataCollectionEndpointId string = ''
+
+resource workspace 'Microsoft.OperationalInsights/workspaces@2025-07-01' existing = {
+  name: workspaceName
+}
+
+resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
+  name: '${namePrefix}-ama-syslog-dcr'
+  location: location
+  kind: 'Linux'
+  properties: {
+    description: 'Bower security events from local syslog, collected by Azure Monitor Agent'
+    dataCollectionEndpointId: empty(dataCollectionEndpointId) ? null : dataCollectionEndpointId
+    dataSources: {
+      syslog: [
+        {
+          name: 'bowerSyslog'
+          streams: ['Microsoft-Syslog']
+          facilityNames: [facility]
+          logLevels: ['Notice', 'Warning', 'Error', 'Critical', 'Alert', 'Emergency']
+        }
+      ]
+    }
+    destinations: {
+      logAnalytics: [
+        {
+          name: 'BowerWorkspace'
+          workspaceResourceId: workspace.id
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: ['Microsoft-Syslog']
+        destinations: ['BowerWorkspace']
+        outputStream: 'Custom-BowerSecurity_CL'
+        transformKql: '''
+          source
+          | where SyslogMessage contains_cs "bower-b64:"
+          | extend e = parse_json(base64_decodestring(substring(SyslogMessage, indexof(SyslogMessage, "bower-b64:") + 10)))
+          | where tostring(e.schemaVersion) == "1.0.0"
+          | project
+              TimeGenerated = todatetime(e.timeGenerated),
+              EventId = substring(tostring(e.eventId), 0, 128),
+              EventOriginalId = substring(tostring(e.eventOriginalId), 0, 256),
+              EventCategory = substring(tostring(e.eventCategory), 0, 128),
+              EventType = substring(tostring(e.eventType), 0, 128),
+              EventAction = substring(tostring(e.eventAction), 0, 128),
+              EventResult = substring(tostring(e.eventResult), 0, 32),
+              EventSeverity = substring(tostring(e.eventSeverity), 0, 32),
+              ApplicationName = substring(tostring(e.application.name), 0, 128),
+              ApplicationEnvironment = substring(tostring(e.application.environment), 0, 64),
+              ActorUserId = substring(tostring(e.actor.userId), 0, 256),
+              ActorUsername = substring(tostring(e.actor.username), 0, 256),
+              SourceIpAddress = substring(tostring(e.source.ipAddress), 0, 64),
+              CorrelationId = substring(tostring(e.request.correlationId), 0, 256),
+              PolicyId = substring(tostring(e.security.policyId), 0, 128),
+              PolicyVersion = substring(tostring(e.security.policyVersion), 0, 32),
+              PolicyHash = substring(tostring(e.security.policyHash), 0, 128),
+              ValueScore = toint(e.security.valueScore),
+              CollectorId = substring(tostring(e.collector.id), 0, 128),
+              PrivacyDetected = e.privacy.detected,
+              Labels = e.labels,
+              RawEnvelope = e,
+              TimeObserved = todatetime(e.timeObserved),
+              EventOutcomeReason = substring(tostring(e.eventOutcomeReason), 0, 1024),
+              Target = e.target,
+              Change = e.change,
+              Attributes = e.attributes
+        '''
+      }
+    ]
+  }
+}
+
+output dataCollectionRuleId string = rule.id

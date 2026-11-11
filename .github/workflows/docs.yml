@@ -7,6 +7,7 @@ on:
       - 'docs-site/**'
       - 'tools/docs/**'
       - 'deploy/azure-webapp/**'
+      - 'deploy/bicep/ama-syslog-dcr.bicep'
       - 'deploy/docker/hosted/**'
       - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
@@ -20,6 +21,7 @@ on:
       - 'docs-site/**'
       - 'tools/docs/**'
       - 'deploy/azure-webapp/**'
+      - 'deploy/bicep/ama-syslog-dcr.bicep'
       - 'deploy/docker/hosted/**'
       - 'deploy/kubernetes/deployment.yaml'
       - 'mkdocs.yml'
@@ -85,19 +87,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Build and lint the Web App template
+      - name: Build and lint the Web App and AMA syslog templates
         run: |
           az bicep install --version v0.45.6
-          az bicep build --file deploy/azure-webapp/main.bicep --stdout > /dev/null
-          # Lint exits non-zero only on errors; fail on any linter finding, warnings included.
-          az bicep lint --file deploy/azure-webapp/main.bicep --diagnostics-format sarif > "$RUNNER_TEMP/bicep-lint.sarif"
-          python3 - "$RUNNER_TEMP/bicep-lint.sarif" <<'PYTHON'
+          for template in deploy/azure-webapp/main.bicep deploy/bicep/ama-syslog-dcr.bicep; do
+            az bicep build --file "$template" --stdout > /dev/null
+            # Lint exits non-zero only on errors; fail on any linter finding, warnings included.
+            az bicep lint --file "$template" --diagnostics-format sarif > "$RUNNER_TEMP/bicep-lint.sarif"
+            python3 - "$RUNNER_TEMP/bicep-lint.sarif" <<'PYTHON'
           import json, sys
           results = [r for run in json.load(open(sys.argv[1]))['runs'] for r in run.get('results', [])]
           for result in results:
               print(f"{result.get('level', 'warning')}: {result.get('ruleId')}: {result['message']['text']}")
           sys.exit(1 if results else 0)
           PYTHON
+          done
 
   deploy:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

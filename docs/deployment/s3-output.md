@@ -188,7 +188,7 @@ per PUT in memory (standard retry mode); longer outages wait in the durable queu
 S3 delivery is not Sentinel delivery. A collector with `BOWER_OUTPUT=s3` reports
 `"output": "s3"` in `/v1/status`. `bower evidence` reads status first and
 refuses any `output` outside the Sentinel allowlist (`azure-logs-ingestion`, `ama-spool`,
-`relay`; a missing field or unreadable status proceeds to the Sentinel query). For such a
+`syslog`, `relay`; a missing field or unreadable status proceeds to the Sentinel query). For such a
 collector it sends no canary or probe: the bundle is `failed` (or `simulated`
 without a workspace), with `arrival.queryError` `collector-output-not-sentinel` and a
 `NOT SENTINEL` limitation. Proving S3 delivery means downloading the objects and

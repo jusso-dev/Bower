@@ -1,0 +1,13 @@
+# /etc/logrotate.d/bower-events: rotate the Bower event file the CloudWatch agent tails.
+# The agent follows a renamed file to its end, then continues with the new one.
+/var/log/bower/events.jsonl {
+    daily
+    rotate 7
+    maxsize 100M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    # Same owner, group and mode as the original, so the application can keep appending.
+    create 0660 root bower-events
+}

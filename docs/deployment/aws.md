@@ -105,6 +105,9 @@ The home stack creates:
 For multiple accounts, deploy the stacks in each account, or send events from member
 accounts to one security account's event bus and deploy the queue there.
 
+For servers that already run the CloudWatch agent, see
+[Quick start: CloudWatch agent](../getting-started/aws-cloudwatch-agent.md).
+
 ## Run the agent
 
 The agent is the `bower-cloud` image (`Bower.Agent.Cloud`). Run it where it can reach

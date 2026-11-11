@@ -26,6 +26,7 @@
     <ProjectReference Include="../../src/Bower.Integrity/Bower.Integrity.csproj" />
     <ProjectReference Include="../../src/Bower.Packs/Bower.Packs.csproj" />
     <ProjectReference Include="../../src/Bower.Output.AmaSpool/Bower.Output.AmaSpool.csproj" />
+    <ProjectReference Include="../../src/Bower.Output.Syslog/Bower.Output.Syslog.csproj" />
     <ProjectReference Include="../../src/Bower.Management.Api/Bower.Management.Api.csproj" />
     <ProjectReference Include="../../src/Bower.Persistence/Bower.Persistence.csproj" />
     <ProjectReference Include="../../src/Bower.Sdk/Bower.Sdk.csproj" />
@@ -79,6 +80,14 @@
     </Content>
     <Content Include="../../deploy/bicep/main.bicep">
       <Link>deploy/main.bicep</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../deploy/bicep/ama-syslog-dcr.bicep">
+      <Link>deploy/ama-syslog-dcr.bicep</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="../../examples/cloud-agents/**/*.json;../../examples/cloud-agents/*.jsonl">
+      <Link>examples/cloud-agents/%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <Content Include="../../deploy/sentinel/analytics/**/*.kql;../../deploy/sentinel/analytics/main.bicep;../../deploy/sentinel/analytics/asvs.bicep">

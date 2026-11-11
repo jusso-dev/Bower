@@ -124,6 +124,15 @@ public sealed record CollectorSettings
 
     public string AmaSpoolPath { get; init; } = Path.Combine(AppContext.BaseDirectory, "spool");
 
+    /// <summary>BOWER_SYSLOG_OUTPUT_SOCKET: the local syslog daemon's datagram socket (BOWER_OUTPUT=syslog).</summary>
+    public string SyslogOutputSocket { get; init; } = "/dev/log";
+
+    /// <summary>BOWER_SYSLOG_OUTPUT_FACILITY: syslog facility number (20, local4, by default).</summary>
+    public int SyslogOutputFacility { get; init; } = 20;
+
+    /// <summary>BOWER_SYSLOG_OUTPUT_MAX_BYTES: whole message limit; match the daemon's MaxMessageSize.</summary>
+    public int SyslogOutputMaximumBytes { get; init; } = 8_192;
+
     public string StreamName { get; init; } = "Custom-BowerSecurity";
 
     public Uri? DceEndpoint { get; init; }
@@ -358,6 +367,9 @@ public sealed record CollectorSettings
             HttpOutput = HttpOutputSettings.FromEnvironment(read),
             AmaSpoolPath = read("BOWER_AMA_SPOOL_PATH")
                 ?? Path.Combine(AppContext.BaseDirectory, "spool"),
+            SyslogOutputSocket = Blank(read("BOWER_SYSLOG_OUTPUT_SOCKET")) ?? "/dev/log",
+            SyslogOutputFacility = (int)ReadInt64(read, "BOWER_SYSLOG_OUTPUT_FACILITY", 20),
+            SyslogOutputMaximumBytes = (int)ReadInt64(read, "BOWER_SYSLOG_OUTPUT_MAX_BYTES", 8_192),
             StreamName = read("BOWER_STREAM_NAME") ?? "Custom-BowerSecurity",
             DceEndpoint = string.IsNullOrWhiteSpace(dceEndpoint)
                 ? null
@@ -496,9 +508,27 @@ public sealed record CollectorSettings
                 "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
         }
 
-        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http"))
+        if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http" or "syslog"))
         {
             throw new InvalidOperationException($"Unsupported BOWER_OUTPUT value: {OutputType}");
+        }
+
+        if (OutputType == "syslog")
+        {
+            if (!Path.IsPathFullyQualified(SyslogOutputSocket) || System.Text.Encoding.UTF8.GetByteCount(SyslogOutputSocket) > 103)
+            {
+                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_SOCKET must be an absolute path of at most 103 bytes.");
+            }
+
+            if (SyslogOutputFacility is < 0 or > 23)
+            {
+                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_FACILITY must be between 0 and 23.");
+            }
+
+            if (SyslogOutputMaximumBytes is < 1_024 or > 65_507)
+            {
+                throw new InvalidOperationException("BOWER_SYSLOG_OUTPUT_MAX_BYTES must be between 1024 and 65507.");
+            }
         }
 
         if (OutputType == "azure-logs-ingestion"

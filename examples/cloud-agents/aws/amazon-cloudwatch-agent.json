@@ -1,0 +1,22 @@
+{
+  "logs": {
+    "logs_collected": {
+      "files": {
+        "collect_list": [
+          {
+            "file_path": "/var/log/bower/events.jsonl",
+            "log_group_name": "/bower/app-events",
+            "log_stream_name": "{instance_id}",
+            "encoding": "utf-8",
+            "filters": [
+              {
+                "type": "include",
+                "expression": "\"schemaVersion\""
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+}
