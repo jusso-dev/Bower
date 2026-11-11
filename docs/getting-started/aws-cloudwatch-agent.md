@@ -124,9 +124,32 @@ On the agent side, AWS documents that a rotation which changes the file's inode 
 create, as here) makes the agent read the new file from the beginning, and that the agent
 keeps its read position in a state file so a restart doesn't send lines again
 ([Log duplicate prevention and the state file](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/troubleshooting-CloudWatch-Agent.html#troubleshooting-CloudWatch-Agent-log-duplicate-state-file)).
-AWS doesn't document whether the agent still picks up lines written to the renamed file after
-the rename, so make long-running writers reopen promptly. If a line is ever shipped twice, the
-collector deduplicates it by `eventId`. This page hasn't been tested against a live agent.
+
+Measured with a live agent (CloudWatch agent 1.300073.2 on Amazon Linux 2023, 11-11-2026):
+
+- The new file is picked up and read from the start: 20 of 20 lines written after rotation
+  arrived, none twice.
+- **Lines written to the renamed `events.jsonl.1` after the rename are never shipped** (0 of
+  10). The agent logs "Stopping tail as file no longer exists" for the path the moment it is
+  renamed and only follows the path from then on.
+- **The last lines before a rotation can be lost too.** With 10 lines written and the file
+  rotated straight away, 8 arrived. The agent had not read the last 2 when it stopped
+  following the renamed file. `delaycompress` keeps that file on disk, but the agent never
+  goes back to it. With the same 10 lines and 30 seconds of quiet before the rotation, 10 of
+  10 arrived.
+
+So any line in the renamed file that the agent hasn't read yet is lost, with no error. To keep
+the window small:
+
+- Writers that keep the file open must reopen on rotation (the `postrotate` signal above),
+  as fast as they can.
+- Rotate when writes are quiet, and not more often than you need (`daily` with `maxsize`, as
+  in the example).
+- Watch for the gap. The rows that arrive in Sentinel carry `Origin.logStream`, and
+  [`delivery-sequence-gaps.kql`](https://github.com/jusso-dev/Bower/blob/main/deploy/sentinel/monitoring/queries/delivery-sequence-gaps.kql)
+  covers losses after the collector. A loss here happens before Bower sees the line, so only a
+  count kept by the application can show it.
+- If a line is ever shipped twice, the collector deduplicates it by `eventId`.
 
 `examples/cloud-agents/aws/test_logrotate.sh` checks the logrotate side in a container
 (Ubuntu 24.04 and Amazon Linux 2023), and CI runs it.
@@ -338,7 +361,9 @@ covers the Bower file only; if the same agent ships other logs or metrics, keep 
 need. `CreateLogStream` and `PutLogEvents` act on the log stream, `DescribeLogStreams` on the
 group
 ([actions, resources and condition keys for CloudWatch Logs](https://docs.aws.amazon.com/service-authorization/latest/reference/list_amazoncloudwatchlogs.html)).
-It hasn't been tested against a live agent.
+Tested with a live agent (CloudWatch agent 1.300073.2, Amazon Linux 2023, 11-11-2026): with only
+this policy on the instance role, the agent created the instance's stream and shipped every
+event.
 
 ```json
 {
@@ -424,15 +449,23 @@ as far as each server is limited to its own stream. To keep that blast radius sm
   checking is one role per server or per group of equally trusted servers, each allowed only
   its own stream names, for example `...:log-stream:orders-api-*`, with the agent's
   `log_stream_name` set to match.
-- A single shared role that limits each EC2 instance to the stream named after its own
-  instance ID would need a policy variable that resolves to the bare instance ID. AWS
-  documents that for an instance role `aws:userid` is `<role-id>:<instance-id>`
-  ([IAM policy variables](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html#principaltable)),
-  and that `ec2:SourceInstanceArn` holds the instance ARN
-  ([AWS global condition context keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html)).
-  Neither is the bare ID, and a stream name can't contain `:`. This needs confirming (for
-  example in the IAM policy simulator) before you rely on it; until then, treat every server
-  that shares a role as able to write any stream that role allows.
+- **One shared role can't pin each instance to its own stream.** Tested live with one
+  instance role (11-11-2026):
+  - A policy naming the instance's own stream exactly
+    (`...:log-stream:i-0abc123...`) allowed that stream and denied writes and stream creation
+    for any other.
+  - None of the policy variables that could make that one shared policy worked:
+    `${ec2:InstanceID}` and `${ec2:SourceInstanceARN}` in the stream ARN, and an
+    `aws:userid` condition against `${logs:LogStreamName}`, all denied even the instance's own
+    stream.
+  - `${aws:userid}` resolves to `<role-id>:<instance-id>`, and a stream name can't contain `:`
+    (CloudWatch refused it as an invalid parameter).
+
+  So the limit has to be per role: one role, or one policy, per server or per group of equally
+  trusted servers, each naming its own streams. Treat every server that shares a role as able
+  to write any stream that role allows. AWS documents the two values
+  ([IAM policy variables](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html#principaltable),
+  [condition keys](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html)).
 
 ## Limits
 

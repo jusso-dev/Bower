@@ -10,7 +10,9 @@
     missingok
     notifempty
     compress
-    # Keep yesterday's file uncompressed, so the agent can finish reading it.
+    # Keeps yesterday's file uncompressed for people reading it. The CloudWatch agent does not
+    # go back to it: measured live, it stops at the rename, so lines it had not read yet are
+    # lost (see the quick start, "Rotate the file").
     delaycompress
     # Same owner, group and mode as the original. A writer that opens the file for each event
     # (as emit_event.py does) moves to the new file at once. A writer that keeps the file open
