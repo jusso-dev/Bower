@@ -90,7 +90,9 @@ Live, through the real agent into `BowerSecurity_CL` (raw datagrams of exact siz
 
 The cap is rsyslog's 8,096-character line, header included, and the header differs by
 distribution (Oracle Linux's is longer). Bower's default of 7,680 is under both with room to
-spare. The agent added no cap of its own below rsyslog's.
+spare. The agent added no cap of its own below rsyslog's. ("No row" here is in
+`BowerSecurity_CL`; that run used the rule from before `keepUndecodedInSyslog`, which now keeps
+a cut-short message in `Syslog`, see [The collection rule](#the-collection-rule).)
 The usable size at the default is **5,730 bytes of envelope JSON**: 7,680 minus the 38-byte
 header leaves 7,642 base64 characters, rounded down to whole groups of four and times 3/4.
 That leaves 444 characters for the header rsyslog or the agent writes in front of the message.
@@ -170,7 +172,7 @@ it from its queue. The later hops do not report back:
 | journald | Rate limit; crash or power loss before the journal is synced; journal kept only in memory (`Storage=volatile`, or no `/var/log/journal`) | `Suppressed N messages` in the journal, at best |
 | rsyslog | Input rate limit; journald's forward to it (Debian family); a line longer than `MaxMessageSize` is cut | A line in the journal (see [Rate limits](#rate-limits)) |
 | Azure Monitor Agent | Its queue (rsyslog's `omfwd` queue, 1 GB on disk in the agent's file) full during a long outage | Agent log |
-| Collection rule transform | A message that does not decode (cut short, extra characters, other `schemaVersion`) | **None**: no row, no error |
+| Collection rule transform | A message that does not decode (cut short, extra characters, other `schemaVersion`) | No row in `BowerSecurity_CL` and no error, but the message is kept in the `Syslog` table (`keepUndecodedInSyslog`, below) |
 
 Live (#249), counted in `BowerSecurity_CL` with 400 events sent per phase on each host:
 restarting rsyslog, journald or the agent mid-stream lost nothing, and stopping the agent for
@@ -302,6 +304,25 @@ surrounding white space), decodes them and maps them onto the same columns as `m
 It accepts only `schemaVersion` `1.0.0`. When the envelope version changes, deploy the new
 rule first, then upgrade the collectors.
 
+A second data flow sends every other message tagged `bower` (cut short, padded, another
+`schemaVersion`, or not an envelope) to the `Syslog` table as it arrived, so a lost event can
+still be found. The two flows use the same pattern and version check, negated, so a message
+lands in one table, never both. Live on 11-11-2026 (#231): a good event arrived in
+`BowerSecurity_CL` only, and a cut-short message, one with text after the base64, one with
+`schemaVersion` `2.0.0` and one that was not an envelope each arrived in `Syslog` only, as
+`local4`, `notice`. To look for them:
+
+```kusto
+Syslog
+| where ProcessName == "bower"
+| project TimeGenerated, Computer, Length = strlen(SyslogMessage), SyslogMessage
+```
+
+A row there is an event Bower counted as delivered that is not in `BowerSecurity_CL`. The
+message is the whole base64 envelope (redacted by Bower), so the `Syslog` table then holds what
+`BowerSecurity_CL` would have: keep the same access and retention on both, or set
+`keepUndecodedInSyslog=false` to drop such messages as before.
+
 | Parameter | Default | Meaning |
 |---|---|---|
 | `workspaceName` | (required) | The workspace that already holds `BowerSecurity_CL` from `main.bicep`. |
@@ -309,6 +330,7 @@ rule first, then upgrade the collectors.
 | `location` | the resource group's region | The rule must be in the workspace's region ([Microsoft](https://learn.microsoft.com/en-us/azure/azure-monitor/vm/data-collection)). Pass `location=<workspace region>` when the resource group is in another region. |
 | `namePrefix` | `bower` | The rule is named `<namePrefix>-ama-syslog-dcr`. |
 | `facility` | `local4` | Must match `BOWER_AMA_SYSLOG_FACILITY`. |
+| `keepUndecodedInSyslog` | `true` | Store a `bower` message that does not decode in `Syslog` instead of dropping it. |
 | `dataCollectionEndpointId` | empty | Leave empty, including behind Private Link (tested; see below). |
 | `tags` | `{}` | Tags for the rule. |
 

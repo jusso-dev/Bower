@@ -14,7 +14,8 @@ Unix datagram socket). Azure Monitor Agent's syslog collection ships it from the
   base64 carries every byte unchanged.
 - The marker, the tag (`AppName`, read as `ProcessName`) and the collection rule's transform
   change together: `deploy/bicep/ama-syslog-dcr.bicep` is generated from
-  `SentinelSchema.SyslogTransformKql`, and `CloudAgentQuickStartTests` fails when they differ.
+  `SentinelSchema.SyslogTransformKql` (and its second flow, undecodable messages to `Syslog`,
+  from `SyslogUndecodedTransformKql`), and `CloudAgentQuickStartTests` fails when they differ.
   Do not "fix" the format to RFC 5424 or plain JSON: the rule would decode nothing and every
   event would be lost after Bower acknowledged it.
 - Facility default `local4` (20), severity `notice` (5). The rule's `facility` parameter and

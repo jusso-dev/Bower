@@ -139,6 +139,25 @@ public sealed record SentinelSchema(
             string.Join(",\n", projections));
     }
 
+    /// <summary>
+    /// The rule's second data flow (#231): a message from <paramref name="processName"/> that
+    /// <see cref="SyslogTransformKql"/> cannot decode goes to the Syslog table as it arrived,
+    /// so a truncated or padded event is still queryable instead of silently dropped.
+    /// </summary>
+    public string SyslogUndecodedTransformKql(string marker, string processName)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(marker);
+        ArgumentException.ThrowIfNullOrWhiteSpace(processName);
+        string quotedMarker = System.Text.RegularExpressions.Regex.Escape(marker);
+        return string.Join('\n',
+            "source",
+            $"| where ProcessName == \"{processName}\"",
+            $"| extend b64 = extract(@\"^\\s*{quotedMarker}([A-Za-z0-9+/]+={{0,2}})\\s*$\", 1, SyslogMessage)",
+            "| extend v = tostring(parse_json(base64_decodestring(b64)).schemaVersion)",
+            $"| where isempty(b64) or v != \"{SchemaVersionFilter}\"",
+            "| project-away b64, v");
+    }
+
     /// <summary>Log Analytics table schema type names (dateTime) differ from DCR stream types (datetime).</summary>
     internal static string TableType(string type) => type == "datetime" ? "dateTime" : type;
 }

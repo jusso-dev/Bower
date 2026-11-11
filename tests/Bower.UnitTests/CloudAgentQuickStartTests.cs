@@ -101,6 +101,29 @@ public sealed partial class CloudAgentQuickStartTests
     }
 
     [Fact]
+    public void AmaSyslogRule_SendsWhatItCannotDecodeToTheSyslogTable()
+    {
+        // #231: the second data flow is generated too, and keeps a bower message out of
+        // BowerSecurity_CL only by putting it in Syslog.
+        string syslog = File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "deploy", "ama-syslog-dcr.bicep"));
+        string[] transforms = [.. Regex.Matches(syslog, "transformKql: '''(?<kql>.*?)'''", RegexOptions.Singleline).Select(match => match.Groups["kql"].Value)];
+        string expected = SentinelSchema.Default.SyslogUndecodedTransformKql(AmaSyslogOutput.MessagePrefix, new AmaSyslogOutputOptions { Id = "ama-syslog" }.AppName);
+
+        Assert.Equal(2, transforms.Length);
+        Assert.True(
+            Normalise(expected) == Normalise(transforms[1]),
+            "deploy/bicep/ama-syslog-dcr.bicep second transformKql differs from SentinelSchema.SyslogUndecodedTransformKql. Regenerate it:\n" + expected);
+        Assert.Contains("outputStream: 'Microsoft-Syslog'", syslog, StringComparison.Ordinal);
+        Assert.Contains("param keepUndecodedInSyslog bool = true", syslog, StringComparison.Ordinal);
+        // Same pattern and schema filter as the first flow, negated, so no message lands in both.
+        string decode = SentinelSchema.Default.SyslogTransformKql(AmaSyslogOutput.MessagePrefix, "bower");
+        string Pattern(string kql) => Regex.Match(kql, "extract\\(@\"(?<pattern>[^\"]+)\"").Groups["pattern"].Value;
+        Assert.Equal(Pattern(decode), Pattern(expected));
+        Assert.Contains("| where tostring(e.schemaVersion) == \"1.0.0\"", decode, StringComparison.Ordinal);
+        Assert.Contains("| where isempty(b64) or v != \"1.0.0\"", expected, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AmaSyslogOutputDefaults_MatchTheRule()
     {
         AmaSyslogOutputOptions options = new() { Id = "ama-syslog" };

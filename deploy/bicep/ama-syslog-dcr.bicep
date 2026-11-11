@@ -3,7 +3,8 @@
 // policy-approved, redacted envelope to /dev/log as "bower: bower-b64:<base64 JSON>" on local4.
 // This rule collects that facility, decodes the envelope and maps it into BowerSecurity_CL with
 // the same columns as main.bicep's Logs Ingestion rule (tests derive one from the other).
-// Other local4 messages match no row here and are not stored. Plan-only until deployed.
+// Other local4 messages match no row here and are not stored. A "bower" message that does not
+// decode goes to the Syslog table instead (keepUndecodedInSyslog, #231). Plan-only until deployed.
 //
 // The transform is generated from SentinelSchema.Default (Bower.Dcr SyslogTransformKql);
 // CloudAgentQuickStartTests renders it and fails, naming this file, when it differs.
@@ -41,6 +42,9 @@ param facility string = 'local4'
 @description('Optional data collection endpoint resource ID, for example when the agent reaches Azure Monitor over Private Link.')
 param dataCollectionEndpointId string = ''
 
+@description('Store a bower message the transform cannot decode (cut short, padded, other schemaVersion) in the Syslog table, as it arrived, instead of dropping it.')
+param keepUndecodedInSyslog bool = true
+
 resource workspace 'Microsoft.OperationalInsights/workspaces@2025-07-01' existing = {
   name: workspaceName
   scope: resourceGroup(workspaceResourceGroup)
@@ -72,7 +76,7 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
         }
       ]
     }
-    dataFlows: [
+    dataFlows: concat([
       {
         streams: ['Microsoft-Syslog']
         destinations: ['BowerWorkspace']
@@ -115,7 +119,21 @@ resource rule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
               Origin = pack("kind", "ama-syslog", "host", Computer)
         '''
       }
-    ]
+    ], keepUndecodedInSyslog ? [
+      {
+        streams: ['Microsoft-Syslog']
+        destinations: ['BowerWorkspace']
+        outputStream: 'Microsoft-Syslog'
+        transformKql: '''
+          source
+          | where ProcessName == "bower"
+          | extend b64 = extract(@"^\s*bower-b64:([A-Za-z0-9+/]+={0,2})\s*$", 1, SyslogMessage)
+          | extend v = tostring(parse_json(base64_decodestring(b64)).schemaVersion)
+          | where isempty(b64) or v != "1.0.0"
+          | project-away b64, v
+        '''
+      }
+    ] : [])
   }
 }
 
