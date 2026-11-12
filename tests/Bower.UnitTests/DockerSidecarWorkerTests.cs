@@ -180,7 +180,7 @@ public sealed class DockerSidecarWorkerTests
     }
 
     private static string EventId(string json) =>
-        System.Text.Json.JsonDocument.Parse(json).RootElement.GetProperty("eventId").GetString()!;
+        System.Text.Json.JsonElement.Parse(json).GetProperty("eventId").GetString()!;
 
     private static SidecarSettings Settings(string root) =>
         new()

@@ -631,7 +631,7 @@ public sealed class DockerSourceTests
     private static DockerLogEventMapper Mapper() => new(new DockerMapperOptions { SidecarId = "sidecar-test" });
 
     private static string EventId(string json) =>
-        JsonDocument.Parse(json).RootElement.GetProperty("eventId").GetString()!;
+        JsonElement.Parse(json).GetProperty("eventId").GetString()!;
 }
 
 internal static class DockerFixture

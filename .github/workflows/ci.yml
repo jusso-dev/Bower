@@ -126,13 +126,13 @@ jobs:
         env:
           BOWER_VERSION: ${{ needs.version.outputs.version }}
         run: |
-          test "$(src/Bower.Cli/bin/Release/net10.0/bower --version)" = "bower $BOWER_VERSION"
-          test "$(src/Bower.Collector/bin/Release/net10.0/Bower.Collector --version)" = "bower-collector $BOWER_VERSION"
+          test "$(src/Bower.Cli/bin/Release/net11.0/bower --version)" = "bower $BOWER_VERSION"
+          test "$(src/Bower.Collector/bin/Release/net11.0/Bower.Collector --version)" = "bower-collector $BOWER_VERSION"
       # Every pack builds (samples and field assertions gate signing) and passes `pack test`.
       # The key is ephemeral: CI proves the packs, it never publishes a signed pack.
       - name: Test every pack
         run: |
-          bower=src/Bower.Cli/bin/Release/net10.0/bower
+          bower=src/Bower.Cli/bin/Release/net11.0/bower
           "$bower" keys generate --out-dir "$RUNNER_TEMP/pack-keys" --name ci-ephemeral
           mkdir -p "$RUNNER_TEMP/pack-reports"
           for source in packs/*/ lab/aws/packs/*/; do
@@ -240,7 +240,7 @@ jobs:
         shell: powershell
         run: |
           if ($PSVersionTable.PSVersion.Major -ne 5) { throw 'Expected Windows PowerShell 5.1' }
-          $env:BOWER_LAB_PROBE_PATH = Join-Path $env:GITHUB_WORKSPACE 'lab\aws\upgrade-recovery\probe\bin\Release\net10.0\Bower.LabProbe.exe'
+          $env:BOWER_LAB_PROBE_PATH = Join-Path $env:GITHUB_WORKSPACE 'lab\aws\upgrade-recovery\probe\bin\Release\net11.0\Bower.LabProbe.exe'
           if (-not (Test-Path -LiteralPath $env:BOWER_LAB_PROBE_PATH)) { throw 'Lab probe apphost not found' }
           & .\lab\aws\tests\test_wec_receiving_position.ps1
 
@@ -271,7 +271,7 @@ jobs:
           dotnet format "$probe" --verify-no-changes --no-restore
       - name: Validate AWS lab harness
         env:
-          BOWER_WECFIX_PROBE_DLL: ${{ github.workspace }}/lab/aws/upgrade-recovery/probe/bin/Release/net10.0/Bower.LabProbe.dll
+          BOWER_WECFIX_PROBE_DLL: ${{ github.workspace }}/lab/aws/upgrade-recovery/probe/bin/Release/net11.0/Bower.LabProbe.dll
         run: |
           pwsh -NoProfile -File lab/aws/tests/test_wec_receiving_position.ps1
           python3 -m unittest discover -s lab/aws/tests -v

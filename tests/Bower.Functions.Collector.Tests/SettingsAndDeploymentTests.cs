@@ -193,6 +193,10 @@ public sealed class SettingsAndDeploymentTests
         Assert.Equal(2, CountOf(bicep, "allow: false"));
         Assert.Contains("tier: 'FlexConsumption'", bicep, StringComparison.Ordinal);
         Assert.Contains("name: 'dotnet-isolated'", bicep, StringComparison.Ordinal);
+        // The Flex Consumption stack must match the worker's target framework, or the host
+        // starts a runtime the package was not built for.
+        Version runtime = System.Environment.Version;
+        Assert.Contains($"version: '{runtime.Major}.{runtime.Minor}'", bicep, StringComparison.Ordinal);
         Assert.Contains("param location string = 'australiaeast'", bicep, StringComparison.Ordinal);
         Assert.Contains("type: 'SystemAssigned'", bicep, StringComparison.Ordinal);
         // Monitoring Metrics Publisher is granted on the DCR only (and, optionally, the

@@ -1,7 +1,8 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<!-- Azure.Functions.Sdk (version pinned in global.json msbuild-sdks) is required for .NET 11 in the
+     isolated worker model. It replaces Microsoft.Azure.Functions.Worker.Sdk and sets OutputType,
+     AzureFunctionsVersion v4 and worker indexing itself. -->
+<Project Sdk="Azure.Functions.Sdk">
   <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <AzureFunctionsVersion>v4</AzureFunctionsVersion>
     <!-- All comparisons are ordinal, like the collector. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <!-- Not published as Native AOT: the Azure Functions host loads the isolated worker as a
@@ -11,7 +12,6 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Azure.Functions.Worker" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Http" />
-    <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" />
     <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" />
     <PackageReference Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" />
   </ItemGroup>

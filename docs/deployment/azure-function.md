@@ -1,7 +1,7 @@
 # Azure Functions collector (vanilla native hosting)
 
 `src/Bower.Functions.Collector` is a serverless Bower collector: a native C# Azure
-Function (isolated worker, .NET 10) on the Flex Consumption plan. Producers POST
+Function (isolated worker, .NET 11) on the Flex Consumption plan. Producers POST
 the same `/v1/events` envelope they send to the HTTP collector, authenticated with
 Microsoft Entra access tokens. The function validates, applies the default-deny
 policy and the Privacy & Secret Protection Engine, then uploads to a Log Analytics
@@ -19,7 +19,7 @@ heartbeats or AMA spool output.
 producer (managed identity / service principal with Bower.Producer)
   │  POST /v1/events  Authorization: Bearer <Entra v2 token for the Bower Ingest API>
   ▼
-Azure Functions (Flex Consumption, Linux, dotnet-isolated 10.0, HTTPS only, TLS ≥ 1.2)
+Azure Functions (Flex Consumption, Linux, dotnet-isolated 11.0, HTTPS only, TLS ≥ 1.2)
   1. Entra token validation in code (signature via OIDC keys, v2 issuer + tid,
      exact audience, lifetime, app-only Bower.Producer role)          → 401 / 403
   2. Content-Type, 1 MiB bound, UTF-8 + JSON parse                    → 415 / 413 / 400

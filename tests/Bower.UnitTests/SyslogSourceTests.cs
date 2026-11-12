@@ -85,7 +85,7 @@ public sealed class SyslogSourceTests
         Assert.StartsWith("syslog-", first, StringComparison.Ordinal);
         Assert.Equal(39, first.Length);
 
-        static string Id(string record) => JsonDocument.Parse(record).RootElement.GetProperty("id").GetString()!;
+        static string Id(string record) => JsonElement.Parse(record).GetProperty("id").GetString()!;
     }
 
     [Fact]
@@ -98,7 +98,7 @@ public sealed class SyslogSourceTests
                 ? "<13>1 2026-10-26T08:00:00Z h a - - - msg"
                 : "<13>1 - h a - - - msg");
             Assert.True(SyslogParser.TryParse(frame, firstTime, out SyslogMessage? message, out _));
-            static string Id(string record) => JsonDocument.Parse(record).RootElement.GetProperty("id").GetString()!;
+            static string Id(string record) => JsonElement.Parse(record).GetProperty("id").GetString()!;
             string first = Id(SyslogRecord.Build(message, frame, "edge", "tcp", "192.0.2.10", firstTime));
             string later = Id(SyslogRecord.Build(message, frame, "edge", "tcp", "192.0.2.10", firstTime.AddSeconds(1)));
             if (timestamped) Assert.Equal(first, later);
@@ -353,8 +353,8 @@ public sealed class SyslogSourceTests
         string first = "<38>1 2026-10-26T08:15:00Z gw01 sshd 1 - [auth@32473 user=\"deploy-admin\"] secret-marker";
         await stream.WriteAsync(Encoding.UTF8.GetBytes($"{Encoding.UTF8.GetByteCount(first)} {first}<38>Oct 11 22:14:15 gw01 sshd: line framed\n"), cancellation);
         await sink.WaitForAsync(2, cancellation);
-        Assert.Equal("sshd", JsonDocument.Parse(sink.Records[0]).RootElement.GetProperty("appName").GetString());
-        Assert.Equal("rfc3164", JsonDocument.Parse(sink.Records[1]).RootElement.GetProperty("format").GetString());
+        Assert.Equal("sshd", JsonElement.Parse(sink.Records[0]).GetProperty("appName").GetString());
+        Assert.Equal("rfc3164", JsonElement.Parse(sink.Records[1]).GetProperty("format").GetString());
 
         // An unrouted application is dropped before the sink (default deny) and counted.
         await stream.WriteAsync(Encoding.UTF8.GetBytes("<38>Oct 11 22:14:15 gw01 cron: unrouted\n"), cancellation);
@@ -691,8 +691,8 @@ public sealed class SyslogSourceTests
         using TcpClient client = await Connect(source, cancellation);
         await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: first\n<38>Oct 11 22:14:15 gw01 sshd: second\n"), cancellation);
         await sink.WaitForAsync(2, cancellation);
-        Assert.Contains("first", JsonDocument.Parse(sink.Records[0]).RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
-        Assert.Contains("second", JsonDocument.Parse(sink.Records[1]).RootElement.GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Contains("first", JsonElement.Parse(sink.Records[0]).GetProperty("message").GetString(), StringComparison.Ordinal);
+        Assert.Contains("second", JsonElement.Parse(sink.Records[1]).GetProperty("message").GetString(), StringComparison.Ordinal);
         SyslogListenerStatus status = source.Snapshot()[0];
         Assert.Equal(3, status.Retries);
         Assert.Equal(0, status.Dropped);
@@ -726,7 +726,7 @@ public sealed class SyslogSourceTests
         // All three frames read, so the baseline below is one settled snapshot.
         SyslogListenerStatus status = await WaitFor(source, value => value.FramesReceived == 3 && value.Queued == 1 && value.Dropped == 1 && value.Oversized == 1, cancellation);
         Assert.Equal(0, status.Retries);
-        Assert.Equal("accepted", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("message").GetString());
+        Assert.Equal("accepted", JsonElement.Parse(Assert.Single(sink.Records)).GetProperty("message").GetString());
 
         // A blocked sink fills the bounded datagram queue; further datagrams are dropped, never buffered without bound.
         // The kernel may also drop datagrams before the listener reads them, so the flood goes on in paced bursts
@@ -783,7 +783,7 @@ public sealed class SyslogSourceTests
             await using SslStream stream = await ConnectTls(source, client: null, cancellation);
             await stream.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: over tls\n"), cancellation);
             await sink.WaitForAsync(1, cancellation);
-            Assert.Equal("tls", JsonDocument.Parse(sink.Records[0]).RootElement.GetProperty("protocol").GetString());
+            Assert.Equal("tls", JsonElement.Parse(sink.Records[0]).GetProperty("protocol").GetString());
 
             // Plain text to a TLS listener is a handshake failure, never a frame.
             using TcpClient plain = await Connect(source, cancellation);
@@ -812,7 +812,7 @@ public sealed class SyslogSourceTests
         await using SslStream trusted = await ConnectTls(mutual, LoadClient("client"), cancellation);
         await trusted.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: mutual\n"), cancellation);
         await sink.WaitForAsync(2, cancellation);
-        Assert.Equal("mutual", JsonDocument.Parse(sink.Records[1]).RootElement.GetProperty("message").GetString());
+        Assert.Equal("mutual", JsonElement.Parse(sink.Records[1]).GetProperty("message").GetString());
 
         X509Certificate2 LoadClient(string name)
         {
@@ -877,7 +877,7 @@ public sealed class SyslogSourceTests
         await using SslStream stream = await ConnectTls(source, leaf, cancellation, [.. chain.Skip(1)]);
         await stream.WriteAsync(Encoding.ASCII.GetBytes("<38>Oct 11 22:14:15 gw01 sshd: chained\n"), cancellation);
         await sink.WaitForAsync(1, cancellation);
-        Assert.Equal("chained", JsonDocument.Parse(sink.Records[0]).RootElement.GetProperty("message").GetString());
+        Assert.Equal("chained", JsonElement.Parse(sink.Records[0]).GetProperty("message").GetString());
         Assert.Equal(0, source.Snapshot()[0].TlsHandshakeFailures);
     }
 

@@ -46,7 +46,7 @@ else
   skipped+=("java (needs javac and JACKSON_DIR with jackson-databind, -core and -annotations jars)")
 fi
 if have dotnet; then
-  check dotnet "$events_only" bash -c "cd '$here/aspnetcore-serilog' && dotnet build -c Release --nologo -v quiet >/dev/null && dotnet bin/Release/net10.0/AsvsSerilogExample.dll contract '$cases'"
+  check dotnet "$events_only" bash -c "cd '$here/aspnetcore-serilog' && dotnet build -c Release --nologo -v quiet >/dev/null && dotnet bin/Release/net11.0/AsvsSerilogExample.dll contract '$cases'"
 else
   skipped+=(dotnet)
 fi

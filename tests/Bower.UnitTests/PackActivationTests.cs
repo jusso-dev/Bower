@@ -306,7 +306,7 @@ public sealed class PackActivationTests
         {
             Attributes = new Dictionary<string, JsonElement>
             {
-                [key] = JsonDocument.Parse("[\"forged-rule\"]").RootElement.Clone()
+                [key] = JsonElement.Parse("[\"forged-rule\"]")
             }
         };
         PackDetectionRedactor redactor = new(new JsonEventRedactor(), new DeterministicPolicyEvaluator([]), []);

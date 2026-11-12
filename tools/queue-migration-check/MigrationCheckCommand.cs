@@ -10,12 +10,12 @@ public static class MigrationCheckCommand
         ArgumentNullException.ThrowIfNull(output);
         if (args is not ["--database", string path])
         {
-            await output.WriteLineAsync("Usage: queue-migration-check --database PATH");
+            await output.WriteLineAsync("Usage: queue-migration-check --database PATH", cancellationToken);
             return 1;
         }
 
         MigrationCheckReport report = await MigrationPreflight.CheckAsync(path, cancellationToken);
-        await output.WriteLineAsync(JsonSerializer.Serialize(report, ReportJsonContext.Default.MigrationCheckReport));
+        await output.WriteLineAsync(JsonSerializer.Serialize(report, ReportJsonContext.Default.MigrationCheckReport), cancellationToken);
         return report.Complete ? (report.Collisions.Count == 0 ? 0 : 2) : 1;
     }
 }

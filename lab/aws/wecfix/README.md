@@ -35,7 +35,7 @@ Numeric reader lag in newly captured samples is the observed difference between 
 channel record IDs, not a count of unread events or proof of channel continuity. It assumes
 no unobserved clear or reset; a clear followed by sufficient regrowth between samples can
 evade the recorded counters. Older samples without the native-bookmark basis are unknown.
-The Windows PowerShell 5.1 sampler uses the installed, hash-verified .NET 10 lab probe's
+The Windows PowerShell 5.1 sampler uses the installed, hash-verified .NET 11 lab probe's
 `receiving-position ForwardedEvents` command rather than accessing a private Framework
 bookmark property. The probe uses Bower's bounded native bookmark parser and does not
 export event content. If the command fails or returns no usable position while the channel
@@ -79,7 +79,7 @@ To exercise the probe against a disposable local SQLite database, build it and r
 
 ```sh
 dotnet build lab/aws/upgrade-recovery/probe/Bower.LabProbe.csproj -c Release
-BOWER_WECFIX_PROBE_DLL="$PWD/lab/aws/upgrade-recovery/probe/bin/Release/net10.0/Bower.LabProbe.dll" \
+BOWER_WECFIX_PROBE_DLL="$PWD/lab/aws/upgrade-recovery/probe/bin/Release/net11.0/Bower.LabProbe.dll" \
   python3 -m unittest discover -s lab/aws/tests -p 'test_wecfix_probe.py'
 ```
 

@@ -215,7 +215,7 @@ public sealed class PrivacyEngineTests
 
         Assert.True(result.Succeeded);
         Assert.Equal(2_000, result.Findings.Count(f => f.DetectorId == DetectorIds.Email));
-        string note = JsonDocument.Parse(result.RedactedJson!).RootElement.GetProperty("note").GetString()!;
+        string note = JsonElement.Parse(result.RedactedJson!).GetProperty("note").GetString()!;
         Assert.Equal(string.Join(" | ", emails.Select(email => "u***" + email[email.IndexOf('@')..])), note);
     }
 
