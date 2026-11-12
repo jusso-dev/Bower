@@ -1,16 +1,36 @@
 # Design 001: Expected collector and source inventory
 
-**Status:** Draft for review. Design only: nothing here is implemented, deployed or validated against Sentinel. · **Date:** 2026-11-12 · **Commit:** `64859aa7d620cec2538aa74fed647e4076e83490` · **Plan:** [001-expected-inventory.md](001-expected-inventory.md)
+**Status:** Design for review. Product owner decisions recorded 2026-11-13. Nothing here is implemented, deployed or validated against Sentinel. · **Date:** 2026-11-12, decisions 2026-11-13 · **Commit:** `64859aa7d620cec2538aa74fed647e4076e83490` · **Plan:** [001-expected-inventory.md](001-expected-inventory.md)
 
 ## Decision
 
-Adopt **option A, a versioned offline inventory**, as the source of truth for what should exist. It is a tenant-owned, change-controlled JSON file, compiled into Azure Monitor and Sentinel rule parameters and evaluated only in the workspace. It is the only option that is independent of both the collector and the optional management plane, works when management is down, and reuses a mechanism Bower already has (`expectedCollectorIds`, `monitoring.bicep:51-52`, `sentinel-health-rules.bicep:20-21`).
+**Option B, management-owned declarations, is the source of truth for what should exist** (product owner decision D1, 2026-11-13). This goes against the design's recommendation of option A, a versioned offline file. The option comparison in §3 is kept unchanged, so the reasons A was recommended stay visible.
 
-First slice (scoped below): an inventory schema and offline validator, a generator that emits the existing `expectedCollectorIds` and a new `expectedSources` parameter, and one new disabled-by-default rule that reports declared sources as `missing`, `stale` or `unknown`. Management-owned declarations (B) and external inventory integration (C) are deferred. C can later feed the same file format. B can show reconciliation but must not become the source of truth.
+Management rebuilds its collector and source rows from what collectors report (`ManagementStore.cs:210-216,1067-1099`; `ManagementHeartbeatJob.cs:93-103`). Declarations are therefore stored in their own tables, separate from those observed rows. They are written only through a new approved and audited API (four-eyes, following the source setup pattern), never by registration, heartbeat or enrolment. Management generates the rule parameters from the declarations as a signed export, and the monitoring IaC owner deploys it with the existing Bicep. Evaluation runs in the workspace and never calls management.
+
+First slice (§4): declaration tables and API, a signed export that emits `expectedCollectorIds` in an alias mode and a new `expectedSources` parameter, the original validation rules enforced on submit and on export, opaque aliases in rule text (D9), and one disabled-by-default rule that reports declared sources as `missing`, `stale` or `unknown`. External inventory integration (C) is deferred.
+
+What B loses against A, stated plainly: while the management API is down, declarations cannot be added, changed or exported, so a newly missing collector is detected only if it was in an export deployed beforehand. Deploying the generated parameters keeps detection running in Sentinel during an outage for everything in the last deployed export. That narrows the outage gap but does not close it (§4.1).
 
 The slice resolves neither of the two release blockers it depends on: late arrival (`docs/production-readiness/06-monitoring-and-runbooks.md:1106-1111`) and health-record authenticity (`…:1113-1122`). Until both are validated, a `healthy` result means "a matching row was ingested in time". It does not prove that the source exists or is genuine.
 
 Step 1 drift check: HEAD equals the planned commit, so there is no drift. Every cited path exists (`test -f` for both queries exited 0).
+
+## Decisions (2026-11-13)
+
+All nine items in §5 are decided. "Against" marks a choice that differs from this design's recommendation.
+
+| ID | Question | Choice | Consequence |
+|---|---|---|---|
+| D1 | Source of truth for the expected list | **Against:** option B, the console (management API) owns the list | Declarations get separate tables, an approved and audited API, and a signed export deployed by the IaC owner (§4). Declarations cannot change during a management outage (§4.1). The management database backup becomes load-bearing |
+| D2 | Source granularity | Collector + application + environment. No per-device tracking | No schema change. Per-device silence stays unavailable (runbook `:1059-1062`) |
+| D3 | Bootstrap from observed data | Allowed. A person reviews every entry | Seeding creates one pending request per entry. There is no bulk approval (§4 item 4) |
+| D4 | Undeclared collectors and sources | Reported, not paged | Reconciliation report only. No alert rule for `undeclared` |
+| D5 | Shared (MSSP) workspaces | Not supported for now. Refused | One management deployment binds to one workspace. Bower cannot detect two deployments writing to the same workspace (§7) |
+| D6 | Cost of a second scan | A separate rule, off by default. Measure its cost first | `expected-source-missing` stays separate from `destination-freshness`. Cost measurement is a gate before enabling |
+| D7 | Size cap and review interval | 200 entries, reviewed every 90 days. Raise the cap after measuring | The API and export refuse more than 200 entries per workspace (collectors and sources together). `reviewBy` is at most 90 days after export |
+| D8 | Explicit collector ids | `BOWER_COLLECTOR_ID` is required for every declared collector | A deployment requirement. Bower cannot enforce it yet, because the collector logs its id source but reports it nowhere else (§7) |
+| D9 | Real names in rule definitions | Rules use opaque aliases. The mapping to real names stays in the inventory | Rule text carries aliases and salted match tokens (§4 item 6). The mapping lives in the management store and in a restricted mapping file with each export. `collector-health-missing` needs an additive alias mode |
 
 ## 1. Current state (evidence)
 
@@ -97,125 +117,163 @@ A: versioned offline inventory file in the tenant's own repository, compiled int
 | Works offline / air-gapped | Validator and generator are offline. Evaluation needs the workspace | Needs management | Needs connectivity to the external system |
 | New dependencies | None for the slice | None | Likely (connector, SDK), which needs `docs/architecture/dependencies.md` justification (`AGENTS.md:92-93`) |
 
-Why A: it is the only option where neither the subject (collector) nor the optional plane (management) holds the declaration. It also matches the documented paging model (runbook `:65-68`). Its weaknesses are a manual update path and the unknown limit on rule query size. Both are bounded and listed below.
+Why A (original recommendation): it is the only option where neither the subject (collector) nor the optional plane (management) holds the declaration. It also matches the documented paging model (runbook `:65-68`). Its weaknesses are a manual update path and the unknown limit on rule query size. Both are bounded and listed below.
 
-## 4. Recommended first slice (option A)
+Product owner decision (D1, 2026-11-13): option B. The comparison above is unchanged. The B column's weak rows (lost management, works offline, independence from a missing collector) are what §4 has to address. §4.1 states what remains.
+
+## 4. First slice (option B, management-owned declarations)
 
 In scope:
 
-1. **Schema** `schemas/configuration/expected-inventory.schema.json`, `apiVersion: bower.security/v1`, `kind: ExpectedInventory`. This is a new, additive schema. It does not change `SentinelSchema.Default`, the DCR or event contracts (`AGENTS.md:83,86-88`). Fields:
-   - `workspace` (full Log Analytics workspace resource ID; a bare name is rejected), `version`, `reviewBy` (date)
-   - `collectors[]`: `id`, `state` (`active` | `decommissioning`), `effectiveFrom`, optional `until`, `healthRecordsExpected` (bool)
-   - `sources[]`: `collectorId`, `application`, `environment`, `maximumSilenceMinutes`, `state`, `effectiveFrom`, optional `until`
-   - No free-form notes in the generated parameters.
-2. **Offline validator** (deterministic, no network). It rejects:
-   - a `workspace` that is not a full workspace resource ID
+1. **Declaration storage, separate from observed rows.** New tables in the management SQLite database: `inventory_collectors`, `inventory_sources`, `inventory_requests` and `inventory_exports`. They have no foreign key to `collectors`, so the `ON DELETE CASCADE` rules on observed tables (`ManagementStore.cs:53,63,73`) and the delete-and-replace of source rows on every registration and heartbeat (`ManagementStore.cs:210-216,1067-1099`) cannot reach them. The table change is an additive management schema migration. It does not change `SentinelSchema.Default`, the DCR or event contracts (`AGENTS.md:83,86-88`). Fields:
+   - per deployment: `workspace` (full Log Analytics workspace resource ID from configuration; a bare name is refused), `version` (increments on every approved change), `reviewBy` (date)
+   - collectors: `id`, `alias`, `state` (`active` | `decommissioning`), `effectiveFrom`, optional `until`, `healthRecordsExpected` (bool), `explicitIdConfirmed` (bool, D8)
+   - sources: `collectorId`, `application`, `environment`, `alias`, `maximumSilenceMinutes`, `state`, `effectiveFrom`, optional `until`
+   - aliases are opaque, generated by management (for example `c-<8 random hex>` and `s-<8 random hex>`), unique per deployment and never reused (D9).
+2. **Approved, audited write path only.** A new API: submit a declare, change, decommission or remove request (Operator or Administrator, with a reason), then approve or reject it (Approver or Administrator). The approver must differ from the requester, and a self-approval attempt is refused and audited, following `ManagementStore.SourceSetup.cs:24-31,180-195`. Each request and decision writes its `management_audit` row in the same transaction. The `Collector` role and the `EnrolledCollector` policy (`ManagementApplication.cs:118-122`) are refused on every inventory route. Registration, heartbeat, enrolment and the background jobs never write these tables. A deployment with only one person holding Approver or Administrator cannot approve anything, which is intended.
+3. **Validation on submit and again on export** (deterministic, no network). It refuses:
+   - a deployment `workspace` that is not a full workspace resource ID
    - duplicate keys, and case-only or whitespace-variant duplicates
    - values over 128/128/64 or with whitespace or control characters in `CollectorId`
    - sources whose `collectorId` is not declared
    - an allowance at or above the target lookback minus margin. Sentinel `P1D` and Azure `P2D` differ (`sentinel-health-rules.bicep:18`, `monitoring.bicep:49`). The expectations file allows 10080 min (`source-expectations.schema.json:23`), which neither window can judge
-   - a `reviewBy` date in the past
-   - more entries than the cap
-   - `healthRecordsExpected: false` combined with `expectedCollectorIds`, since such collectors would always be missing (`collector-health-missing.kql:4`)
-3. **Generator** that emits `expectedCollectorIds` (existing parameter, unchanged semantics) and a new `expectedSources` array for both Bicep files. It also emits the inventory version and SHA-256 for rule tags. It refuses output unless `workspace` equals the deployment target's workspace resource ID, compared case-insensitively. Both Bicep files take only `workspaceName` and resolve it in the deployment resource group (`monitoring.bicep:12,117`, `sentinel-health-rules.bicep:9,34`), and a name can repeat across subscriptions and resource groups, so the generator takes the target subscription, resource group and name as input and compares the full ID.
-   - `expectedCollectorIds` handling of `effectiveFrom`: the existing query treats every listed ID as expected at once, with no pending period (`collector-health-missing.kql:6-8,13`). The generator therefore lists a collector only when it is `active` and its `effectiveFrom` is at or before generation time. It reports any other `active` collector as pending activation, with its `effectiveFrom`. The inventory owner (the team that owns monitoring IaC, §3) must regenerate and redeploy after that time. Until then `collector-health-missing` does not see the collector, and only the new rule covers it, through its sources. Set `effectiveFrom` no earlier than the time the collector starts sending health records, or it is reported missing as soon as the rule deploys.
-4. **New rule** `expected-source-missing` in `monitoring.bicep` (and an optional Sentinel twin), disabled by default and needing its own opt-in like the other unqualified rules (`monitoring.bicep:28-32,257`). The query:
+   - a `reviewBy` in the past or more than 90 days ahead (D7)
+   - more than 200 entries per workspace, collectors and sources together (D7)
+   - a collector declared without `explicitIdConfirmed` (D8)
+   - `healthRecordsExpected: false` combined with listing in `expectedCollectorIds`, since such collectors would always be missing (`collector-health-missing.kql:4`)
+4. **Bootstrap from observed data** (D3). A seed action reads observed collectors and reported sources (the data behind `/api/fleet`) and creates **one pending request per entry**, marked `origin: observed-seed`. There is no bulk approval: an approver reviews and decides each request. Seeding never writes a declaration directly.
+5. **Signed export, deployed by the IaC owner.** Management generates the rule parameters from the declarations:
+   - `expectedCollectorIds` in alias mode and a new `expectedSources` array for both Bicep files, plus `inventoryVersion`, `inventorySha256`, `reviewBy` and the per-export alias salt, for rule tags and query text
+   - a separate restricted mapping file (alias to real name). It is never deployed to Azure
+   - a signature over the parameters file, with a new optional signing key like the existing management signers (`ManagementApplication.cs:129-137`). Without a key, export answers 503
+   - the export takes the target subscription, resource group and workspace name, and refuses unless the full resource ID equals the declared `workspace`, compared case-insensitively. Both Bicep files take only `workspaceName` (`monitoring.bicep:12,117`, `sentinel-health-rules.bicep:9,34`), and a name can repeat across subscriptions and resource groups
+   - `effectiveFrom` handling: the existing query treats every listed ID as expected at once (`collector-health-missing.kql:6-8,13`). The export lists a collector only when it is `active` and its `effectiveFrom` is at or before export time, and reports any other as pending activation. The IaC owner must export and redeploy after that time. Set `effectiveFrom` no earlier than the time the collector starts sending health records.
+   The IaC owner verifies the signature and target (a CLI step), keeps the signed export and mapping file in the tenant's IaC repository, and deploys with the existing Bicep (Monitoring Contributor and Microsoft Sentinel Contributor, runbook `:314-315`). Management never deploys. Evaluation reads only the deployed rule text.
+6. **Opaque aliases in rules** (D9). Rule text and alert rows carry aliases, never real names. The query matches observed rows by a salted token computed after `summarize` (for example `hash_sha256(strcat(salt, CollectorId))`), so it hashes distinct keys only. `collector-health-missing` gets an additive alias mode: the expected list holds aliases and tokens, and the alert dimension becomes the alias. With alias mode off the query is unchanged. The salt sits in the rule text, so a reader who can read the rule and guess a name can still test that guess. Aliases keep names out of casual view; they do not make names secret.
+7. **New rule** `expected-source-missing` in `monitoring.bicep` (and an optional Sentinel twin), disabled by default and needing its own opt-in like the other unqualified rules (`monitoring.bicep:28-32,257`). The query:
    - takes the same qualifying-row filter as `destination-freshness.kql:12-16`
    - `union`s declared keys with observed keys
-   - emits one row per non-healthy declared key, with `State` in {`missing`, `stale`, `unknown`}, `InventoryVersion`, `LastIngested`, `AllowedMinutes`
+   - emits one row per non-healthy declared key, with `Alias`, `State` in {`missing`, `stale`, `unknown`}, `InventoryVersion`, `LastIngested`, `AllowedMinutes`
    - emits a single `unknown` row with `Reason = inventory-expired` when `now() > reviewBy`
    - leaves out `decommissioning` items and pending items (`now() < effectiveFrom + allowance`).
-   Keeping it separate from `destination-freshness` avoids changing a qualified rule's semantics. The cost of a second table scan is accepted for the slice (D6).
-5. **Tests**: local fixtures (§6) and a written live qualification procedure modelled on `lab/aws/monitoring/qualify-azure.py`. The live run itself is out of scope.
+   It stays separate from `destination-freshness`, so a qualified rule's semantics do not change (D6). Its cost must be measured in the live qualification before it is enabled.
+8. **Tests**: local fixtures and API tests (§6) and a written live qualification procedure modelled on `lab/aws/monitoring/qualify-azure.py`. The live run itself is out of scope.
 
-Out of scope: management UI or storage, CMDB or watchlist integration, per-device syslog granularity, an `undeclared` alert, merging with `destination-freshness`, and any fix for late arrival or health authenticity.
+Out of scope: console UI beyond the request and decision screens the API needs, CMDB or watchlist integration, per-device syslog granularity (D2), an `undeclared` alert (D4), merging with `destination-freshness` (D6), shared workspaces (D5), import of a signed export back into management, and any fix for late arrival or health authenticity.
 
 Lifecycle:
 
-- **Declare** in a PR. Rules deploy and the item is `unknown` (pending) until `effectiveFrom + allowance`. After that it is `missing` until rows arrive. A collector with a future `effectiveFrom` joins `expectedCollectorIds` only at the redeploy after that time (§4 item 3).
-- **Decommission:** set `decommissioning` with `until`. Revoke the collector in management separately (`ManagementApplication.cs:584-591`). After `until`, remove the entry; VCS keeps the history.
-- **Reconcile** offline, when management is reachable, by comparing the inventory with `/api/fleet` (Viewer role, `ManagementApplication.cs:326-330`). Report declared-but-revoked, active-but-undeclared and suspended-but-declared. This is a report only. Management state never edits the inventory automatically, which keeps the two independent.
+- **Declare** through a request and a second person's approval. The item reaches the rules only at the next export and deploy. After deploy it is `unknown` (pending) until `effectiveFrom + allowance`, then `missing` until rows arrive. A collector with a future `effectiveFrom` joins `expectedCollectorIds` only at the export and deploy after that time (§4 item 5).
+- **Decommission:** a request sets `decommissioning` with `until`. Revoking the collector (`ManagementApplication.cs:584-591`) does not change its declaration; the console offers the decommission request beside the revoke action. After `until`, a remove request deletes the declaration. The audit rows keep the history.
+- **Reconcile** in management, by comparing declarations with observed collector records. Report declared-but-revoked, active-but-undeclared, suspended-but-declared, approved-but-not-exported and declared collectors whose observed id equals their reported machine name (a heuristic hint for D8; default ids are machine names, `CollectorIdentityFile.cs:67`). This is a report only, never paged (D4). Observed state never edits declarations.
+
+### 4.1 Management outage and loss
+
+| Situation | Detection in Sentinel | Declarations |
+|---|---|---|
+| Management down, export deployed | **Continues** for every item in the last deployed export: the rules read only their own text | Cannot be added, changed, approved or exported until management returns |
+| Change approved but not yet deployed | Not covered until the IaC owner deploys the next export. This lag exists even when management is up | Held in management |
+| Management down past `reviewBy` | The rule emits `inventory-expired` (`unknown`), which alerts | No new export can be made |
+| Management database lost | Unaffected while the deployed export is current | Lost unless backed up. The signed export and mapping file in the IaC repository are a record, but there is no import path in the slice |
+
+Does deploying generated parameters remove the outage gap? **Partly.** It removes the gap for every collector and source in the last deployed export: they are still reported `missing` or `stale` with management down. It does not remove it for anything declared, changed or due to activate after that export, which option A could still deploy during an outage. The approval-to-deploy lag is a second, smaller version of the same gap that exists whenever exports are not deployed promptly.
 
 ## 5. Decisions needing product owner input
 
-| ID | Decision | Why it matters |
-|---|---|---|
-| D1 | Confirm option A as the source of truth, with management (B) limited to read-only reconciliation | Sets ownership outside Bower roles. Bower cannot enforce VCS review |
-| D2 | Source granularity: `(CollectorId, application, environment)` only, or also per device or listener | Per-device needs a pack field or one listener per device (runbook `:1059-1062`), which would change schemas |
-| D3 | Bootstrap: may the first inventory be seeded from observed rows or `/api/fleet`, with mandatory review? | Seeding from observed data carries any existing gap into the inventory. That conflicts with the plan's purpose unless every seeded entry is reviewed |
-| D4 | Handling of `undeclared` collectors and sources: page, report or ignore | Paging catches rogue or forgotten collectors but adds noise during rollout |
-| D5 | Shared-workspace (MSSP) deployments: refuse, or add a tenant discriminator | No tenant column exists (`SentinelSchema.cs:52-80`). A discriminator would be a schema change (`AGENTS.md:86-88`) |
-| D6 | Cost: accept a second scan of `BowerSecurity_CL` every 5 min, or fold into `destination-freshness` after qualification | Cost is unmeasured. Folding changes a rule that already has measurements |
-| D7 | Maximum inventory size and the review interval for `reviewBy` | The rule query size limit is unknown. Interval trades staleness against workload |
-| D8 | Require explicit `BOWER_COLLECTOR_ID` for any declared collector | Machine-name defaults are not unique across sites (`CollectorIdentityFile.cs:67`) |
-| D9 | Privacy classification of host and application names in Azure rule definitions | Rule text is visible to the rule's readers. This may matter for government tenants (`PRODUCT.md:9-11`) |
+All items below are decided. See [Decisions (2026-11-13)](#decisions-2026-11-13). The original questions are kept for the record.
+
+| ID | Decision | Why it matters | Status |
+|---|---|---|---|
+| D1 | Confirm option A as the source of truth, with management (B) limited to read-only reconciliation | Sets ownership outside Bower roles. Bower cannot enforce VCS review | Decided: against, option B |
+| D2 | Source granularity: `(CollectorId, application, environment)` only, or also per device or listener | Per-device needs a pack field or one listener per device (runbook `:1059-1062`), which would change schemas | Decided |
+| D3 | Bootstrap: may the first inventory be seeded from observed rows or `/api/fleet`, with mandatory review? | Seeding from observed data carries any existing gap into the inventory. That conflicts with the plan's purpose unless every seeded entry is reviewed | Decided |
+| D4 | Handling of `undeclared` collectors and sources: page, report or ignore | Paging catches rogue or forgotten collectors but adds noise during rollout | Decided |
+| D5 | Shared-workspace (MSSP) deployments: refuse, or add a tenant discriminator | No tenant column exists (`SentinelSchema.cs:52-80`). A discriminator would be a schema change (`AGENTS.md:86-88`) | Decided |
+| D6 | Cost: accept a second scan of `BowerSecurity_CL` every 5 min, or fold into `destination-freshness` after qualification | Cost is unmeasured. Folding changes a rule that already has measurements | Decided |
+| D7 | Maximum inventory size and the review interval for `reviewBy` | The rule query size limit is unknown. Interval trades staleness against workload | Decided |
+| D8 | Require explicit `BOWER_COLLECTOR_ID` for any declared collector | Machine-name defaults are not unique across sites (`CollectorIdentityFile.cs:67`) | Decided |
+| D9 | Privacy classification of host and application names in Azure rule definitions | Rule text is visible to the rule's readers. This may matter for government tenants (`PRODUCT.md:9-11`) | Decided |
 
 ## 6. Test matrix
 
-Local fixtures are synthetic JSON inventories plus synthetic row sets. They cover the validator, the generator, placeholder substitution, query structure (as in `lab/aws/tests/test_monitoring_stack.py:323-360`) and `az bicep lint` (`deploy/sentinel/monitoring/README.md:19-21`). A local reference evaluator written from the state table in §2 can check the specification against synthetic rows. **No Kusto engine is in the repo**, so local tests cannot prove what the KQL does.
+Local fixtures are synthetic declarations, created through the management API in tests (pattern `tests/Bower.UnitTests/SourceSetupApiTests.cs`), plus synthetic row sets. They cover the API and its authorisation, validation, the export, placeholder substitution, query structure (as in `lab/aws/tests/test_monitoring_stack.py:323-360`) and `az bicep lint` (`deploy/sentinel/monitoring/README.md:19-21`). A local reference evaluator written from the state table in §2 can check the specification against synthetic rows. **No Kusto engine is in the repo**, so local tests cannot prove what the KQL does.
 
 Live validation uses an isolated workspace with explicitly labelled synthetic rows and a read-only verifier identity (`docs/production-readiness/07-soak-and-release-validation.md:151-153`). It rejects partial results (`qualify-azure.py:81-82`) and cleans up (`qualify-azure.py:1-5`). Live validation proves KQL semantics and alert firing for that tenant and build only. It needs a separately authorised tenant (`plans/README.md:13`).
 
 | # | Scenario | Expected | Local fixture proves | Local cannot prove | Live validation proves |
 |---|---|---|---|---|---|
-| 1 | Never-seen declared collector | `collector-health-missing` row; its sources `missing` after their allowance | Generator emits the ID; reference evaluator gives `missing` | KQL `leftanti` behaviour; alert fires | Row and alert appear (existing harness asserts this for one ID: `qualify-azure.py:91,197-198`; retained evidence for that assertion was not located) |
+| 1 | Never-seen declared collector | `collector-health-missing` row (by alias); its sources `missing` after their allowance | Export emits the alias and token; reference evaluator gives `missing` | KQL `leftanti` behaviour; alert fires | Row and alert appear (existing harness asserts this for one ID: `qualify-azure.py:91,197-198`; retained evidence for that assertion was not located) |
 | 2 | Never-seen declared source on a healthy collector | `missing` after `effectiveFrom + allowance`; `unknown` (pending) before | Pending/missing boundary at the exact minute | Clock skew between deploy time and `now()` | Boundary within one evaluation period |
 | 3 | Missing after lookback (last row older than `P2D`/`P1D`) | Still `missing`, not dropped | Evaluator keeps declared keys with no rows | Window filtering on `TimeGenerated` | Declared key stays reported after its rows age out |
 | 4 | Stale within lookback | `stale` with `LastIngested` | Allowance arithmetic, overrides | `ingestion_time()` behaviour | Fire and auto-resolve times (A6 took 683–843 s to fire, runbook `:194`) |
-| 5 | Decommissioning, then removal | No alert while `decommissioning`; after removal, rows show as `undeclared` | Validator requires `until`; generator leaves item out | Nothing more needed | Rule text update resolves the open alert |
+| 5 | Decommissioning, then removal | No alert while `decommissioning`; after removal, rows show as `undeclared` | Validation requires `until`; export leaves item out | Nothing more needed | Rule text update resolves the open alert |
 | 6 | Delayed events (old `TimeGenerated`, recent ingestion) | **Known gap**: may be reported `missing`/`stale` falsely | That the gap is documented in output and runbook | Whether it occurs | Size of the false result. Runbook `:1106-1111` stays open |
-| 7 | Absent health records (collector not configured or records refused) | Collector `missing`; validator warns if `healthRecordsExpected` is false while listed | Validator rule | Cause on host (R1) | Matches A1 |
+| 7 | Absent health records (collector not configured or records refused) | Collector `missing`; validation refuses `healthRecordsExpected` false while listed | Validation rule | Cause on host (R1) | Matches A1 |
 | 8 | Truncated health (`monitoringCoverage` false, >25 listeners) | Destination-side source result unaffected (uses security rows); collector-view rules report `coverage-incomplete` (runbook `:1074-1077`) | Fixture with 26 listeners does not change inventory states | n/a | Both rules together |
-| 9 | Duplicate IDs in the inventory, including case or whitespace variants | Validator rejects | Fully | n/a | n/a |
+| 9 | Duplicate IDs in the inventory, including case or whitespace variants | Submit and export refuse | Fully | n/a | n/a |
 | 10 | Duplicate observed `CollectorId` from two hosts | **Not detectable** by this slice. A possible later check: overlapping `collectorStartedAt`/`sequence` series in health records (runbook `:151`) | Nothing | Everything | Whether series overlap is a usable signal (unvalidated) |
-| 11 | Cross-tenant: inventory for workspace X deployed to Y, including a Y with the same name in another subscription or resource group | Generator refuses; validator rejects a bare name | Fully, for the generator and validator | Manual deploy bypassing the generator | Rule in Y never lists X's IDs |
-| 12 | Cross-tenant: another tenant's rows in a shared workspace | Out of scope (D5); a matching `CollectorId` would look `healthy` | Nothing | Everything | n/a until D5 |
-| 13 | Management outage | Inventory rules unaffected; offline reconciliation reports UNKNOWN (like `bower-fleet-check.py` exit 3) | Reconciliation handles 3/unreachable as `unknown`, never `healthy` | n/a | Rules fire with management stopped |
-| 14 | Inventory past `reviewBy` | One `unknown` row, `inventory-expired` | Generator embeds the date; evaluator output | n/a | Row and alert appear |
+| 11 | Cross-tenant: inventory for workspace X deployed to Y, including a Y with the same name in another subscription or resource group | Export refuses; a bare name is refused; the deploy-side signature and target check refuses | Fully, for the export and the CLI check | Manual deploy bypassing the export and check | Rule in Y never lists X's IDs |
+| 12 | Cross-tenant: another tenant's rows in a shared workspace | Not supported (D5). The deployment refuses a second workspace binding, but Bower cannot see another deployment writing to the same workspace; a matching `CollectorId` would look `healthy` | The binding refusal | Detection of a second writer | n/a |
+| 13 | Management outage | Rules from the last deployed export unaffected. Declarations cannot change. A collector declared after that export is not detected (§4.1). Reconciliation reports UNKNOWN (like `bower-fleet-check.py` exit 3) | Reconciliation handles 3/unreachable as `unknown`, never `healthy`; export refuses while the store is unavailable | n/a | Rules fire with management stopped; a collector approved but not exported produces no row |
+| 14 | Inventory past `reviewBy` | One `unknown` row, `inventory-expired` | Export embeds the date and refuses more than 90 days; evaluator output | n/a | Row and alert appear |
 | 15 | Partial, throttled or failed query | `unknown`; must not read as "no problems" | Harness rejects partial results (`qualify-azure.py:81-82`) | How Azure Monitor and Sentinel rules treat partial or failed results | **Required**, and currently unknown |
-| 16 | Oversized inventory | Validator rejects above the cap | Cap enforcement | Real service limit | Largest list that deploys and evaluates within one period |
+| 16 | Oversized inventory | Submit and export refuse above 200 entries (D7) | Cap enforcement | Real service limit | Largest list that deploys and evaluates within one period, as evidence for raising the cap |
 | 17 | New workspace or DCR before first rows | All declared items `missing` after their allowance; no query error | n/a | Absent-table behaviour (compare `monitoring.bicep:238-239`) | Behaviour during the 6.5-minute cold start (runbook `:1053`) |
-| 18 | Undeclared source or collector appears | Reported by reconciliation, not paged (pending D4) | Set difference in evaluator | KQL output | Row appears in report query |
-| 19 | Environment value longer than 64 characters | Validator rejects | Fully | n/a | Confirms truncation (`SentinelSchema.cs:61`) |
+| 18 | Undeclared source or collector appears | Reported by reconciliation, not paged (D4) | Set difference in evaluator | KQL output | Row appears in report query |
+| 19 | Environment value longer than 64 characters | Submit refuses | Fully | n/a | Confirms truncation (`SentinelSchema.cs:61`) |
 | 20 | Forged healthy row from a direct DCR writer | **Known gap**: item looks `healthy` | Documented only | Everything | Not a goal. Runbook `:1113-1122` stays open |
-| 21 | Declared collector with a future `effectiveFrom` | Left out of `expectedCollectorIds` and reported as pending activation; listed after a redeploy past `effectiveFrom` | Generator output either side of `effectiveFrom` | Whether the owner redeploys on time | No `collector-health-missing` row before activation; row appears after the redeploy if the collector stays silent |
+| 21 | Declared collector with a future `effectiveFrom` | Left out of `expectedCollectorIds` and reported as pending activation; listed after an export and redeploy past `effectiveFrom` | Export output either side of `effectiveFrom` | Whether the owner redeploys on time | No `collector-health-missing` row before activation; row appears after the redeploy if the collector stays silent |
+| 22 | Heartbeat or registration from a collector, including one reporting new or fewer sources | Declarations unchanged; only observed rows change | API test: declaration rows and audit identical before and after; inventory routes refuse the `Collector` role | n/a | n/a |
+| 23 | Self-approval, or approval by a role without Approver or Administrator | Refused and audited | Fully (pattern `ManagementStore.SourceSetup.cs:180-195`) | n/a | n/a |
+| 24 | Seed from observed data | One pending request per entry, `origin: observed-seed`; nothing declared until each is approved | Fully | Reviewer diligence | n/a |
+| 25 | Collector revoked or deleted in management | Declaration unchanged (no cascade); reconciliation reports declared-but-revoked | Fully | n/a | n/a |
+| 26 | Tampered or retargeted export | Signature check fails, or target mismatch refuses | Fully | Deploys that skip the check | n/a |
+| 27 | Alias rows | Alert rows and rule text carry aliases only; no declared name appears in the deployed parameters | Text search of exported parameters for every declared name | n/a | Alert payload holds the alias only |
+| 28 | Declared collector without explicit id | Submit refuses without `explicitIdConfirmed`; reconciliation hints when the observed id equals the machine name | Fully | Whether the host really sets `BOWER_COLLECTOR_ID` | n/a |
 
 RBAC and operation checks:
 
-- The validator and generator need no credentials and work offline.
+- Declaring needs Operator or Administrator; approving needs a different Approver or Administrator; exporting needs Administrator. The `Collector` role has no inventory route.
+- Validation and the deploy-side signature check need no Azure credentials. The export needs management to be reachable.
 - Deploying needs Monitoring Contributor and Microsoft Sentinel Contributor (runbook `:314-315`). Verifying needs Log Analytics Reader only, as an identity separate from ingestion (`07-soak-and-release-validation.md:151-153`).
 - Reconciliation needs a Viewer token held only in the environment (runbook `:545-551`).
-- No collector or management credential can change the inventory. That has to be proved by review of the deployment pipeline; tests cannot show it.
+- No collector credential can change declarations (test 22). Only an approved export deployed by the IaC owner reaches the rules. That the IaC owner deploys only signed, checked exports is a tenant process that tests cannot show.
 
 Query size and cost (all unmeasured):
 
 - Today, `expectedCollectorIds` is inlined into rule text with `string(...)` (`monitoring.bicep:136`). The new parameter would be inlined the same way.
 - Scan cost should be similar to `destination-freshness` (same filter and window) and runs every 5 min (`monitoring.bicep:43`). Health records add about 5 KB each (runbook `:144-145`), but the source query filters them out.
-- The live run must record query duration, rows scanned and the largest inventory that deploys.
+- The live run must record query duration, rows scanned and the largest inventory that deploys. Under D6 this measurement is a gate: the rule is not enabled until its cost is measured. Under D7 the cap rises above 200 only after this measurement.
+- Salted tokens are computed after `summarize`, on distinct keys only. Their extra cost is unmeasured.
 
 ## 7. Unvalidated claims and things not proven
 
 - No part of this design has run. All rule, query and alert behaviour is a proposal.
 - How Azure Monitor log alerts and Sentinel scheduled rules handle a failed, throttled or partial query, and whether either reports it, is not established in this repository. An inventory rule that silently fails would look like "all healthy". This must be qualified live before the rule is enabled.
-- The maximum rule query length, and therefore the largest inventory that can be inlined, is unknown. The 1000-entry cap is borrowed from `source-expectations.schema.json:15`, not measured.
-- Kusto string comparison in `join` is assumed case-sensitive. The validator rejects case-only duplicates regardless, but this should be confirmed live.
+- The maximum rule query length, and therefore the largest inventory that can be inlined, is unknown. The 200-entry cap (D7) is a decision, not a measurement.
+- Kusto string comparison in `join` is assumed case-sensitive. Validation refuses case-only duplicates regardless, but this should be confirmed live.
 - Query cost and evaluation duration are not measured.
 - The existing harness asserts that a never-seen expected collector appears (`qualify-azure.py:91,197-198`). This review did not find retained evidence of that assertion passing. The 2026-11-03 smoke records A1 firing for collectors that stopped, not for never-seen ones (`docs/evidence/sentinel-20261103-054834/README.md:56`).
 - Late arrivals can still produce false `missing`/`stale` (runbook `:1106-1111`). Not resolved.
 - Forged rows from direct DCR writers or compromised relays can still produce false `healthy` (runbook `:1113-1122`). Not resolved.
 - Duplicate observed `CollectorId`s from different hosts cannot be detected. The series-overlap idea is untested.
-- Cross-tenant isolation in a shared workspace is unresolved (D5).
-- VCS review of the inventory is a tenant process that Bower cannot enforce or prove.
-- The redeploy at a collector's `effectiveFrom` is a manual step for the inventory owner. Nothing in the slice enforces it. If it is missed, `collector-health-missing` does not cover that collector until the next redeploy.
+- Shared workspaces are refused (D5), but Bower cannot detect two management deployments, or another tenant's collectors, writing to one workspace.
+- Four-eyes approval is enforced by the API, but it is only as independent as the people holding Approver and Administrator. Bower roles sit in the same Entra tenant as the collectors' management identities (`ManagementApplication.cs:83-99`).
+- During a management outage, declarations cannot change and newly declared collectors cannot be detected (§4.1). Deploying exports narrows this gap but does not close it.
+- The management database becomes the only full record of declarations. Its backup and restore are not designed here, and the slice has no import from a signed export.
+- Deployment of each export is a manual step for the IaC owner. Nothing in the slice proves that the deployed rule matches the latest approved version, beyond the `inventoryVersion` and `inventorySha256` tags.
+- D8 cannot be enforced by Bower: the collector logs whether its id was configured (`StartupLog.cs:12`) but does not report it. `explicitIdConfirmed` is an operator attestation.
+- Aliases do not make names secret. The per-export salt is in the rule text, so a reader can test a guessed name (D9).
+- The export and redeploy at a collector's `effectiveFrom` is a manual step for the IaC owner. Nothing in the slice enforces it. If it is missed, `collector-health-missing` does not cover that collector until the next redeploy.
 - Whether a watchlist (option C) would avoid redeploys and stay within limits is unknown. Bower does not use watchlists today (no references in the repository outside `website/`).
 
 ## 8. STOP-condition assessment
 
 | STOP condition (plan) | Triggered? | Basis |
 |---|---|---|
-| Identity cannot be made unambiguous | **No, for declarations; partially open for observations.** | Declared keys can be made unique and bounded by the validator, matching destination truncation (`SentinelSchema.cs:60-61,70`). Bower cannot stop two hosts emitting the same `CollectorId`. D8 (explicit IDs) reduces the risk; scenario 10 stays unproven. The slice does not depend on solving this, so it does not stop the design |
-| An expected source cannot be declared independently | **No** | Option A keeps declarations outside the collector and management, and evaluates them in the workspace. Heartbeat and `BOWER_SOURCE_EXPECTATIONS` data are explicitly not used as inventory (§1.2) |
-| Required schema compatibility is unresolved | **No, for the slice** | The slice adds a new configuration schema and a new Bicep parameter only. No change to `SentinelSchema.Default`, the DCR or event contracts (`AGENTS.md:83,86-88`). D2 or D5 would need schema changes and are deferred |
+| Identity cannot be made unambiguous | **No, for declarations; partially open for observations.** | Declared keys can be made unique and bounded by validation on submit and export, matching destination truncation (`SentinelSchema.cs:60-61,70`). Bower cannot stop two hosts emitting the same `CollectorId`. D8 (explicit IDs, now required) reduces the risk but is an attestation; scenario 10 stays unproven. The slice does not depend on solving this, so it does not stop the design |
+| An expected source cannot be declared independently | **Re-checked for option B (2026-11-13): not hit, with conditions.** | Independence from the collector holds: declarations live in separate tables with no foreign key to observed rows, are written only by approved, audited requests, and no collector role, registration, heartbeat, enrolment or background job can write them (§4 items 1–2; tests 22, 23, 25). Heartbeat and `BOWER_SOURCE_EXPECTATIONS` data are still not used as inventory, and seeded entries need individual approval (D3). Evaluation stays in the workspace and reads only the deployed export. Independence from management is weaker than under A: management holds the only full record, and nothing declared after the last deployed export can be evaluated during an outage (§4.1). That is an availability limit, not a loss of independence from the collector, so the condition is not hit. It becomes a STOP if implementation needs any collector-writable path into the declaration tables, or a cascade from `collectors` |
+| Required schema compatibility is unresolved | **No, for the slice** | The slice adds management tables (additive migration), a new Bicep parameter and an additive alias mode for `collector-health-missing`. No change to `SentinelSchema.Default`, the DCR or event contracts (`AGENTS.md:83,86-88`). D2 and D5 were decided in ways that need no schema change |
 | Validation would need real cloud access | **No, for this design task; yes, for qualification** | This artefact and its local gates need no cloud. Enabling the rule needs live validation in an authorised, isolated tenant (`plans/README.md:13`). That is deferred, not attempted, and listed in §7 |
 
-No STOP condition was hit for this design task. The decisions left open (D1–D9) and the unproven items in §7 must be settled before implementation starts or the rule is enabled.
+No STOP condition was hit for this design task, including after the D1 change to option B. D1–D9 are decided (see [Decisions (2026-11-13)](#decisions-2026-11-13)). The unproven items in §7 must be settled before the rule is enabled.
