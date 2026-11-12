@@ -82,7 +82,7 @@ A: versioned offline inventory file in the tenant's own repository, compiled int
 | Owner | Tenant security or platform team that owns monitoring IaC | Bower Administrator or Approver | CMDB or asset owner, outside Bower |
 | Source identity and uniqueness | `(workspace, CollectorId)` and `(workspace, CollectorId, ApplicationName, ApplicationEnvironment)`. The validator enforces uniqueness, destination bounds (128/128/64) and flags case-only duplicates | Same keys. Uniqueness via a SQLite key in one deployment; no uniqueness across management deployments | Needs a mapping from asset ID (host name, resource ID) to `CollectorId`. No mapping exists, and machine-name defaults make it fragile (`CollectorIdentityFile.cs:67`) |
 | Independent authorisation | Repository review plus the deployer's Azure roles (Monitoring Contributor, Microsoft Sentinel Contributor, runbook `:314-315`). Separate from collector identity and from Bower roles | Bower roles. The same Administrator can revoke a collector (`ManagementApplication.cs:584-591`) and could delete its declaration unless four-eyes applies. A four-eyes pattern exists (`ManagementStore.SourceSetup.cs:188`) | Whatever the external system enforces. Unknown |
-| Tenant scope | One file per workspace; the generator refuses a mismatched workspace | One management deployment per Entra tenant (`ManagementApplication.cs:83-87`) | Unknown; depends on the system |
+| Tenant scope | One file per workspace resource ID; the generator refuses a mismatched target | One management deployment per Entra tenant (`ManagementApplication.cs:83-87`) | Unknown; depends on the system |
 | Approved changes | Pull request plus required reviewer in the tenant's VCS (tenant process; Bower cannot enforce it) | Submit/approve with a reason and a different approver, enforced by the API (pattern `ManagementStore.SourceSetup.cs:24-31,188`) | External change process |
 | Audit | VCS history plus Azure deployment history. The deployed rule carries the inventory version and hash in tags or description (proposal) | `management_audit` rows in the same transaction (`ManagementStore.cs:85-93,1154-1188`). This review found no `UPDATE`/`DELETE` on that table in the API | External; Bower sees only the result |
 | Bootstrap | Write the file before first deployment. An optional seed from observed rows needs human review (D3) | Declare in the console before enrolment | Import plus mapping |
@@ -104,11 +104,12 @@ Why A: it is the only option where neither the subject (collector) nor the optio
 In scope:
 
 1. **Schema** `schemas/configuration/expected-inventory.schema.json`, `apiVersion: bower.security/v1`, `kind: ExpectedInventory`. This is a new, additive schema. It does not change `SentinelSchema.Default`, the DCR or event contracts (`AGENTS.md:83,86-88`). Fields:
-   - `workspace` (resource ID or name), `version`, `reviewBy` (date)
+   - `workspace` (full Log Analytics workspace resource ID; a bare name is rejected), `version`, `reviewBy` (date)
    - `collectors[]`: `id`, `state` (`active` | `decommissioning`), `effectiveFrom`, optional `until`, `healthRecordsExpected` (bool)
    - `sources[]`: `collectorId`, `application`, `environment`, `maximumSilenceMinutes`, `state`, `effectiveFrom`, optional `until`
    - No free-form notes in the generated parameters.
 2. **Offline validator** (deterministic, no network). It rejects:
+   - a `workspace` that is not a full workspace resource ID
    - duplicate keys, and case-only or whitespace-variant duplicates
    - values over 128/128/64 or with whitespace or control characters in `CollectorId`
    - sources whose `collectorId` is not declared
@@ -116,7 +117,8 @@ In scope:
    - a `reviewBy` date in the past
    - more entries than the cap
    - `healthRecordsExpected: false` combined with `expectedCollectorIds`, since such collectors would always be missing (`collector-health-missing.kql:4`)
-3. **Generator** that emits `expectedCollectorIds` (existing parameter, unchanged semantics) and a new `expectedSources` array for both Bicep files. It also emits the inventory version and SHA-256 for rule tags. It refuses output for a different `workspace`.
+3. **Generator** that emits `expectedCollectorIds` (existing parameter, unchanged semantics) and a new `expectedSources` array for both Bicep files. It also emits the inventory version and SHA-256 for rule tags. It refuses output unless `workspace` equals the deployment target's workspace resource ID, compared case-insensitively. Both Bicep files take only `workspaceName` and resolve it in the deployment resource group (`monitoring.bicep:12,117`, `sentinel-health-rules.bicep:9,34`), and a name can repeat across subscriptions and resource groups, so the generator takes the target subscription, resource group and name as input and compares the full ID.
+   - `expectedCollectorIds` handling of `effectiveFrom`: the existing query treats every listed ID as expected at once, with no pending period (`collector-health-missing.kql:6-8,13`). The generator therefore lists a collector only when it is `active` and its `effectiveFrom` is at or before generation time. It reports any other `active` collector as pending activation, with its `effectiveFrom`. The inventory owner (the team that owns monitoring IaC, §3) must regenerate and redeploy after that time. Until then `collector-health-missing` does not see the collector, and only the new rule covers it, through its sources. Set `effectiveFrom` no earlier than the time the collector starts sending health records, or it is reported missing as soon as the rule deploys.
 4. **New rule** `expected-source-missing` in `monitoring.bicep` (and an optional Sentinel twin), disabled by default and needing its own opt-in like the other unqualified rules (`monitoring.bicep:28-32,257`). The query:
    - takes the same qualifying-row filter as `destination-freshness.kql:12-16`
    - `union`s declared keys with observed keys
@@ -130,7 +132,7 @@ Out of scope: management UI or storage, CMDB or watchlist integration, per-devic
 
 Lifecycle:
 
-- **Declare** in a PR. Rules deploy and the item is `unknown` (pending) until `effectiveFrom + allowance`. After that it is `missing` until rows arrive.
+- **Declare** in a PR. Rules deploy and the item is `unknown` (pending) until `effectiveFrom + allowance`. After that it is `missing` until rows arrive. A collector with a future `effectiveFrom` joins `expectedCollectorIds` only at the redeploy after that time (§4 item 3).
 - **Decommission:** set `decommissioning` with `until`. Revoke the collector in management separately (`ManagementApplication.cs:584-591`). After `until`, remove the entry; VCS keeps the history.
 - **Reconcile** offline, when management is reachable, by comparing the inventory with `/api/fleet` (Viewer role, `ManagementApplication.cs:326-330`). Report declared-but-revoked, active-but-undeclared and suspended-but-declared. This is a report only. Management state never edits the inventory automatically, which keeps the two independent.
 
@@ -166,7 +168,7 @@ Live validation uses an isolated workspace with explicitly labelled synthetic ro
 | 8 | Truncated health (`monitoringCoverage` false, >25 listeners) | Destination-side source result unaffected (uses security rows); collector-view rules report `coverage-incomplete` (runbook `:1074-1077`) | Fixture with 26 listeners does not change inventory states | n/a | Both rules together |
 | 9 | Duplicate IDs in the inventory, including case or whitespace variants | Validator rejects | Fully | n/a | n/a |
 | 10 | Duplicate observed `CollectorId` from two hosts | **Not detectable** by this slice. A possible later check: overlapping `collectorStartedAt`/`sequence` series in health records (runbook `:151`) | Nothing | Everything | Whether series overlap is a usable signal (unvalidated) |
-| 11 | Cross-tenant: inventory for workspace X deployed to Y | Generator refuses | Fully, for the generator | Manual deploy bypassing the generator | Rule in Y never lists X's IDs |
+| 11 | Cross-tenant: inventory for workspace X deployed to Y, including a Y with the same name in another subscription or resource group | Generator refuses; validator rejects a bare name | Fully, for the generator and validator | Manual deploy bypassing the generator | Rule in Y never lists X's IDs |
 | 12 | Cross-tenant: another tenant's rows in a shared workspace | Out of scope (D5); a matching `CollectorId` would look `healthy` | Nothing | Everything | n/a until D5 |
 | 13 | Management outage | Inventory rules unaffected; offline reconciliation reports UNKNOWN (like `bower-fleet-check.py` exit 3) | Reconciliation handles 3/unreachable as `unknown`, never `healthy` | n/a | Rules fire with management stopped |
 | 14 | Inventory past `reviewBy` | One `unknown` row, `inventory-expired` | Generator embeds the date; evaluator output | n/a | Row and alert appear |
@@ -176,6 +178,7 @@ Live validation uses an isolated workspace with explicitly labelled synthetic ro
 | 18 | Undeclared source or collector appears | Reported by reconciliation, not paged (pending D4) | Set difference in evaluator | KQL output | Row appears in report query |
 | 19 | Environment value longer than 64 characters | Validator rejects | Fully | n/a | Confirms truncation (`SentinelSchema.cs:61`) |
 | 20 | Forged healthy row from a direct DCR writer | **Known gap**: item looks `healthy` | Documented only | Everything | Not a goal. Runbook `:1113-1122` stays open |
+| 21 | Declared collector with a future `effectiveFrom` | Left out of `expectedCollectorIds` and reported as pending activation; listed after a redeploy past `effectiveFrom` | Generator output either side of `effectiveFrom` | Whether the owner redeploys on time | No `collector-health-missing` row before activation; row appears after the redeploy if the collector stays silent |
 
 RBAC and operation checks:
 
@@ -203,6 +206,7 @@ Query size and cost (all unmeasured):
 - Duplicate observed `CollectorId`s from different hosts cannot be detected. The series-overlap idea is untested.
 - Cross-tenant isolation in a shared workspace is unresolved (D5).
 - VCS review of the inventory is a tenant process that Bower cannot enforce or prove.
+- The redeploy at a collector's `effectiveFrom` is a manual step for the inventory owner. Nothing in the slice enforces it. If it is missed, `collector-health-missing` does not cover that collector until the next redeploy.
 - Whether a watchlist (option C) would avoid redeploys and stay within limits is unknown. Bower does not use watchlists today (no references in the repository outside `website/`).
 
 ## 8. STOP-condition assessment

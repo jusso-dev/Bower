@@ -199,12 +199,16 @@ row has:
 The bundle records `eventPolicyId`, which should be `BWR-PACK-WIN-LOGON-FAILURE`. Expected
 but **not asserted** columns (see open question 1): `ApplicationName` `windows-security`,
 `EventOutcomeReason` `InvalidCredentials` (from `0xc000006a`, `security-4625.json:32,37`),
-`SourceIpAddress` `192.0.2.10`, `ActorUsername` an HMAC value.
+`SourceIpAddress` `192.0.2.10`, `ActorUsername` a non-empty `hmac-sha256:<keyId>:<hex>` value
+(`src/Bower.Redaction/KeyedFieldHasher.cs:25-26`).
 
 ### Redaction expectations
 
 - `actor.username` is HMAC-pseudonymised (`packs/windows-security-logon/privacy.yaml:9-10`).
   `bower-evidence-probe` must not appear in the queued payload, the database or the bundle.
+  An empty username passes through unchanged (`src/Bower.Redaction/Privacy/PolicyApplicator.cs:55`)
+  and a missing one becomes an empty column (`src/Bower.Dcr/SentinelSchema.cs:63`), so every
+  check must also require a non-empty HMAC value.
 - Unmapped raw keys (`channel`, `provider`, every `data.*` key) and the raw status codes are
   never forwarded (`docs/deployment/packs.md:173-174`,
   `docs/security/pack-runtime-catalogue.md:70-72`).
@@ -298,7 +302,7 @@ SampleFile)` tuple in place of the `Profile` and `Source` constants
 | 11 | Incomplete query | `answered-then-incomplete` and `answered-then-invalid` (`:152-154`) with the Windows profile | `destination-query-failed` with `query-incomplete` / `query-invalid-response` |
 | 12 | Simulated mode | `:127-142` with the Windows profile | `simulated`, `accepted-not-verified`, `SIMULATED` limitation, no control `evidenced` |
 | 13 | Non-Sentinel output | `:329-363` and `HttpOutputEvidenceTests.cs:15-45` with the Windows profile (`s3`, `http`, a future output, `unknown`) | `collector-output-not-sentinel`, zero records, `NOT SENTINEL` limitation |
-| 14 | Exact destination match | A real collector with the signed Windows pack and `QueueDestination` (`:82-125`) | `verified`; `eventPolicyId` `BWR-PACK-WIN-LOGON-FAILURE`; workspace and table recorded; queued payload lacks `bower-evidence-probe` and every `data.` key; a different workspace gives `destination-row-missing` |
+| 14 | Exact destination match | A real collector with the signed Windows pack and `QueueDestination` (`:82-125`) | `verified`; `eventPolicyId` `BWR-PACK-WIN-LOGON-FAILURE`; workspace and table recorded; queued payload lacks `bower-evidence-probe` and every `data.` key; queued `actor.username` is non-empty and equals `KeyedFieldHasher.Hash("bower-evidence-probe", "k1")` with the test key (`:632`); a different workspace gives `destination-row-missing` |
 | 15 | Native-transport marking | The Windows bundle has six `untestedPaths` (the last is the native entry) and the `NOT NATIVE TRANSPORT` limitation. The `linux-ssh-gateway` bundle has exactly the five static entries and no such limitation. | Pass |
 | 16 | Generic bytes unchanged | Generic bundle has no `probe`, uses the same KQL text as `EvidenceRunner.cs:487-489` and the same limitations. `linux-ssh-gateway` KQL and limitations are unchanged. | Pass |
 | 17 | Bundle metadata only | `:531-559` with the Windows profile: signed, verifiable, contains none of the token, `bower-evidence-probe`, `192.0.2.10` or `"data.` | Pass |
@@ -338,12 +342,16 @@ the signed `windows-security-logon` 1.0.2 pack from a trusted key; the dedicated
 token and scope tuple above; a verifier identity with only Log Analytics Reader. Probe a
 single replica directly (`docs/operations/evidence-bundles.md:119-125`).
 
-1. `bower evidence run --probe-profile parser:windows-security-logon:0 --workspace-id … --workspace-resource-id … --credential … --signing-key … --timeout-minutes 30 --out …`.
+1. `bower evidence run --probe-profile parser:windows-security-logon:0 --collector-url <selected replica URL> --workspace-id … --workspace-resource-id … --credential … --signing-key … --timeout-minutes 30 --out …`.
+   `--collector-url` is required, and the CLI reads the dedicated producer token from
+   `BOWER_INGEST_TOKEN`, never from an argument (`EvidenceAndQueueCommands.cs:39,44`).
    Expected: `verified`, exit code 0.
 2. `bower evidence verify <bundle> --trusted-key <pub>`. Expected: valid.
 3. Independent read-only KQL by the verifier: exactly one row for the probe `EventId`, with
    `ApplicationName == "windows-security"`, `EventOutcomeReason == "InvalidCredentials"`,
-   `SourceIpAddress == "192.0.2.10"` and `ActorUsername != "bower-evidence-probe"`.
+   `SourceIpAddress == "192.0.2.10"`, `isnotempty(ActorUsername)`,
+   `ActorUsername startswith "hmac-sha256:"` and `ActorUsername != "bower-evidence-probe"`.
+   The non-empty check matters because an empty username also passes `!=`.
 4. Negative checks: the verifier without its role gives `destination-permission-denied`; a
    collector without the pack gives `parser-inactive`; a token without the scope gives
    `collector-permission-denied`.

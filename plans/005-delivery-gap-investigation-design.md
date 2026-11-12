@@ -37,6 +37,7 @@ Consequence: the comment "A missing number means a record Bower queued never rea
 | Detects | Within one run (`CollectorId`, `collectorStartedAt`), sequence numbers missing **between** the lowest and highest observed in the window: `MissingRecords = Last - First + 1 - dcount(Sequence)` (`:20-27`) |
 | Lookback and lag | 24 h of `TimeGenerated`, ending 30 min before `now()` (`:13-16,19`) |
 | Duplicates | Harmless: `dcount(Sequence)` (`:22-23`) |
+| Distinct count | `dcount` at default accuracy 1 is exact only up to 1,000 distinct values. Above that it is a HyperLogLog estimate that can vary between executions (Microsoft Learn, `dcount()` estimation accuracy). At 60 s a 24 h run holds about 1,441 records, so `MissingRecords` can be wrong by a few records either way. At intervals of 87 s or more a 24 h run stays under 1,000 |
 | Live evidence | #249 deliberate loss of 100 events also lost one health record. The query returned 1 for that collector and 0 for the clean one (`:9-11`; `docs/deployment/ama-syslog-output.md:195-198`) |
 | Deployment | Not loaded by `deploy/sentinel/monitoring/monitoring.bicep`. Its `healthRules` array (`:127-241`) loads the eleven other queries. |
 
@@ -47,6 +48,7 @@ What it can miss or misreport:
 - **Trailing loss.** There is no upper bound. Missing final records before a crash, a restart or now cannot be seen.
 - **Whole-run loss.** A run with no rows in the window produces no row at all.
 - **Runs with one record** cannot show a gap.
+- **Estimated count.** Above 1,000 distinct sequences per run (1.2 table), a false gap of a few records can appear, or a real gap can be hidden.
 - **Records without `sequence`** are dropped silently (`:21`). If `collectorStartedAt` is missing, runs merge under an empty `Started`, and that can hide gaps.
 - **Late arrival.** A record delayed by more than 30 min shows as a gap that later closes. The result depends on when the query ran.
 - **Local refusal** shows as a gap even though the destination path did nothing wrong (1.1).
@@ -108,6 +110,7 @@ One row per **run** (`CollectorId`, `collectorStartedAt`), rolled up to one row 
 - The operator chooses the window. The default is the existing 24 h ending at `now() - lag`. The query also reads **one interval before** the window, so it can find the previous record of each run.
 - Lag is not taken as fixed: derive a per-collector figure from observed arrival delay (runbook `:164-166`). Use `max(30 min, observed p99 delay + one interval)`. A gap whose neighbouring records are younger than that is **pending**, not missing.
 - Every result is "as of `QueryRunAt`". The runbook tells operators to re-run after one further lag period before raising a gap. A gap that later closes is recorded as *resolved by late arrival*. The first result is then stale, not wrong.
+- The workbook keeps no state, so a re-run alone cannot tell a filled gap from a series that was always contiguous. GAP-RESOLVED needs the earlier result: the operator supplies it as the `PriorGaps` parameter (`CollectorId, CollectorStartedAt, MissingSequence, PriorQueryRunAt`), copied from the exported earlier result with its provenance. The query then checks each prior missing sequence: present now with `IngestedAt > PriorQueryRunAt` is GAP-RESOLVED; present with `IngestedAt <= PriorQueryRunAt` means the earlier result was wrong or incomplete, and is flagged; still absent stays GAP-OBSERVED. Without `PriorGaps`, a filled gap shows as NO-GAP-OBSERVED and no GAP-RESOLVED is ever reported.
 - If this is ever wired as an alert, the rule's `windowSize` must cover lookback plus lag. The current `healthWindow` of 30 min (`monitoring.bicep:46`) would leave the 24 h query with almost nothing to read. Not in scope here.
 
 ### 2.3 State table
@@ -116,7 +119,7 @@ One row per **run** (`CollectorId`, `collectorStartedAt`), rolled up to one row 
 
 | State | Condition | Absence of evidence or evidence of absence | What it does **not** mean | Next check |
 |---|---|---|---|---|
-| QUERY-INCOMPLETE | Error, partial result, timeout or truncation (compare `src/Bower.Evidence/AzureClients.cs:68-73,92-104`) | Absence of evidence | Not "no gaps" | Narrow the window or the collector filter and re-run |
+| QUERY-INCOMPLETE | Error, partial result, timeout or truncation (compare `src/Bower.Evidence/AzureClients.cs:68-73,92-104`). In option A the operator sets it by hand from the portal notice (below) | Absence of evidence | Not "no gaps" | Narrow the window or the collector filter and re-run |
 | COVERAGE-UNKNOWN | Fleet scope with no declared inventory (plan 001 not implemented) | Absence of evidence | Not "every collector reported" | Supply a declared list, labelled as such |
 | NOT-SENTINEL-OUTPUT | Declared or last observed output is `s3`, `http` or `none`. Health records do not reach `BowerSecurity_CL` | Absence of evidence (not applicable) | Not loss, not delivery | Verify at that sink. Bower cannot prove it from Sentinel |
 | NO-HEALTH-EVIDENCE | Collector declared, or seen in other rows, with zero health records in the window | Absence of evidence | Not a loss count. It may be stopped, gated, or health records not enabled | R1. Host check. `collector-health-missing` |
@@ -126,7 +129,7 @@ One row per **run** (`CollectorId`, `collectorStartedAt`), rolled up to one row 
 | HEAD-UNKNOWN | `collectorStartedAt` falls inside the window and the first observed sequence is greater than 1 | Absence of evidence for records 1…First-1 | Not loss | Host log 1330/1331/1332 around start-up. Re-run later |
 | TAIL-UNKNOWN | A later run exists, or the last record is older than about two intervals plus lag | Absence of evidence after Last | Not loss, and not a clean stop | Host or service logs for a crash or stop. R1 |
 | GAP-OBSERVED | Complete query, past the lag, sequence numbers missing between First and Last | **Evidence of absence** of those health records, as of `QueryRunAt` | Not a count of lost security events. Not proof the record was ever queued | Host logs 1330/1331/1332. `queue-storage`. Dead letters. On AMA syslog: journald and rsyslog logs, agent log, the `Syslog` table for undecoded messages (`ama-syslog-output.md:170-175`) |
-| GAP-RESOLVED | An earlier GAP-OBSERVED is filled at a later run of the query | Earlier result stale | Not a false alarm in the query, the record was late | Record the arrival delay |
+| GAP-RESOLVED | A sequence listed in the operator-supplied `PriorGaps` (2.2) is now present with `IngestedAt > PriorQueryRunAt` | Earlier result stale. Evidence the record arrived late | Not a false alarm in the query, the record was late. Never inferred without `PriorGaps` | Record the arrival delay |
 | NO-GAP-OBSERVED | Complete query, past the lag, First…Last contiguous | Evidence that this health series arrived between First and Last only | Not proof that every security event arrived. Head and tail stay unknown | Reconciliation, plus per-event proof when needed (`azure-logs-ingestion`, `ama-syslog-output.md:207`) |
 | COUNT-SHORTFALL | Reconciliation above tolerance, complete query, no restart in the window | Indicative only: counts on different time bases | Not a list or exact count of lost events | Check the queue and dead letters. Run per-run reconciliation |
 | COUNT-UNEVALUABLE | `Reported` is 0, mixed outputs, a restart in the window, or `Missing` negative | Absence of evidence | Not "reconciled" | Shorter window inside one run |
@@ -135,9 +138,11 @@ One row per **run** (`CollectorId`, `collectorStartedAt`), rolled up to one row 
 
 States combine. A run can be HEAD-UNKNOWN, GAP-OBSERVED and TAIL-UNKNOWN at the same time. The collector roll-up shows the worst evidence state and lists the unknowns. A roll-up never reports "healthy".
 
+QUERY-INCOMPLETE is enforced only where a client reads the response. KQL cannot see its own completeness metadata, so the workbook and pasted KQL cannot suppress row states themselves. In option A the rule is a manual step: R9 tells the operator to check the portal's partial-result or error notice before reading any state, and to treat the whole result as QUERY-INCOMPLETE if one is shown. Every workbook state carries the label "valid only if the query completed with no partial-result notice". Automated suppression applies only where the query goes through `LogAnalyticsQueryClient`, as the evidence runner does (`src/Bower.Evidence/EvidenceRunner.cs:382`). That client discards all rows on any error (`AzureClients.cs:48-104`). Open question 9.
+
 ### 2.4 Duplicates and restarts
 
-- Duplicates: count each `EventId` (health) or `Sequence` once. Report the copies separately.
+- Duplicates: count each `EventId` (health) or `Sequence` once. Report the copies separately. Deduplicate exactly (`summarize by CollectorId, CollectorStartedAt, Sequence`, then `count()`), never with `dcount`, which is an estimate above 1,000 values (1.2). GAP-OBSERVED and NO-GAP-OBSERVED rest on that exact count.
 - Restart: a new `collectorStartedAt` starts a new series at 1 (runbook `:132-134`). Show runs in time order with the gap between the last record of one run and the start of the next. That gap and its two edges are HEAD-UNKNOWN/TAIL-UNKNOWN and are never counted as missing records. Run reconciliation per run, not per collector, because counters reset (`CollectorHealthRecord.cs:289-293`).
 - Two runs with the same `CollectorId` overlapping in time point to a cloned identity. Flag it, and do not merge the runs.
 
@@ -154,13 +159,13 @@ States combine. A run can be HEAD-UNKNOWN, GAP-OBSERVED and TAIL-UNKNOWN at the 
 |---|---|---|
 | Availability | Works when the optional management plane is down (`PRODUCT.md:24-27`) | Fails with the management plane |
 | Identity | The operator's own read-only role. No new stored credential | A new verifier identity with workspace read, held by the API (pattern: `src/Bower.Management.Api/SetupCanary.cs:128-131`). Broad read across the workspace unless table-scoped |
-| Correctness tooling | KQL only. Completeness depends on the operator reading the portal's partial-result notice | Can enforce QUERY-INCOMPLETE in code (`AzureClients.cs:63-65,92-104`) and attach Entra roles (`Bower.Viewer`, `ManagementApplication.cs:107`) |
+| Correctness tooling | KQL only. Completeness depends on the operator reading the portal's partial-result notice (manual, 2.3). Not enforced in the workbook | Can enforce QUERY-INCOMPLETE in code (`AzureClients.cs:63-65,92-104`) and attach Entra roles (`Bower.Viewer`, `ManagementApplication.cs:107`) |
 | Inventory | Takes a declared list as a parameter, labelled as declared | Fleet records are observed heartbeats, not independent inventory (plan 001). It risks implying completeness |
 | Cost | No new ingestion. Query cost depends on the table plan (check current Azure Monitor pricing). Reconciliation scans every row, so filter it per collector | The same query cost, plus polling if results are cached. Cached results go stale. Ongoing API, UI and test maintenance |
 | Effort | S–M: query functions, workbook JSON, R9, fixtures | M–L: API, UI, storage, RBAC, tests, and the same KQL anyway |
 | Authenticity | Same open blocker | Same open blocker. A console makes it look more authoritative than it is |
 
-Recommend A. B adds a broad-read identity and depends on the management plane. It gains enforcement that can be had in A by testing the query and the runbook, and its main benefit (a join to inventory) needs plan 001 first. B can reuse A's KQL text unchanged later.
+Recommend A. B adds a broad-read identity and depends on the management plane. It gains enforced QUERY-INCOMPLETE handling, which A accepts as a manual runbook step (2.3), and its main benefit (a join to inventory) needs plan 001 first. B can reuse A's KQL text unchanged later.
 
 ### 2.7 Dependency on declared inventory
 
@@ -170,7 +175,7 @@ Until plan 001 is implemented, the investigation lists only collectors that have
 
 ### 3.1 Testable query shape
 
-Write each investigation query as a KQL function over a **normalised input** with columns `CollectorId, EventType, EventId, TimeGenerated, IngestedAt, Sequence, CollectorStartedAt, IntervalSeconds, RecordVersion, Output, EventsQueued, OriginKind, OriginHost`. In the workspace, a thin adapter projects `BowerSecurity_CL` into it, with `IngestedAt = ingestion_time()`. Fixtures use `datatable(...)` with the same columns, because `ingestion_time()` cannot be set in a fixture. Parameters: `QueryRunAt` (in place of `now()`), window, lag, optional declared list.
+Write each investigation query as a KQL function over a **normalised input** with columns `CollectorId, EventType, EventId, TimeGenerated, IngestedAt, Sequence, CollectorStartedAt, IntervalSeconds, RecordVersion, Output, EventsQueued, CapacityRefusals, OriginKind, OriginHost`. In the workspace, a thin adapter projects `BowerSecurity_CL` into it, with `IngestedAt = ingestion_time()` and `CapacityRefusals = tolong(Attributes.intake.capacityRefusals)`. That field is a delta since the last queued record (`src/Bower.Collector/CollectorHealthRecord.cs:422-424`), so a refused record's refusals are reported by the next queued one (`CollectorHealthWorker.cs:124-128,138-142`). It counts every capacity refusal, not only health records, so it supports a hint and never attributes a specific gap. Fixtures use `datatable(...)` with the same columns, because `ingestion_time()` cannot be set in a fixture. Parameters: `QueryRunAt` (in place of `now()`), window, lag, optional declared list.
 
 Local checks: a structural test that the function and adapter text match the versioned files, and a C# test of the state rules against the table in 3.2. A local Kusto engine (an emulator) is a new dependency and needs written justification in `docs/architecture/dependencies.md` (AGENTS.md). It is optional. Local fixture success proves state logic only. It is not live evidence and must not be recorded as such.
 
@@ -185,15 +190,16 @@ Collector `c1`, interval 300 s, `QueryRunAt = T`, window ending `T - 30m`, unles
 | F3 | Duplicates | Seq 1–6, seq 3 twice (same `EventId`), and one security event twice | NO-GAP-OBSERVED plus DUPLICATES-SEEN (2 copies). Reconciliation counts each `EventId` once |
 | F4a | Reordered | Seq 1–6 ingested in the order 1,3,2,5,4,6 | NO-GAP-OBSERVED (order is irrelevant) |
 | F4b | Late, within lag | Seq 5 has `TimeGenerated` T−40m and is not yet ingested, seq 6 at T−35m | PENDING if the observed delay rule covers it, otherwise GAP-OBSERVED |
-| F4c | Late, then arrives | F4b, then seq 5 ingested. Re-run at T+1h | First run GAP-OBSERVED, second GAP-RESOLVED. Both keep their `QueryRunAt` |
+| F4c | Late, then arrives | F4b, then seq 5 ingested at T+20m. Re-run at T+1h with `PriorGaps` = {seq 5, `PriorQueryRunAt` T}, and again without it | First run GAP-OBSERVED. Second run GAP-RESOLVED with `PriorGaps`, NO-GAP-OBSERVED without it. Each keeps its `QueryRunAt` |
+| F4d | Prior result inconsistent | `PriorGaps` = {seq 5, `PriorQueryRunAt` T}, but seq 5 has `IngestedAt` T−35m | Flagged "earlier result wrong or incomplete". Not GAP-RESOLVED |
 | F5 | Restart | Run S1 seq 1–4, run S2 (later start) seq 1–3 | Two runs, both NO-GAP-OBSERVED. S1 TAIL-UNKNOWN. Restart shown. No records counted missing across runs. Reconciliation per run, or COUNT-UNEVALUABLE |
 | F6a | Missing first record | `CollectorStartedAt` inside the window, seq 3–6 | HEAD-UNKNOWN (1–2). Not GAP-OBSERVED |
 | F6b | Missing first, start before window | Start 2 days ago, seq 280–288 | No head state (the start is outside the window). NO-GAP-OBSERVED |
 | F6c | Missing last record | Seq 1–4, last at T−3h, no later run | TAIL-UNKNOWN. `collector-health-missing` would also fire |
 | F7 | No health records | Security rows for `c1` only. Declared list includes `c2`, which has no rows | `c1`: NO-HEALTH-EVIDENCE. `c2`: NO-HEALTH-EVIDENCE (declared). Without the list: `c2` absent and fleet COVERAGE-UNKNOWN |
-| F8 | Incomplete query | Client fixture: HTTP 200 with `tables` and `error`. HTTP 504. Empty body | QUERY-INCOMPLETE in every case. No row-level states shown (matches `AzureClients.cs:92-104`) |
+| F8 | Incomplete query | `LogAnalyticsQueryClient` fixture: HTTP 200 with `tables` and `error`. HTTP 504. Empty body | QUERY-INCOMPLETE in every case. No row-level states shown (matches `AzureClients.cs:92-104`). Covers the client path only. The workbook path relies on R9's manual step (2.3) |
 | F9 | Non-Sentinel output | Declared output `s3` for `c3`, no rows. Separately, `c4` with health rows with `Output = "http"` | `c3`: NOT-SENTINEL-OUTPUT. `c4`: flag a provenance inconsistency (an `http` output does not write to Sentinel, so something else forwarded these rows). Never "no gap" |
-| F10 | Local refusal | Seq 1,2,4, with seq 4 reporting `intake.capacityRefusals > 0` | GAP-OBSERVED plus a hint "local refusal possible, check host log 1330". Not attributed to the destination |
+| F10 | Local refusal | Seq 1,2,4, with seq 4 having `CapacityRefusals > 0`. Separately, the same gap with `CapacityRefusals = 0` (or null) on seq 4 | First: GAP-OBSERVED plus a hint "local refusal possible, check host log 1330". Not attributed to the destination. Second: GAP-OBSERVED with no hint |
 | F11 | Single record | Seq 7 only | INSUFFICIENT |
 | F12 | Old schema | Rows without `Sequence` | SCHEMA-UNKNOWN. Not dropped silently |
 | F13 | Unexpected origin | Seq 1–5 from host `vm-a`, an extra seq 4 copy from `vm-b` | ORIGIN-UNEXPECTED alongside NO-GAP-OBSERVED |
@@ -216,14 +222,14 @@ Prerequisites: written authorisation for a named, isolated tenant and workspace.
 | L0 | Run fixtures F1–F15 as `datatable` queries in the workspace | Same states as locally (qualifies the KQL on the real engine only) |
 | L1 | Clean run, 2 h | NO-GAP-OBSERVED, no false PENDING after lag |
 | L2 | Deliberate loss (#249 method: journal emptied with rsyslog stopped) | GAP-OBSERVED for that run. No event-loss count shown |
-| L3 | Agent stopped 10 min, then started (`ama-syslog-output.md:177-182`) | PENDING or GAP-OBSERVED, then GAP-RESOLVED on re-run |
+| L3 | Agent stopped 10 min, then started (`ama-syslog-output.md:177-182`) | PENDING or GAP-OBSERVED, then GAP-RESOLVED on re-run with the first result supplied as `PriorGaps` |
 | L4 | Collector restart mid-stream | New run. TAIL/HEAD states only. No false gap |
 | L5 | Retried batch or duplicate | DUPLICATES-SEEN |
-| L6 | Health record refused locally (queue at capacity) | GAP-OBSERVED with the local-refusal hint. Host log 1330 matches |
+| L6 | Health record refused locally (queue at capacity) | GAP-OBSERVED with the local-refusal hint, from `CapacityRefusals > 0` on the next record. Host log 1330 matches |
 | L7 | Collector on a non-Sentinel output | NOT-SENTINEL-OUTPUT when declared |
 | L8 | Forged health row from another local account, with and without the origin filter | ORIGIN-UNEXPECTED without the filter. Row absent with it |
-| L9 | Query at T+lag and at T+lag+1 h | Both results kept with `QueryRunAt`. Change explained |
-| L10 | Window large enough to hit service limits | QUERY-INCOMPLETE, never partial states |
+| L9 | Query at T+lag and at T+lag+1 h, the second with the first result as `PriorGaps` | Both results kept with `QueryRunAt`. Change explained by GAP-RESOLVED or the inconsistency flag |
+| L10 | Window large enough to hit service limits | Through `LogAnalyticsQueryClient`: QUERY-INCOMPLETE, no row states. In the portal: the partial-result notice is shown, and following R9 gives QUERY-INCOMPLETE |
 
 Keep the results under `docs/evidence/<run-id>/`, marked live, with query hashes, times and a teardown record. Failure or inaccessible evidence does not pass. Until L1–L10 pass, the runbook labels the workbook "unqualified".
 
@@ -247,3 +253,4 @@ Revalidate when: the health record schema changes, `sequence` or `collectorStart
 6. Should the investigation use the fixed lag (30 min) or one derived per collector? Who owns the value?
 7. Should reconciliation be rewritten per run and on one time base, or retired in favour of sequence gaps plus per-event proof?
 8. Workbook delivery: a template JSON in the repository, or KQL in the runbook only?
+9. Should operators get a small read-only client that enforces QUERY-INCOMPLETE (2.3), or is the manual runbook step enough until option B?

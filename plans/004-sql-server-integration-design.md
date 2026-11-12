@@ -87,12 +87,12 @@ Not covered: `PollAsync` against any database, cancellation, CLR and column type
 
 | Item | Specification |
 |---|---|
-| Source | An operator-created **view** over the application's audit table, filtered to failed sign-in rows, `SELECT` granted to the forwarder principal only. Rows must be immutable, with a `bigint` identity sequence |
+| Source | An operator-created **view** over the application's audit table, filtered to failed sign-in rows, `SELECT` granted to the forwarder principal only. Rows must be immutable, with a `bigint` identity sequence and an `EventTime` set by the database in the inserting statement (for example `DEFAULT SYSUTCDATETIME()`), so `EventTime` does not decrease as the sequence rises (section 4.1) |
 | Cursor | `Incrementing` only. `Timestamp` and `Composite` are out of scope for the first slice. `CommitSettleDelay` must be at least 5 s and set from measured transaction durations |
 | Columns read | Sequence, EventTime, Username, Action, SourceIp. The adapter currently also projects TargetType, TargetId, PreviousValue and NewValue. The forwarder discards them in memory before building the record. Never put them in the record, logs or state. Follow-up: an adapter option to leave them out of the projection |
-| Record (fixed shape, not configurable) | `{"id":"sqlsrv-<first 32 hex of fingerprint>","timeCreated":<UTC ISO-8601>,"action":<Action>,"user":<Username>,"sourceIp":<SourceIp>}`, at most 4 KiB (`MaximumRecordBytes = 4096`, well under the 32 KiB pack limit `src/Bower.Packs/PackRuntime.cs:20`) |
+| Record (fixed shape, not configurable) | `{"id":"sqlsrv-<first 32 hex of fingerprint>","timeCreated":<UTC ISO-8601>,"action":<Action>,"user":<Username>,"sourceIp":<SourceIp>}`, with `sourceIp` omitted when SourceIp is NULL or blank, at most 4 KiB (`MaximumRecordBytes = 4096`, well under the 32 KiB pack limit `src/Bower.Packs/PackRuntime.cs:20`) |
 | Route | `POST /v1/packs/{pack}/parsers/{i}/events` (`src/Bower.Collector/PackEndpoints.cs:15`) to a **tenant-signed** pack. `CollectorClient` needs a pack-route send method; it only posts `v1/events` today (`CollectorClient.cs:41`) |
-| Parser | `match: {action: "<tenant literal>"}`. Fields: `eventId←id`, `timeGenerated←timeCreated`, `actor.username←user`, `source.ipAddress←sourceIp`. These all fit the allowed targets (`src/Bower.Pipeline/CustomLogParser.cs:429-437`). Runtime: `authentication` / `authentication_failure` / `authentication.attempt` / `failure` |
+| Parser | `match: {action: "<tenant literal>"}`. Fields: `eventId←id`, `timeGenerated←timeCreated`, `actor.username←user`, `source.ipAddress←sourceIp`. These all fit the allowed targets (`src/Bower.Pipeline/CustomLogParser.cs:429-437`). SourceIp is nullable (`SqlServerAuditDbContext.cs:81`), and a mapped field that is missing, null or blank throws (`PackRuntime.cs:52-58`), which returns 400 and lets the cursor pass the row (`PackEndpoints.cs:63-66`). So the pack carries a second parser with the same `match` and no `source.ipAddress` mapping, and the forwarder sends rows without an IP to it. The policy only recommends `source.ipAddress`, so those rows are still accepted. Rows are immutable, so a row always takes the same parser index, which is part of its queue identity (`PackEndpoints.cs:98`). Runtime: `authentication` / `authentication_failure` / `authentication.attempt` / `failure` |
 | Policy | Existing `BWR-POL-AUTH-FAILURE` (`policies/default/authentication-failure.yaml:11-35`). No schema, catalogue or policy change |
 
 Why this event: it fits the pack runtime with no new targets. It needs no before or after values, which are the most sensitive columns. It also has an existing default policy. Role membership or admin changes need `target.*` and `change.*`, which the pack runtime cannot map, plus the value columns.
@@ -105,7 +105,7 @@ Why this event: it fits the pack runtime with no new targets. It needs no before
 - **Redaction before persistence.** The forwarder persists only the cursor, which holds sequence and time values (`SqlServerSourceAdapter.cs:356-365`). There is no spool or buffer of rows on disk. The collector redacts before enqueue (`SecurityEventProcessor.cs:236` before `:402`).
 - **Credentials.** Prefer integrated auth (gMSA). A connection string with a password comes from an owner-only file that the operator supplies. Bower never writes, copies or logs it. Refuse `TrustServerCertificate=true`, `Encrypt` other than `Mandatory` or `Strict`, and `Persist Security Info=true`. Keep the `ApplicationIntent=ReadOnly` requirement.
 - **Logging.** Log ids, counts, failure types and `SqlException.Number` only. Never log exception messages, which can carry the server, login or converted values. Never enable EF sensitive-data logging.
-- **Durable ack boundary.** A batch checkpoint is committed only when **every** record in it got `Accepted` (200 or 202: committed to the collector queue) or `Rejected` (400, 413 or 422: definitive). On the first `RetryLater`, `Throttled`, `Unauthorized`, 404 or 409, stop and do not commit, then back off. Once all records are settled, commit the checkpoint with `CancellationToken.None`, as Windows Event Log does (`WindowsEventLogSource.cs:555-560`).
+- **Durable ack boundary.** A batch checkpoint is committed only when **every** record in it got `Accepted` (200 or 202) or `Rejected` (400, 413 or 422: definitive). A 202 means the event was committed to the collector queue or, if the matching policy suppresses it, counted in a durable suppression window in the same transaction (`PackEndpoints.cs:111`; `SqliteEventQueue.cs:295-297,347-356`). The recommended policy is `neverSample`, which cannot define suppression (`PolicyLoader.cs:157-160`), so suppression applies only if another policy matches these events. On the first `RetryLater`, `Throttled`, `Unauthorized`, 404 or 409, stop and do not commit. Keep the settled prefix in memory, back off and resume at the refused record, as the Docker sidecar does (`DockerSidecarWorker.cs:52-64,103-136`). Do not resend the prefix in process: the ingest limiter is a token bucket of twice `BOWER_INGEST_RATE_PER_SECOND` (default 500) with no queueing, and a duplicate spends a token too (`CollectorSettings.cs:98`; `CollectorApplication.cs:207-213`). Replaying a batch larger than the free tokens would hit 429 at the same record every time. Pace sends below the configured rate. Once all records are settled, commit the checkpoint with `CancellationToken.None`, as Windows Event Log does (`WindowsEventLogSource.cs:555-560`).
 
 ## 4. Crash, restart and concurrency matrix (step 4)
 
@@ -121,16 +121,18 @@ A = forwarder (recommended), B = collector variant for comparison. "Replay" mean
 | Replay after retention, or to another collector | **Sentinel duplicate** | Same | Documented limit. Test with retention 1 h and fake time |
 | Stale checkpoint (two pollers, one cursor DB) | CAS refuses, `SourceCursorConflictException`. Re-read and re-poll | Conflict result. Read again | Exists in part (`SqlServerReplayTests.cs:116-124`). Add a loop-level test |
 | Two pollers with separate cursor DBs | Same producer token: every row sent twice, absorbed as 200 duplicates. Different tokens: same `event_id`, different identity → 409 conflict → stall | Same across collectors | Must be prevented (one instance per source). Assert the stall is reported as health, not looped silently |
-| Partial batch refusal (503 or 429 mid-batch) | No checkpoint. Earlier records replay as 200 or 422 again | Savepoint per record. Handled prefix commits | Refuse at record k. All of 1..k−1 are queued once after recovery |
+| Partial batch refusal (503 or 429 mid-batch) | No checkpoint. Back off and resume at record k. 1..k−1 are not resent. After a restart the whole batch replays as 200 or 422 again | Savepoint per record. Handled prefix commits | Refuse at record k. All of 1..k−1 are queued once and sent once. Also set `BOWER_INGEST_RATE_PER_SECOND=1` with `BatchSize` 10: the checkpoint commits and no record before a 429 is resent |
 | Overlap saturation | Not applicable (incrementing only). The exception is unreachable (section 1.5) | Same | Timestamp cursor deferred. Tests are due before it is enabled |
 | Out-of-order identity commits | Held back within `CommitSettleDelay`. **Skipped beyond it** | Same | Disposable DB: transaction T1 holds id n open past the window while T2 commits n+1. Measure and document the skip |
+| `EventTime` lower than an earlier sequence (application-supplied time) | n+1 passes the window while n is uncommitted. **n is skipped even if it commits within the window**. The decrease is counted as health | Same | Disposable DB with `READ_COMMITTED_SNAPSHOT` on: hold id n open, commit n+1 with an older `EventTime`, poll, then commit n inside the window. Assert the skip and the health signal |
 | Clock or time-zone skew in `EventTime` | Local-time values shift hold-back by the UTC offset (hours in Australia) | Same | Column stored in local time. Refuse or require `datetimeoffset` (open question) |
 | Cancellation mid-query | `OperationCanceledException`. No checkpoint | Same | Cancel during `ToListAsync`. Cursor unchanged, no partial send |
 | Cancellation mid-batch | Stop sending. No checkpoint. Replay | Roll back | Cancel after k sends. Queue holds k, deduplicated on restart |
 | DB outage or failover | `SqlException`. Back off, no checkpoint | Same, inside the collector | Stop or pause the container mid-poll. Resume without a gap |
 | Collector outage | Probe fails. No read | n/a | Collector down. No SQL query issued |
 | Malformed row: NULL sequence or time | Materialisation throws. **Source stalls** | Same | Stall reported as health with type only. No checkpoint |
-| Malformed row: invalid IP or field over 2,048 characters | 400 → definitive drop, counted. Cursor advances | Invalid, counted | Verify the counter. Verify no value in logs |
+| Malformed row: invalid IP, NULL or blank Username or Action, or field over 2,048 characters | 400 → definitive drop, counted. Cursor advances | Invalid, counted | Verify the counter. Verify no value in logs |
+| NULL or blank SourceIp | Sent without `sourceIp` to the no-IP parser. Accepted | Same | Seed NULL and blank SourceIp rows. Assert 202, not 400, and the same parser index on replay |
 | Oversized identity columns | Throws. **Source stalls** by design (`queue-v5-durability.md:304`) | Same | Real `DATALENGTH` on SQL Server. Stall reported |
 | Column type mismatch (`int` identity, `datetime2`) | Probable `InvalidCastException`. **Unverified** | Same | Type matrix on a real engine (open question) |
 | Collector storage pressure or full | 503 → `RetryLater`. No checkpoint | Batch refused | Fill the queue. Cursor holds. Recovery drains |
@@ -141,13 +143,15 @@ A = forwarder (recommended), B = collector variant for comparison. "Replay" mean
 
 ### 4.1 Testable at-least-once statement (no exactly-once claim)
 
-For one forwarder instance per source, with an incrementing cursor, a row qualifies when it is:
+For one forwarder instance per source, with an incrementing cursor and an `EventTime` that does not decrease in sequence order, a row qualifies when it is:
 
 1. visible through the approved view;
 2. above the committed cursor; and
 3. committed within `CommitSettleDelay` of its `EventTime`.
 
-Every qualifying row reaches one of three outcomes: **queued in the collector at least once**, **definitively rejected** (counted) or **not selected** (counted). The cursor never passes a row without one of these outcomes. Duplicates can follow a crash, cancellation or partial refusal. The queue suppresses them only within `DeliveredRetention` on the same collector and pack route. Rows committed after the settle window can be skipped without a gap signal. Sentinel arrival is not claimed without a destination query (`AGENTS.md:80-81`).
+The ordering assumption is required. The adapter stops at the first row newer than the window (`SqlServerSourceAdapter.cs:85-91`) and the cursor moves to the highest sequence returned (`:219-221`). If a later sequence carries an older `EventTime`, it can pass the window while an earlier sequence is uncommitted, and the earlier row is then skipped even if it commits within the window. The forwarder counts each `EventTime` decrease against the previous row or the committed cursor as a health signal. That makes a violation visible but does not prevent the skip.
+
+Every qualifying row reaches one of four outcomes: **queued in the collector at least once**, **counted in a suppression window** (only if a suppressing policy matches, section 3.2), **definitively rejected** (counted) or **not selected** (counted). The cursor never passes a row without one of these outcomes. Duplicates can follow a crash, cancellation or partial refusal. The queue suppresses them only within `DeliveredRetention` on the same collector and pack route. A replayed suppressed row is not deduplicated, because nothing was stored for it (`SqliteEventQueue.cs:340-356`), so it is counted again or queued in a later window. Rows committed after the settle window can be skipped without a gap signal. Sentinel arrival is not claimed without a destination query (`AGENTS.md:80-81`).
 
 Assertable properties: no skip within the window, no advance without an outcome, at most one queue row per source row within retention, no plaintext canary outside redacted queue payloads, and memory bounded by `BatchSize × MaximumRecordBytes`.
 
@@ -166,6 +170,7 @@ Assertable properties: no skip within the window, no advance without an outcome,
 - gMSA integrated auth, plus Entra or managed identity only if that dependency is approved.
 - An enterprise CA.
 - A permissions audit.
+- A check that `EventTime` does not decrease in sequence order on the real table.
 - Plan and allocation checks: index seek on the identity column with `TOP` and `ORDER BY`, as required by `queue-v5-durability.md:314-315`.
 - A soak at production insert rates with real long transactions, measuring duplicates and skips.
 - Sentinel arrival checked by query under a separate identity.
@@ -178,7 +183,7 @@ This follows the root invariants (`AGENTS.md:89-93`):
 - a config schema;
 - cancellation, malformed-input, backpressure and durable-cursor tests;
 - the pack-route method in `Bower.Forwarding` with tests;
-- a sample tenant pack and parser;
+- a sample tenant pack with parsers for rows with and without a source IP;
 - deployment and threat-model docs;
 - the `Directory.Build.props` comment and the README status row.
 
@@ -202,7 +207,7 @@ Optional adapter follow-ups, each separately reviewed:
 - **AOT.** The forwarder adds a second non-AOT shipped executable and a runtime-based image. That is a deliberate, documented exception, but it is a new support surface.
 - **Operational.**
   - Cursor and enqueue are not atomic, so a duplicate window depends on retention, and the pressure floor can shrink it to 1 h.
-  - Commit-settle skips are possible.
+  - Commit-settle skips are possible, and also occur within the window if `EventTime` decreases in sequence order.
   - Poison rows stall the source with no audited skip tool.
   - Active-active HA is not supported (single poller per source).
   - The forwarder and collector must be upgraded together.
@@ -213,6 +218,7 @@ Open questions:
 2. Is `bigint` identity required, or should `int` be supported through a converter?
 3. Is an audited skip-row command needed before go-live?
 4. Is the Entra or managed identity dependency in scope?
+5. Is `EventTime` ordering only a deployment gate checked at qualification, or should the forwarder stop advancing when it sees a decrease?
 
 ## 7. STOP conditions
 

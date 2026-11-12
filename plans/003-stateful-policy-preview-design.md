@@ -6,9 +6,9 @@
 
 Build `bower policy preview` as a **new subcommand that reuses production logic unchanged**: the real `SecurityEventProcessor` writing to a real `SqliteEventStore`, one fresh, disposable SQLite file per side, created by the preview in its own private temporary directory and deleted before any output is printed. The window clock is pinned and stepped by a strict synthetic scenario file.
 
-Do **not** write a second, approximate suppression algorithm. Do **not** add an in-memory queue mode. The first slice needs no change to `src/Bower.Persistence`, `src/Bower.Core` or `src/Bower.PolicyEngine`. `bower policy diff` and its output stay byte-for-byte unchanged.
+Do **not** write a second, approximate suppression algorithm. Do **not** add an in-memory queue mode. The first slice needs no change to `src/Bower.Persistence`, `src/Bower.Core` or `src/Bower.PolicyEngine`: windows still open at the end are read through the existing public close API on the disposable file (see [Pinned clock and ordering](#pinned-clock-and-ordering)), not through a new queue API. `bower policy diff` and its output stay byte-for-byte unchanged.
 
-No STOP condition is hit (see [STOP assessment](#stop-assessment)). The design depends on three requirements holding in implementation: the preview never accepts a queue path, its output is labelled `simulated`, and nothing is printed until cleanup succeeds.
+No STOP condition is hit (see [STOP assessment](#stop-assessment)). The design depends on four requirements holding in implementation: the preview never accepts a queue path, its output is labelled `simulated`, nothing is printed until cleanup succeeds, and the work root is private (mode 0700 on Unix, a protected owner-only ACL on Windows) or the run fails before any database is written.
 
 ## Drift check (plan step 1)
 
@@ -58,14 +58,17 @@ Each sample runs through a fresh `RequestEventBuffer` (`src/Bower.Cli/Commands/P
 | B. In-memory SQLite inside `SqliteEventStore` | Same as A | Exact, but needs queue changes: the constructor resolves a file path (`src/Bower.Persistence/SqliteEventQueue.cs:70-86`), each operation opens a new pooled private-cache connection (`:77-84`, `:1237-1240`) that would see an empty in-memory database, and capacity checks read file lengths (`:1301-1307`) | Rejected: a real queue change for no parity gain |
 | C. New in-memory `IDurableEventStore` that re-implements windows | Policy and redaction only | Approximate: would duplicate window maths, duplicate-then-admit ordering, id-or-fingerprint matching, conflict normalisation, the 1,000-window close batch and abort-on-refusal | Rejected: the second algorithm the plan forbids |
 
-Option A needs only public APIs: `SqliteEventStore(path, maximumBytes, clock)` and `InitializeAsync` (`src/Bower.Persistence/SqliteEventQueue.cs:51-54`, `:118-148`), and `SecurityEventProcessor.ProcessAsync` and `CloseSuppressionWindowsAsync` (`src/Bower.Core/SecurityEventProcessor.cs:11-23`, `:139-175`). The CLI already constructs a `SqliteEventStore` under AOT (`src/Bower.Cli/Program.cs:122`, `src/Bower.Cli/Bower.Cli.csproj:7`). The existing tests already drive exactly this pairing with a fake clock and restarts (`tests/Bower.UnitTests/SuppressionTests.cs:73-130`, `:380-395`).
+Option A needs only public APIs: `SqliteEventStore(path, maximumBytes, clock)` and `InitializeAsync` (`src/Bower.Persistence/SqliteEventQueue.cs:51-54`, `:118-148`), `SecurityEventProcessor.ProcessAsync` and `CloseSuppressionWindowsAsync` (`src/Bower.Core/SecurityEventProcessor.cs:11-23`, `:139-175`), and, for the end-of-run drain only, `IDurableEventStore.CloseExpiredSuppressionWindowsAsync` (`src/Bower.Abstractions/PipelineAbstractions.cs:251-254`), `Suppression.CreateSummary` (`src/Bower.Core/Suppression.cs:63-66`) and `EventFingerprint.Create` (`src/Bower.Core/EventFingerprint.cs:8`). The CLI already constructs a `SqliteEventStore` under AOT (`src/Bower.Cli/Program.cs:122`, `src/Bower.Cli/Bower.Cli.csproj:7`). The existing tests already drive exactly this pairing with a fake clock and restarts (`tests/Bower.UnitTests/SuppressionTests.cs:73-130`, `:380-395`).
 
 The redactor stack copies `ProcessEachAsync` (`src/Bower.Cli/Commands/PolicyCommands.cs:421-431`), which is documented as the collector's composition (`src/Bower.Collector/CollectorApplication.cs:86-88`).
 
 To see windows, the preview wraps the store in a read-only `ObservingEventStore : IDurableEventStore` that delegates every call (like `RecordingRedactor`, `src/Bower.Cli/Commands/PolicyCommands.cs:441-446`). It records:
 
 - `QueuedEvent.Suppression` (policy id, key hash, key fields) on `EnqueueAsync`, for the key limit and aliases;
-- each `SuppressionWindow` passed to the close callback, committed to the report only when the close call returns, or marked `refused` when the callback throws.
+- each `SuppressionWindow` passed to the close callback, committed to the report only when the close call returns, or marked `refused` when the callback throws;
+- each `SuppressionWindow` passed to the end-of-run drain callback, reported as `open-at-end` with its persisted counts.
+
+No existing read path lists open windows: the only `SELECT` on `suppression_windows` outside admission is inside the close (`src/Bower.Persistence/SqliteEventStore.Suppression.cs:152-164`), and `GetSnapshotAsync` returns queue counts only (`src/Bower.Abstractions/PipelineAbstractions.cs:372-380`). The drain reuses the close instead of adding a listing API.
 
 The wrapper only affects `QueueEnqueueBatch`, whose ambient checks require a `SqliteEventStore` (`src/Bower.Persistence/QueueEnqueueBatch.cs:168-177`). The preview never opens a batch, so this is the same path as single HTTP intake.
 
@@ -113,6 +116,7 @@ One strict JSON file (new schema `schemas/configuration/policy-preview-scenario.
 
 - Each side has its own `SteppedClock : TimeProvider`, set to each step's `at`. Nothing reads the wall clock. The processor, store and summary builder all take time from the injected provider (`src/Bower.Core/SecurityEventProcessor.cs:144`, `:310`, `:545`; `src/Bower.Persistence/SqliteEventQueue.cs:89`).
 - Steps run strictly in file order. For each step, the preview sets the clock, calls `CloseSuppressionWindowsAsync`, then processes the event or restarts. After the last step it sets the clock to `end` and closes once more.
+- End-of-run drain: after that close, and only for a side with no `summaryRefused`, the preview calls the store's `CloseExpiredSuppressionWindowsAsync` once with `now = end + 86,400 s` (the maximum `windowSeconds`, so every open window qualifies). Its callback records the window and returns a summary built with `Suppression.CreateSummary` and `EventFingerprint.Create`, without policy evaluation. The drain changes only the disposable side file after the scenario has ended, and that file is deleted next. Its summaries are not counted in `summaries queued` and never appear as step outcomes. One call suffices: with the key limit and a close before every step, each key has at most one open window at `end`, so at most 1,000. Windows that only admitted are deleted without a callback (`src/Bower.Persistence/SqliteEventStore.Suppression.cs:193-196`), as in open question 7. A capacity failure during the drain is `preview-capacity-exceeded`.
 - Closing before every step gives the same admitted and suppressed counts and summary ids as the 5-second worker. Admission depends only on the received time (`src/Bower.Persistence/SqliteEventStore.Suppression.cs:73-74`), and summary ids do not depend on close time (`src/Bower.Core/Suppression.cs:72-78`). Only the summary's `collector.receivedAt` is idealised; the report states this.
 - `restart` drops the processor and store and opens a new `SqliteEventStore` on the same side file, as `tests/Bower.UnitTests/SuppressionTests.cs:90-92` does. This is a clean restart, not a crash.
 - The collector identity is fixed: `("bower-cli", <version>, "policy-preview", "policy-preview")`, on the pattern of `src/Bower.Cli/Commands/PolicyCommands.cs:22`.
@@ -120,7 +124,7 @@ One strict JSON file (new schema `schemas/configuration/policy-preview-scenario.
 ### Independent baseline and candidate state
 
 - Both bundles load before any step runs. A load failure is exit 1 with nothing on stdout, as in diff (`docs/operations/suppression-archive-and-source-silence.md:123-125`).
-- One work root per run: `Directory.CreateTempSubdirectory("bower-policy-preview-")`. It holds `baseline/queue.db` and `candidate/queue.db`. Each side has its own store, processor, evaluator, redactor, clock and observer.
+- One work root per run: `Directory.CreateTempSubdirectory("bower-policy-preview-")` on Unix, and an equivalent `bower-policy-preview-*` directory created with a private ACL on Windows (see [Redaction before persistence](#redaction-before-persistence)). It holds `baseline/queue.db` and `candidate/queue.db`. Each side has its own store, processor, evaluator, redactor, clock and observer.
 - The sides run one after the other (baseline, then candidate). The two sides share no state other than the read-only scenario bytes. A test that swaps the run order must give identical output.
 
 ### Limits
@@ -150,7 +154,7 @@ When a side's summary policy refuses a summary, the close throws and every windo
 
 - records `summaryRefused` with the step id, policy id and action;
 - keeps processing later steps (production keeps collecting);
-- stops reporting per-window closes for that side, because the same refusal repeats and windows can build up beyond one close batch.
+- stops reporting per-window closes for that side, and skips its end-of-run drain, because the same refusal repeats and windows can build up beyond one close batch.
 
 Step outcomes after the refusal stay exact.
 
@@ -158,13 +162,17 @@ Step outcomes after the refusal stay exact.
 
 Output is indented JSON from the CLI's source-generated context (`src/Bower.Cli/Commands/CliJson.cs:245`), with invariant culture and fixed ordering: steps in file order, and windows by `windowStart`, `policyId`, key alias. Top-level fields:
 
-- `kind: "PolicyPreview"`, `simulated: true`, `scenarioHash`, `start`, `end`, `steps`.
+- `kind: "PolicyPreview"`, `simulated: true`, `start`, `end`, `steps`.
 - `baselineBundleHash`, `candidateBundleHash`, and `baselineBundle` and `candidateBundle` provenance (the same shape as diff, `src/Bower.Cli/Commands/PolicyCommands.cs:366-374`).
 - `baseline` and `candidate`. Each has `totals` (queued, duplicate, suppressed, rejected, quarantined by stage, privacy alerts, summaries queued, windows open at end), `windows` (policy id, event type, key alias, key fields, window start and end, admitted, suppressed, first and last suppressed, `summary: queued | refused | open-at-end`) and optional `summaryRefused`.
-- `changes`: per step whose outcome differs, with `step` (the id), the outcome on each side (`queued | duplicate | suppressed | rejected | quarantined | identity-conflict | restart`), the policy id, the failure stage and reasons for non-accepted outcomes, and `changedFields`. `changed` is the count.
+- `changes`, with three parts:
+  - `steps`: per step whose outcome differs, with `step` (the id), the outcome on each side (`queued | duplicate | suppressed | rejected | quarantined | identity-conflict | restart`), the policy id, the failure stage and reasons for non-accepted outcomes, and `changedFields`;
+  - `windows`: windows matched by policy id, key alias, window start and window end. A window on one side only, or with a different admitted count, suppressed count, first or last suppressed time or `summary` status, is one entry with both sides' values;
+  - `summary`: present when `summaryRefused` is on one side only, or differs in step id, policy id or action.
+- `changed` is the number of step entries plus window entries, plus 1 when `summary` is present. A summary-only or window-only difference therefore gives `changed > 0` and exit 3 with `--fail-on-change`.
 - `notExercised` (see [What preview does not model](#what-preview-does-not-model)).
 
-`scenarioHash` is `sha256:` over a length-framed list: the scenario bytes, then each referenced event file's relative path and bytes in first-reference order. It changes when any input byte changes, and together with the two bundle hashes it identifies the comparison.
+The output carries no hash or digest of the scenario or event bytes. An unkeyed hash of raw inputs lets a report recipient test guesses of a low-entropy value (a user name or IP address) when the other input bytes are known, and the `synthetic` attestation does not prevent that. A per-run key would break byte-identical repeated runs (test H3), and an operator-held key adds key handling to a first slice. The cost: a report alone cannot show which inputs produced it, or that two reports used the same inputs. The bundle hashes still identify both sides, and the scenario's step ids, `start` and `end` are printed. An operator who needs to pin inputs keeps the scenario directory with the report (open question 8).
 
 The output carries no ledger heads, no signatures and no queue paths, so it cannot be mistaken for queue evidence.
 
@@ -182,9 +190,10 @@ Known determinism hazards, all outside the output or unreachable today:
 
 ### Redaction before persistence
 
-- The only data written to disk is what the production processor writes after redaction. Payloads are serialised from the arranged, redacted envelope (`src/Bower.Core/SecurityEventProcessor.cs:360-387`). Window key values come from that envelope. A redaction exception or failure returns before any enqueue (`:233-256`). A redaction that alters the event id is quarantined (`:261-265`). The preview adds no write path.
+- The only data written to disk is what the production processor writes after redaction. Payloads are serialised from the arranged, redacted envelope (`src/Bower.Core/SecurityEventProcessor.cs:360-387`). Window key values come from that envelope. A redaction exception or failure returns before any enqueue (`:233-256`). A redaction that alters the event id is quarantined (`:261-265`). The preview adds no write path for event content. The end-of-run drain writes only summaries that `Suppression.CreateSummary` builds from stored window rows, whose key values are already redacted, to a file deleted before output.
 - HMAC key files are read into memory by `PolicyBundle.Load` (`src/Bower.Packs/PolicyBundle.cs:110`). They are never written to the work root and never printed.
-- On Unix the work root is created mode 0700 and the queue files are set to 0600 (`src/Bower.Persistence/SqliteEventQueue.cs:1411-1427`). On Windows that method does nothing (`:1413-1416`), so the root inherits the user's temp directory ACL (open question 6).
+- On Unix the work root is created mode 0700 and the queue files are set to 0600 (`src/Bower.Persistence/SqliteEventQueue.cs:1411-1427`).
+- On Windows that method does nothing (`src/Bower.Persistence/SqliteEventQueue.cs:1413-1416`), and `Directory.CreateTempSubdirectory` would inherit the temp directory ACL, which may grant other users read access to redacted rows and window key values. The preview therefore creates the root itself, fail-closed: a new randomly named directory under the temp path, created with a protected ACL (inheritance off; full control for SYSTEM, Administrators and the current user only, inherited by child files), following `QueueBackup.CreatePrivateDirectory` and `ApplyPrivateRules` (`src/Bower.Persistence/QueueBackup.cs:516-549`). That helper is `internal` to `Bower.Persistence`, so the preview carries its own copy in `Bower.Cli` rather than widening the queue's API. Before any database is opened it reads the ACL back and exits 1, removing the root, if the directory already existed, the ACL is not protected, or any rule grants another identity. Test W1 covers this.
 
 ### Cleanup
 
@@ -228,7 +237,8 @@ Unit tests drive an internal entry point that takes loaded bundles, parsed scena
 | R1 | Restart and closure | A restart mid-window continues the counts (as `tests/Bower.UnitTests/SuppressionTests.cs:90-104`) |
 | R2 | Restart and closure | A restart after `window_end` and before the next close summarises once, with the same summary id as without the restart |
 | R3 | Restart and closure | Repeated closes queue no second summary (`tests/Bower.UnitTests/SuppressionTests.cs:106-114`) |
-| R4 | Restart and closure | A window still open at `end` is reported as `open-at-end` and not summarised |
+| R4 | Restart and closure | A window still open at `end` is reported as `open-at-end` with its persisted admitted and suppressed counts and first and last suppressed times, and is not counted in `summaries queued`. A side with `summaryRefused` runs no drain |
+| R5 | Restart and closure | 1,000 keys each with a suppressed window open at `end`: one drain call reports all 1,000 as `open-at-end` |
 | S1 | Summary policy denial | Candidate summary policy requires a field the summary lacks: `summaryRefused` is reported, windows stay open, later steps are still processed, and exit is 0, or 3 with `--fail-on-change` |
 | S2 | Summary policy denial | A suppressing bundle with no summary policy fails to load: exit 1, nothing on stdout (`src/Bower.PolicyEngine/PolicyLoader.cs:205-222`) |
 | Q1 | Queue pressure | A scenario that fills the 64 MiB side cap exits 1 with `preview-capacity-exceeded`, nothing on stdout, and the root removed |
@@ -239,16 +249,18 @@ Unit tests drive an internal entry point that takes loaded bundles, parsed scena
 | P3 | Redaction | A secret-shaped canary in a key label is masked in the stored `key_values` and in the summary. The canary bytes do not occur in any side file before cleanup, nor in stdout or stderr |
 | P4 | Privacy | Canary strings in every string field of every event: none occurs in stdout or stderr. No event id, key value or key hash is printed |
 | H1 | Comparable hashes | Bundle hashes equal those `policy diff` prints for the same side options |
-| H2 | Comparable hashes | `scenarioHash` changes when one byte of a referenced event changes, and does not change for an unreferenced file |
+| H2 | Comparable hashes | Stdout contains no `scenarioHash` field and no SHA-256 of the scenario bytes or of any event file's bytes |
 | H3 | Determinism | Two runs of the same inputs give byte-identical stdout, using different work roots |
 | H4 | Determinism | Runs under a different `TZ`, `LANG` and `CultureInfo` give identical stdout |
 | H5 | Determinism | The same bundle on both sides gives `changed: 0` |
+| H7 | Change count | Identical step outcomes but `summaryRefused` on the candidate only: `changes.summary` is present, `changed` is 1 and `--fail-on-change` exits 3. Identical step outcomes but a different window count or `summary` status: `changes.windows` has the entry, `changed > 0` and exit 3 |
 | H6 | Determinism | Running candidate first, then baseline, gives identical output |
 | U1 | Unchanged diff | Existing pinned outputs `tests/fixtures/bundle-diff/expected-*.json` pass unchanged (`tests/Bower.UnitTests/PolicyBundleDiffTests.cs:155-168`) |
 | U2 | Unchanged diff | Directory-mode diff output and `NotExercisedOffline` are unchanged (`src/Bower.Cli/Commands/PolicyCommands.cs:187-196`, `tests/Bower.UnitTests/PolicyBundleDiffTests.cs:231`) |
 | C1 | Cleanup | The work root is gone after success, scenario error, bundle load failure, limit failure, capacity failure and cancellation |
 | C2 | Cleanup | `--database`, `--queue` and any unknown option are exit 1. No file is created outside the work root (the working directory listing is unchanged) |
 | C3 | Cleanup | On Unix, the root is 0700 and the queue files are 0600 |
+| W1 | Windows private root | On the `windows-latest` CI job, with a `BOWER_REQUIRE_*` variable so a skip fails there (pattern `tests/Bower.UnitTests/WindowsSettingsFileTests.cs:15-20`): the root's ACL is protected, grants only SYSTEM, Administrators and the current user, and each side database inherits it. A forced ACL check failure (test seam) is exit 1 before any database file exists, with the root removed and stdout empty |
 | I1 | Input strictness | Unknown property, duplicate property, null, absolute path, `..`, symbolic link component, bad time format, `dataClassification` other than `synthetic`, duplicate step id: each is exit 1 |
 | L1 | Labelling | Output has `simulated: true` and `kind: PolicyPreview`, and no ledger, signature or path fields |
 | X1 | Parity | Run the same scenario through the collector host with a fixed clock (pattern `tests/Bower.UnitTests/CollectorHostTests.cs:631-679`). Per-step queued, duplicate and suppressed outcomes, summary ids and counts must equal the preview's |
@@ -271,9 +283,10 @@ The recommended design makes no change to `src/Bower.Persistence`. If implementa
 - Parity test X1 does not exist yet. Parity is argued from shared code, not shown.
 - Run time is not measured. Each step commits with `synchronous = FULL` (`src/Bower.Persistence/SqliteEventQueue.cs:1246`), so 10,000 steps per side means up to about 20,000 fsyncs.
 - That `Directory.CreateTempSubdirectory` gives 0700 on every supported Unix is not verified here (test C3).
-- Behaviour on Windows (file handles kept open after `ClearAllPools`, temp ACLs) is not verified.
+- Behaviour on Windows (file handles kept open after `ClearAllPools`, and whether SQLite's `-wal` and `-shm` files inherit the root's protected ACL) is not verified (test W1).
+- That one drain call at `end + 86,400 s` reports every suppressed open window is argued from the close query and the key limit, not run (test R5).
 - Whether `System.Text.Json` in this target framework can refuse duplicate properties under the CLI's source-generated context is not confirmed. If it cannot, the scenario reader needs a pre-scan with `Utf8JsonReader`.
-- Residue after `SIGKILL` cannot be prevented, only bounded (redacted synthetic data in a 0700 directory).
+- Residue after `SIGKILL` cannot be prevented, only bounded (redacted synthetic data in an owner-only directory).
 - The `dataClassification` attestation cannot prove the input is synthetic.
 - A preview result is not evidence of production behaviour under real traffic, capacity or delivery. It shows what the production code does for the given ordered synthetic steps.
 
@@ -282,8 +295,8 @@ The recommended design makes no change to `src/Bower.Persistence`. If implementa
 | STOP condition (plan) | Assessment |
 |---|---|
 | Premises changed since the planned commit | Not hit: drift diff is empty |
-| Reuse of queue logic requires access to an existing queue | Not hit: each side gets a new file in a root the preview creates. No option accepts a path to a queue, and test C2 enforces this |
-| Preview cannot keep redaction before persistence | Not hit: the only write path is the production processor, which redacts first (`src/Bower.Core/SecurityEventProcessor.cs:233-256`, `:360-402`). Tests P1–P3 enforce this |
+| Reuse of queue logic requires access to an existing queue | Not hit: each side gets a new file in a private root the preview creates (fail-closed on Windows, test W1). No option accepts a path to a queue, and test C2 enforces this. Open windows are read by draining that disposable file through the existing close API, not by a new queue API |
+| Preview cannot keep redaction before persistence | Not hit: the only write path for event content is the production processor, which redacts first (`src/Bower.Core/SecurityEventProcessor.cs:233-256`, `:360-402`). The end-of-run drain writes only summaries built from already redacted window rows. Tests P1–P3 enforce this |
 | Simulation cannot be distinguished from production evidence | Not hit, provided the preview uses a separate subcommand, prints `simulated: true` and `kind: PolicyPreview`, prints no ledger heads, signatures or paths, and is documented as such. Test L1 enforces this |
 | Second approximate algorithm without parity assessment | Avoided: option C rejected above |
 
@@ -294,8 +307,9 @@ The recommended design makes no change to `src/Bower.Persistence`. If implementa
 3. Is 10,000 steps per side the right ceiling once the fsync cost is measured?
 4. Should the preview sweep its own stale `bower-policy-preview-*` directories (same user, older than 24 hours) at start, or leave them for the operator?
 5. Should a later slice model several producers (source adapters) or clock step-back (`tests/Bower.UnitTests/SuppressionTests.cs:182-209`)? Both are excluded from the first slice.
-6. On Windows, should the root get an explicit owner-only ACL, given the queue sets none?
-7. Should windows that only admitted events (no suppression, so no close callback) appear in `windows`? The first slice reports them through step outcomes only.
+6. Resolved: on Windows the root gets a protected owner-only ACL, checked before any database is written, or the run fails (test W1). Open: should the queue itself later set an ACL on Windows? That would be a queue change.
+7. Should windows that only admitted events (no suppression, so no close callback) appear in `windows`? The first slice reports them through step outcomes only. Reporting them would need a read-only window-listing API in `Bower.Persistence`, a scoped queue change that needs the adversarial and crash tests above first.
+8. Is it acceptable that a report cannot be tied to its input bytes? If not, a later slice could add an operator-supplied HMAC key for an input digest, at the cost of key handling and of reports with different keys not being comparable.
 
 ## Delivery notes
 
