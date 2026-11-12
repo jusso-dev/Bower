@@ -123,8 +123,8 @@ A = forwarder (recommended), B = collector variant for comparison. "Replay" mean
 | Two pollers with separate cursor DBs | Same producer token: every row sent twice, absorbed as 200 duplicates. Different tokens: same `event_id`, different identity → 409 conflict → stall | Same across collectors | Must be prevented (one instance per source). Assert the stall is reported as health, not looped silently |
 | Partial batch refusal (503 or 429 mid-batch) | No checkpoint. Back off and resume at record k. 1..k−1 are not resent. After a restart the whole batch replays as 200 or 422 again | Savepoint per record. Handled prefix commits | Refuse at record k. All of 1..k−1 are queued once and sent once. Also set `BOWER_INGEST_RATE_PER_SECOND=1` with `BatchSize` 10: the checkpoint commits and no record before a 429 is resent |
 | Overlap saturation | Not applicable (incrementing only). The exception is unreachable (section 1.5) | Same | Timestamp cursor deferred. Tests are due before it is enabled |
-| Out-of-order identity commits | Held back within `CommitSettleDelay`. **Skipped beyond it** | Same | Disposable DB: transaction T1 holds id n open past the window while T2 commits n+1. Measure and document the skip |
-| `EventTime` lower than an earlier sequence (application-supplied time) | n+1 passes the window while n is uncommitted. **n is skipped even if it commits within the window**. The decrease is counted as health | Same | Disposable DB with `READ_COMMITTED_SNAPSHOT` on: hold id n open, commit n+1 with an older `EventTime`, poll, then commit n inside the window. Assert the skip and the health signal |
+| Out-of-order identity commits | Held back within `CommitSettleDelay`. **Skipped beyond it**; the late-row audit reports it | Same | Disposable DB: transaction T1 holds id n open past the window while T2 commits n+1. Assert the skip and the audit signal |
+| `EventTime` lower than an earlier sequence (application-supplied time) | n+1 passes the window while n is uncommitted. **n is skipped even if it commits within the window**. Not visible in process; the late-row audit reports it after `2 × CommitSettleDelay` | Same | Disposable DB with `READ_COMMITTED_SNAPSHOT` on: hold id n open, commit n+1 with an older `EventTime`, poll, then commit n inside the window. Assert the skip, no in-process signal, and an audit signal with range and difference 1 |
 | Clock or time-zone skew in `EventTime` | Local-time values shift hold-back by the UTC offset (hours in Australia) | Same | Column stored in local time. Refuse or require `datetimeoffset` (open question) |
 | Cancellation mid-query | `OperationCanceledException`. No checkpoint | Same | Cancel during `ToListAsync`. Cursor unchanged, no partial send |
 | Cancellation mid-batch | Stop sending. No checkpoint. Replay | Roll back | Cancel after k sends. Queue holds k, deduplicated on restart |
@@ -149,9 +149,9 @@ For one forwarder instance per source, with an incrementing cursor and an `Event
 2. above the committed cursor; and
 3. committed within `CommitSettleDelay` of its `EventTime`.
 
-The ordering assumption is required. The adapter stops at the first row newer than the window (`SqlServerSourceAdapter.cs:85-91`) and the cursor moves to the highest sequence returned (`:219-221`). If a later sequence carries an older `EventTime`, it can pass the window while an earlier sequence is uncommitted, and the earlier row is then skipped even if it commits within the window. The forwarder counts each `EventTime` decrease against the previous row or the committed cursor as a health signal. That makes a violation visible but does not prevent the skip.
+The ordering assumption is required. The adapter stops at the first row newer than the window (`SqlServerSourceAdapter.cs:85-91`) and the cursor moves to the highest sequence returned (`:219-221`). If a later sequence carries an older `EventTime`, it can pass the window while an earlier sequence is uncommitted, and the earlier row is then skipped even if it commits within the window. An in-process comparison cannot detect this: while n is uncommitted the forwarder sees only n-1 and n+1, so the decrease involving n is never observed. Detection therefore needs a separate **late-row audit**. For each committed batch the forwarder keeps metadata only: the sequence range `(previous cursor, new cursor]` and the count of rows it settled. After `2 × CommitSettleDelay` it re-counts rows in that range through the same view (`COUNT_BIG(*)`, bounded to the range, no column values read). A higher count means rows were skipped. It is reported as a health signal with the range and the difference only, and it covers out-of-order identity commits beyond the window as well. The audit detects a skip after the fact; it does not prevent or replay it. Audit ranges are bounded (for example the last 1,000 batches) and dropped after they are checked.
 
-Every qualifying row reaches one of four outcomes: **queued in the collector at least once**, **counted in a suppression window** (only if a suppressing policy matches, section 3.2), **definitively rejected** (counted) or **not selected** (counted). The cursor never passes a row without one of these outcomes. Duplicates can follow a crash, cancellation or partial refusal. The queue suppresses them only within `DeliveredRetention` on the same collector and pack route. A replayed suppressed row is not deduplicated, because nothing was stored for it (`SqliteEventQueue.cs:340-356`), so it is counted again or queued in a later window. Rows committed after the settle window can be skipped without a gap signal. Sentinel arrival is not claimed without a destination query (`AGENTS.md:80-81`).
+Every qualifying row reaches one of four outcomes: **queued in the collector at least once**, **counted in a suppression window** (only if a suppressing policy matches, section 3.2), **definitively rejected** (counted) or **not selected** (counted). The cursor never passes a row without one of these outcomes. Duplicates can follow a crash, cancellation or partial refusal. The queue suppresses them only within `DeliveredRetention` on the same collector and pack route. A replayed suppressed row is not deduplicated, because nothing was stored for it (`SqliteEventQueue.cs:340-356`), so it is counted again or queued in a later window. Rows committed after the settle window can be skipped. The late-row audit reports such skips only after the fact, and only while the batch range is retained. Sentinel arrival is not claimed without a destination query (`AGENTS.md:80-81`).
 
 Assertable properties: no skip within the window, no advance without an outcome, at most one queue row per source row within retention, no plaintext canary outside redacted queue payloads, and memory bounded by `BatchSize × MaximumRecordBytes`.
 
@@ -172,7 +172,7 @@ Assertable properties: no skip within the window, no advance without an outcome,
 - A permissions audit.
 - A check that `EventTime` does not decrease in sequence order on the real table.
 - Plan and allocation checks: index seek on the identity column with `TOP` and `ORDER BY`, as required by `queue-v5-durability.md:314-315`.
-- A soak at production insert rates with real long transactions, measuring duplicates and skips.
+- A soak at production insert rates with real long transactions, measuring duplicates and skips, and confirming the late-row audit reports each induced skip and its `COUNT_BIG` seeks on the identity index.
 - Sentinel arrival checked by query under a separate identity.
 
 ## 5. Implementation scope if approved
@@ -207,7 +207,7 @@ Optional adapter follow-ups, each separately reviewed:
 - **AOT.** The forwarder adds a second non-AOT shipped executable and a runtime-based image. That is a deliberate, documented exception, but it is a new support surface.
 - **Operational.**
   - Cursor and enqueue are not atomic, so a duplicate window depends on retention, and the pressure floor can shrink it to 1 h.
-  - Commit-settle skips are possible, and also occur within the window if `EventTime` decreases in sequence order.
+  - Commit-settle skips are possible, and also occur within the window if `EventTime` decreases in sequence order. The late-row audit reports them after the fact; it does not recover them.
   - Poison rows stall the source with no audited skip tool.
   - Active-active HA is not supported (single poller per source).
   - The forwarder and collector must be upgraded together.
@@ -218,7 +218,7 @@ Open questions:
 2. Is `bigint` identity required, or should `int` be supported through a converter?
 3. Is an audited skip-row command needed before go-live?
 4. Is the Entra or managed identity dependency in scope?
-5. Is `EventTime` ordering only a deployment gate checked at qualification, or should the forwarder stop advancing when it sees a decrease?
+5. Is `EventTime` ordering only a deployment gate checked at qualification, or should a late-row audit signal also stop the forwarder until an operator reviews it? (The forwarder cannot see the decrease in process, section 4.1.)
 
 ## 7. STOP conditions
 
