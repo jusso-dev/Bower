@@ -18,7 +18,7 @@ All three follow the design's recommendation or the option it described. Open qu
 |---|---|---|---|
 | Q1 | Is a `dataClassification: synthetic` attestation enough? | Yes. A file-level attestation is enough | No per-event `labels.synthetic`. Input validation stays as specified (test I1). The attestation still cannot prove the input is synthetic |
 | Q8 | May a report be untied from its input bytes? | Accepted for the first slice | No input digest in the output (test H2). An operator who needs to pin inputs keeps the scenario directory with the report. An HMAC input digest stays a possible later slice |
-| Q4 | Sweep stale work directories? | Yes, at start: only `bower-policy-preview-*` directories owned by the same user and older than 24 h | New start-up step and tests (see [Cleanup](#cleanup), tests C4 and C5). Residue after `SIGKILL` is now bounded to about 24 h, if the preview runs again |
+| Q4 | Sweep stale work directories? | Yes, at start: only `bower-policy-preview-*` directories owned by the same user and older than 24 h | New start-up step and tests (see [Cleanup](#cleanup), tests C4 to C6). A directory whose `preview.lock` another run still holds is never swept. Residue after `SIGKILL` is now bounded to about 24 h, if the preview runs again |
 
 ## Drift check (plan step 1)
 
@@ -134,7 +134,7 @@ One strict JSON file (new schema `schemas/configuration/policy-preview-scenario.
 ### Independent baseline and candidate state
 
 - Both bundles load before any step runs. A load failure is exit 1 with nothing on stdout, as in diff (`docs/operations/suppression-archive-and-source-silence.md:123-125`).
-- One work root per run: `Directory.CreateTempSubdirectory("bower-policy-preview-")` on Unix, and an equivalent `bower-policy-preview-*` directory created with a private ACL on Windows (see [Redaction before persistence](#redaction-before-persistence)). It holds `baseline/queue.db` and `candidate/queue.db`. Each side has its own store, processor, evaluator, redactor, clock and observer.
+- One work root per run: `Directory.CreateTempSubdirectory("bower-policy-preview-")` on Unix, and an equivalent `bower-policy-preview-*` directory created with a private ACL on Windows (see [Redaction before persistence](#redaction-before-persistence)). It holds `baseline/queue.db`, `candidate/queue.db` and an empty `preview.lock` that the run holds open until cleanup (see [Cleanup](#cleanup)). Each side has its own store, processor, evaluator, redactor, clock and observer.
 - The sides run one after the other (baseline, then candidate). The two sides share no state other than the read-only scenario bytes. A test that swaps the run order must give identical output.
 
 ### Limits
@@ -207,10 +207,10 @@ Known determinism hazards, all outside the output or unreachable today:
 
 ### Cleanup
 
-- `try`/`finally` around both sides: dispose the stores, call `SqliteConnection.ClearAllPools()` (pooled handles keep files open; tests do the same, for example `tests/Bower.UnitTests/QueueBackupTests.cs:216`), delete the work root recursively, then confirm it no longer exists.
+- `try`/`finally` around both sides: dispose the stores, call `SqliteConnection.ClearAllPools()` (pooled handles keep files open; tests do the same, for example `tests/Bower.UnitTests/QueueBackupTests.cs:216`), close `preview.lock` (see the sweep below), delete the work root recursively, then confirm it no longer exists.
 - Output is written to stdout **only after** cleanup succeeds. A failed delete prints the path on stderr and exits 1.
 - Ctrl+C cancels through the command's cancellation token and runs the same `finally`. A `SIGKILL` or power loss leaves a `bower-policy-preview-*` directory holding redacted synthetic rows. The preview never deletes anything outside its own root and the sweep below.
-- Start-up sweep (decision Q4, 2026-11-13). Before it creates its own root, the preview lists the top level of the temp path and deletes a directory only when all of these hold: the name matches `bower-policy-preview-*`; it is a real directory, not a symbolic link or junction (checked without following links); its owner is the current user (Unix uid, Windows owner SID); and its last write time is more than 24 h before now. Deletion is recursive but does not follow links inside the directory. A directory that fails any check is left alone. A failed delete is a warning on stderr and does not stop the run. The sweep never reads the contents.
+- Start-up sweep (decision Q4, 2026-11-13). Before it creates its own root, the preview lists the top level of the temp path and deletes a directory only when all of these hold: the name matches `bower-policy-preview-*`; it is a real directory, not a symbolic link or junction (checked without following links); its owner is the current user (Unix uid, Windows owner SID); its last write time is more than 24 h before now; and no preview is still using it. Age alone cannot show that: writes to `baseline/queue.db` and `candidate/queue.db` do not update the root's last write time, and a run can last, or be suspended for, more than 24 h. So each run, straight after creating its root and before any database is opened, creates `preview.lock` in the root and holds it open with an exclusive lock (`FileShare.None`) until cleanup. The operating system releases the lock when the process exits, including after `SIGKILL`. The sweep opens `preview.lock` with `FileShare.None` and leaves the directory alone if that open fails because the file is in use. A directory without `preview.lock` is judged on the other checks only. Deletion is recursive but does not follow links inside the directory. A directory that fails any check is left alone. A failed delete is a warning on stderr and does not stop the run. Apart from trying the lock, the sweep never reads the contents.
 
 ### What preview does not model
 
@@ -271,8 +271,9 @@ Unit tests drive an internal entry point that takes loaded bundles, parsed scena
 | C1 | Cleanup | The work root is gone after success, scenario error, bundle load failure, limit failure, capacity failure and cancellation |
 | C2 | Cleanup | `--database`, `--queue` and any unknown option are exit 1. No file is created outside the work root (the working directory listing is unchanged) |
 | C3 | Cleanup | On Unix, the root is 0700 and the queue files are 0600 |
-| C4 | Stale sweep | Matching directories older than 24 h owned by the current user are removed. Ones 23 h old, owned by another user (or with a different owner SID on Windows), with another prefix, or that are symbolic links are kept. A link inside a stale directory is removed without touching its target |
+| C4 | Stale sweep | Matching directories older than 24 h owned by the current user are removed. Ones 23 h old, owned by another user (or with a different owner SID on Windows), with another prefix, or that are symbolic links, or junctions on Windows, are kept. A link inside a stale directory, or a junction on Windows, is removed without touching its target |
 | C5 | Stale sweep | A delete failure (for example a read-only file) is a stderr warning, the run continues, and stdout is unchanged |
+| C6 | Stale sweep | Two concurrent previews: the first holds `preview.lock` and its root's last write time is set more than 24 h back. The second preview's sweep keeps that root, and the first completes with unchanged stdout. After the first process is killed, its lock is released and the next sweep removes the root |
 | W1 | Windows private root | On the `windows-latest` CI job, with a `BOWER_REQUIRE_*` variable so a skip fails there (pattern `tests/Bower.UnitTests/WindowsSettingsFileTests.cs:15-20`): the root's ACL is protected, grants only SYSTEM, Administrators and the current user, and each side database inherits it. A forced ACL check failure (test seam) is exit 1 before any database file exists, with the root removed and stdout empty |
 | I1 | Input strictness | Unknown property, duplicate property, null, absolute path, `..`, symbolic link component, bad time format, `dataClassification` other than `synthetic`, duplicate step id: each is exit 1 |
 | L1 | Labelling | Output has `simulated: true` and `kind: PolicyPreview`, and no ledger, signature or path fields |
@@ -301,6 +302,7 @@ The recommended design makes no change to `src/Bower.Persistence`. If implementa
 - Whether `System.Text.Json` in this target framework can refuse duplicate properties under the CLI's source-generated context is not confirmed. If it cannot, the scenario reader needs a pre-scan with `Utf8JsonReader`.
 - Residue after `SIGKILL` cannot be prevented, only bounded (redacted synthetic data in an owner-only directory, removed by the next run's sweep once older than 24 h). If the preview never runs again, the residue stays.
 - That last write time and owner checks behave the same on every supported file system (including network home directories and Windows junctions) is not verified (tests C4 and C5).
+- That `FileShare.None` gives an exclusive lock that another process sees on every supported Unix file system is not verified (.NET uses advisory locks there, which some network file systems do not honour). Test C6 covers local file systems only.
 - The `dataClassification` attestation cannot prove the input is synthetic.
 - A preview result is not evidence of production behaviour under real traffic, capacity or delivery. It shows what the production code does for the given ordered synthetic steps.
 

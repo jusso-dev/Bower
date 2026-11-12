@@ -227,7 +227,11 @@ non-empty `hmac-sha256:<keyId>:<hex>` value (`src/Bower.Redaction/KeyedFieldHash
   `bower-evidence-probe` must not appear in the queued payload, the database or the bundle.
   An empty username passes through unchanged (`src/Bower.Redaction/Privacy/PolicyApplicator.cs:55`)
   and a missing one becomes an empty column (`src/Bower.Dcr/SentinelSchema.cs:63`), so every
-  check must also require a non-empty HMAC value.
+  check that asserts the username must also require a non-empty HMAC value. Those checks are
+  test 14 (queued payload) and live step 3 (verifier KQL). The runner's destination match does
+  not assert `ActorUsername` for any fixture, because Q1 added only `ApplicationName` and
+  `EventOutcomeReason`, so a `verified` bundle does not show the username was pseudonymised at
+  the destination.
 - Unmapped raw keys (`channel`, `provider`, every `data.*` key) and the raw status codes are
   never forwarded (`docs/deployment/packs.md:173-174`,
   `docs/security/pack-runtime-catalogue.md:70-72`).
@@ -429,6 +433,8 @@ No live run is part of this design.
   but the fixture is not qualified for that version.
 - That `ApplicationName` and `EventOutcomeReason` arrive as expected at the destination is
   asserted per run (Q1), but not yet shown live.
+- That `ActorUsername` arrives as a non-empty `hmac-sha256:` value is not asserted by the
+  runner. Only test 14 (queued payload) and live step 3 (verifier KQL) check it.
 
 ## STOP-condition assessment
 
