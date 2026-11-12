@@ -78,9 +78,21 @@ class SelectionTests(unittest.TestCase):
 
     def test_relay_and_enrolment_keep_container_integration(self):
         for path in ("src/Bower.Collector/Relay/Listener.cs", "src/Bower.Forwarding/Client.cs",
-                     "tests/e2e/enrolment.sh"):
+                     "tests/e2e/enrolment.sh", "tests/e2e/aws-emulator.sh",
+                     "tests/e2e/aws-emulator/Dockerfile"):
             with self.subTest(path=path):
                 self.assertIn("containers", self.enabled([path]))
+
+    def test_aws_emulator_inputs_run_container_integration(self):
+        for path in ("deploy/aws/bower-aws-security.yaml", "deploy/aws/bower-s3-output.yaml",
+                     "packs/aws-security/policies/aws-findings.yaml",
+                     "tests/fixtures/aws-emulator/guardduty-finding.json",
+                     "src/Bower.Agent.Cloud/Aws/SqsMessageSource.cs",
+                     "src/Bower.Source.Aws/AwsQueueMessageParser.cs", "src/Bower.Output.S3/S3Output.cs"):
+            with self.subTest(path=path):
+                self.assertIn("containers", self.enabled([path]))
+        self.assertNotIn("containers", self.enabled(["deploy/gcp/main.tf"]))
+        self.assertNotIn("containers", self.enabled(["packs/gcp-security/pack.yaml"]))
 
     def test_docker_changes_test_cross_architecture_builds(self):
         for path in ("deploy/docker/Dockerfile", ".dockerignore", "docker-compose.yml"):

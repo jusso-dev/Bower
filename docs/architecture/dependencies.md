@@ -165,6 +165,13 @@ handle and the path (`FileTailHandles.cs`), so a link or another file swapped in
 path checks is refused. .NET has no no-follow open or inode API; other platforms only
 re-check that the path is not a link after opening.
 
+## AWS Emulator end-to-end test
+
+| Dependency | Scope | Reason and alternatives |
+|---|---|---|
+| [AWS Emulator](https://github.com/aws/aws-emulator) 1.0.322 (CC0-1.0), on `public.ecr.aws/amazonlinux/amazonlinux:2023-minimal` | CI and local tests only (`tests/e2e/aws-emulator/Dockerfile`); never in a Bower image or package | First-party AWS emulator that runs the shipped CloudFormation templates and serves SQS, S3, STS and EventBridge to the unmodified cloud agent and S3 output, with no AWS account or stored keys. Version and base image digest are pinned; the package signature is verified against the AWS publishing key fingerprint before install; telemetry is off. LocalStack and moto (third-party emulators and mocks) were the alternatives; a first-party emulator that AWS tracks against its own fidelity tests is preferred. Unit tests keep using fakes; this does not replace the AWS lab. |
+| `public.ecr.aws/aws-cli/aws-cli` 2.34.32 and `curlimages/curl` 8.11.1, digest-pinned | Same test only | Drive the emulator and read collector status from inside its network namespace, so the emulator never publishes a port. `curlimages/curl` is already used by the compose e2e tests. |
+
 ## Documentation website
 
 | Dependency | Scope | Reason and alternatives |
