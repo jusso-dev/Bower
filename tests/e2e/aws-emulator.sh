@@ -20,8 +20,9 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
+# mktemp -d is 0700: credentials, the token and test inputs stay private to this user.
+# Containers get only $work/public (CA certificate, scopes, policies) mounted read-only.
 work="$(mktemp -d)"
-chmod 755 "$work"
 fixtures="$repo/tests/fixtures/aws-emulator"
 prefix="bower-aws-e2e-$$"
 emu="$prefix-emulator"
@@ -39,15 +40,17 @@ queue_url="https://sqs.$region.amazonaws.com/$account/bower-security"
 dlq_url="https://sqs.$region.amazonaws.com/$account/bower-security-dlq"
 output_bucket=bower-e2e-output
 app_bucket=bower-e2e-app-logs
-touch "$work/secrets"
+(umask 077 && touch "$work/secrets")
+# Fixture content that must never reach a log, filtered from failure output as well.
+printf '%s\n' never-forward-this 100000001 InstanceCredentialExfiltration >"$work/content"
 
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then
     for name in "$collector" "$agent"; do
       echo "--- $name" >&2
-      # Never print a secret, even on failure.
-      docker logs "$name" 2>&1 | grep -v -F -f "$work/secrets" >&2 || true
+      # Never print a secret or fixture content, even on failure.
+      docker logs "$name" 2>&1 | grep -v -F -f "$work/secrets" -f "$work/content" >&2 || true
     done
   fi
   docker rm -f -v "$agent" "$collector" "$emu" >/dev/null 2>&1 || true
@@ -79,7 +82,9 @@ aws_json() {
 }
 
 status_queue() {
-  docker run --rm --network "container:$emu" -v "$work/status-header:/run/header:ro" "$curl_image" \
+  # The header file is 0600; curl runs as its owner rather than the image user.
+  docker run --rm --network "container:$emu" --user "$(id -u):$(id -g)" \
+    -v "$work/status-header:/run/header:ro" "$curl_image" \
     -sf -H @/run/header http://127.0.0.1:4319/v1/status | jq -c .queue
 }
 
@@ -121,8 +126,10 @@ output_events() {
   find "$work/data/out" -type f -name '*.jsonl.gz' -exec gzip -dc {} + | jq -c .
 }
 
-mkdir -p "$work/emu" "$work/data" "$work/policies"
-chmod 777 "$work/data"
+# aws_cli runs as this user, so the owner-only data directory is enough for downloads.
+(umask 077 && mkdir -p "$work/emu" "$work/data")
+mkdir -p "$work/public/policies"
+chmod 755 "$work/public" "$work/public/policies"
 
 # 1. Emulator: loopback only, no published port, telemetry off, fresh keys and certificate.
 docker run -d --name "$emu" --read-only --tmpfs /tmp --tmpfs /home/emulator:uid=1000 \
@@ -227,24 +234,24 @@ printf 'not json' >"$work/data/malformed.txt"
 # 5. Collector (S3 output) and cloud agent share the emulator's loopback.
 token="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 printf '%s\n' "$token" >>"$work/secrets"
-printf '%s' "$token" >"$work/token"
-printf 'Authorization: Bearer %s\n' "$token" >"$work/status-header"
-cp "$work/emu/ca.pem" "$work/ca.pem"
-cp "$repo"/policies/default/*.yaml "$repo"/packs/aws-security/policies/*.yaml "$work/policies/"
+# The Docker CLI reads the 0600 env-file on the host; no token file is mounted.
+printf 'BOWER_INGEST_TOKEN=%s\n' "$token" >>"$work/aws.env"
+(umask 077 && printf 'Authorization: Bearer %s\n' "$token" >"$work/status-header")
+cp "$work/emu/ca.pem" "$work/public/ca.pem"
+cp "$repo"/policies/default/*.yaml "$repo"/packs/aws-security/policies/*.yaml "$work/public/policies/"
 # Exact producer identity tuples for the events above; anything else is refused.
 jq -n '[
   {producer: "default", application: {name: "aws-security", environment: "e2e", tenantId: "123456789012"}},
   {producer: "default", application: {name: "aws-security", environment: "e2e", tenantId: "123456789012"}, source: {ipAddress: "203.0.113.10"}},
   {producer: "default", application: {name: "aws-security", environment: "e2e", tenantId: "123456789012"}, source: {ipAddress: "198.51.100.7"}},
-  {producer: "default", application: {name: "AwsE2E", environment: "e2e"}, source: {ipAddress: "192.0.2.10"}}]' >"$work/producer-scopes.json"
-chmod 644 "$work/token" "$work/ca.pem" "$work/producer-scopes.json" "$work/policies"/*
-chmod 755 "$work/policies"
+  {producer: "default", application: {name: "AwsE2E", environment: "e2e"}, source: {ipAddress: "192.0.2.10"}}]' >"$work/public/producer-scopes.json"
+chmod 644 "$work/public/ca.pem" "$work/public/producer-scopes.json" "$work/public/policies"/*
 
 docker run -d --name "$collector" --network "container:$emu" --read-only --tmpfs /tmp \
   --cap-drop ALL --security-opt no-new-privileges:true \
-  --env-file "$work/aws.env" -v "$work:/run/emu:ro" \
+  --env-file "$work/aws.env" -v "$work/public:/run/emu:ro" \
   -e BOWER_LISTEN_URL=http://127.0.0.1:4319 -e BOWER_COLLECTOR_ID=aws-e2e -e BOWER_ENVIRONMENT=e2e \
-  -e BOWER_INGEST_TOKEN_FILE=/run/emu/token -e BOWER_PRODUCER_SCOPES_FILE=/run/emu/producer-scopes.json \
+  -e BOWER_PRODUCER_SCOPES_FILE=/run/emu/producer-scopes.json \
   -e BOWER_POLICY_DIRECTORY=/run/emu/policies -e BOWER_OUTPUT=s3 -e BOWER_S3_BUCKET="$output_bucket" \
   -e BOWER_S3_REGION="$region" -e BOWER_S3_EXPECTED_BUCKET_OWNER="$account" -e BOWER_S3_SSE=AES256 \
   "$collector_image" >/dev/null
@@ -253,9 +260,9 @@ wait_until "the collector" 30 collector_ready
 
 docker run -d --name "$agent" --network "container:$emu" --read-only --tmpfs /tmp \
   --cap-drop ALL --security-opt no-new-privileges:true \
-  --env-file "$work/aws.env" -v "$work:/run/emu:ro" \
+  --env-file "$work/aws.env" -v "$work/public:/run/emu:ro" \
   -e BOWER_AWS_SQS_QUEUE_URL="$queue_url" -e BOWER_AWS_S3_BUCKETS="$app_bucket" \
-  -e BOWER_COLLECTOR_URL=http://127.0.0.1:4319 -e BOWER_INGEST_TOKEN_FILE=/run/emu/token \
+  -e BOWER_COLLECTOR_URL=http://127.0.0.1:4319 \
   -e BOWER_ENVIRONMENT=e2e -e BOWER_REQUIRE_AU_REGION=true -e BOWER_RETRY_SECONDS=10 \
   -e BOWER_CLOUD_HEARTBEAT_DIR=/tmp "$cloud_image" >/dev/null
 
@@ -337,13 +344,16 @@ test "$(output_events | wc -l | tr -d ' ')" = 9
 # 10. Logs carry ids, counts and failure codes only: no secrets, no message bodies.
 # A blank pattern would match every line and hide a real leak behind a false failure.
 ! grep -qx '' "$work/secrets" || fail "empty secret pattern"
+# Capture each whole log first: grep -q exiting early under pipefail could hide a match.
 for name in "$collector" "$agent"; do
-  if docker logs "$name" 2>&1 | grep -q -F -f "$work/secrets"; then
+  docker logs "$name" >"$work/log" 2>&1
+  if grep -q -F -f "$work/secrets" "$work/log"; then
     fail "a secret appeared in the $name log"
   fi
-  if docker logs "$name" 2>&1 | grep -q -e never-forward-this -e 100000001 -e InstanceCredentialExfiltration; then
+  if grep -q -F -f "$work/content" "$work/log"; then
     fail "message content appeared in the $name log"
   fi
 done
+rm -f "$work/log"
 
 echo "AWS emulator e2e passed: templates deployed, rules matched, 9 events delivered to S3 exactly once and redacted, outages recovered."

@@ -25,6 +25,9 @@ Producer scopes are exact identity tuples for the fixture events; the test does 
 
 ## Run it locally
 
+You need Docker, Bash, `jq` and `gzip` on the host; the AWS CLI and curl run in
+containers.
+
 ```bash
 docker build -f deploy/docker/Dockerfile -t bower-collector:ci .
 docker build -f deploy/docker/Dockerfile.cloud -t bower-cloud:ci .
@@ -52,7 +55,11 @@ On a workstation, name the Docker context (`DOCKER_CONTEXT=orbstack bash …`).
   (`GetSessionToken`), like an instance profile or IRSA. No setting weakens Bower's
   refusal of long-lived keys. The .NET SDK reads `AWS_ENDPOINT_URL` and trusts the
   emulator's per-run certificate through `SSL_CERT_FILE`; no Bower code changes.
-- Secrets never print, even on failure: failure output filters every token and key.
+- The work directory is private to the user running the test. Credentials and the ingest
+  token reach the containers through an owner-only env-file read by the Docker CLI; only
+  the CA certificate, producer scopes and policies are mounted.
+- Secrets never print, even on failure: failure output filters every token and key and
+  the fixture values the test checks for.
 
 ## What it does not prove
 
