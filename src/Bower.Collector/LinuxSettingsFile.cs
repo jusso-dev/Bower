@@ -17,6 +17,8 @@ internal static partial class LinuxSettingsFile
     private const ushort RegularType = 0x8000;
     private const ushort GroupOrOtherWrite = 0x12;
     private const ushort Sticky = 0x200;
+    private const int GetStatusFlags = 3;
+    private const int SetStatusFlags = 4;
 
     /// <summary>
     /// <c>O_DIRECTORY</c> and <c>O_NOFOLLOW</c> per architecture: 0x10000 and 0x20000 on x86 and
@@ -67,6 +69,11 @@ internal static partial class LinuxSettingsFile
             try
             {
                 Verify(file, directory: false);
+                // O_NONBLOCK only stops the open from blocking on a FIFO. A regular file must not keep
+                // it: .NET 11 treats such a descriptor as asynchronous for FileStream.
+                int status = Fcntl(file, GetStatusFlags, 0);
+                if (status < 0 || ((status & NonBlock) != 0 && Fcntl(file, SetStatusFlags, status & ~NonBlock) != 0))
+                    throw new InvalidOperationException("BOWER_SETTINGS_FILE cannot be read.");
                 return new FileStream(file, FileAccess.Read);
             }
             catch { file.Dispose(); throw; }
@@ -103,6 +110,9 @@ internal static partial class LinuxSettingsFile
 
     [LibraryImport("libc", EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int OpenNative(string path, int flags);
+
+    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+    private static partial int Fcntl(SafeFileHandle descriptor, int command, int argument);
 
     [LibraryImport("libc", EntryPoint = "openat", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int OpenAt(SafeFileHandle directory, string path, int flags);

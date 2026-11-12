@@ -520,8 +520,12 @@ public sealed class SyslogSource : IAsyncDisposable
                 {
                     await secure.AuthenticateAsServerAsync(material.CreateOptions(session, clock), handshake.Token);
                 }
-                catch (Exception exception) when (!cancellationToken.IsCancellationRequested && !draining.IsCancellationRequested
-                    && exception is AuthenticationException or IOException or OperationCanceledException or System.ComponentModel.Win32Exception)
+                // A refused certificate ends the connection even while the source is draining: its
+                // AuthenticationException would otherwise escape and fail DisposeAsync. Cancellation and
+                // I/O errors during shutdown still go to the outer handler uncounted.
+                catch (Exception exception) when (exception is AuthenticationException or System.ComponentModel.Win32Exception
+                    || (!cancellationToken.IsCancellationRequested && !draining.IsCancellationRequested
+                        && exception is IOException or OperationCanceledException))
                 {
                     Interlocked.Increment(ref listener.Counters.TlsHandshakeFailures);
                     if (session.Revoked)

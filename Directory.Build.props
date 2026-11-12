@@ -50,4 +50,10 @@
   <PropertyGroup Condition="$([System.String]::Copy('$(MSBuildProjectDirectory)').Replace('\', '/').Contains('/src/'))">
     <IsAotCompatible Condition="'$(IsAotCompatible)' == ''">true</IsAotCompatible>
   </PropertyGroup>
+  <!-- .NET 11's ILCompiler adds -ld_classic on Xcode 15 and 16 (the macos-15-intel runner). The
+       classic linker rejects an unaligned pointer in the runtime's own libSystem.Net.Security.Native.a
+       ("unaligned pointer(s) for architecture x86_64"); the current linker accepts it. -->
+  <PropertyGroup>
+    <UseLdClassicXCodeLinker Condition="'$(UseLdClassicXCodeLinker)' == ''">false</UseLdClassicXCodeLinker>
+  </PropertyGroup>
 </Project>

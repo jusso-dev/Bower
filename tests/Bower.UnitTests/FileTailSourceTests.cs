@@ -1011,6 +1011,29 @@ public sealed class FileTailSourceTests
     }
 
     [Fact]
+    public void LinuxOpen_ReturnsASynchronousStreamThatReadsAfterAPositionedRead()
+    {
+        if (!OperatingSystem.IsLinux()) return;
+        using TemporaryDirectory directory = new();
+        string path = Path.Combine(directory.Path, "auth.log");
+        byte[] content = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Range(0, 5).Select(index => Line($"line-{index}"))));
+        File.WriteAllBytes(path, content);
+
+        (FileStream stream, _) = LinuxTailFile.Open(path);
+        using (stream)
+        {
+            // The open uses O_NONBLOCK so a FIFO cannot block it. Left set, .NET 11 treats the handle
+            // as asynchronous and the stream then reads 0 bytes after the identity's positioned read.
+            Assert.False(stream.IsAsync);
+            Assert.Equal(content.Length, RandomAccess.Read(stream.SafeFileHandle, new byte[content.Length], 0));
+            stream.Seek(0, SeekOrigin.Begin);
+            byte[] read = new byte[content.Length];
+            stream.ReadExactly(read);
+            Assert.Equal(content, read);
+        }
+    }
+
+    [Fact]
     public void Cursor_RotationFieldsRoundTripAndInconsistentStateIsRefused()
     {
         FileTailCursor draining = new(FileTailCursor.CurrentSchemaVersion, new string('a', 64), 10, FileId: "2049:131",
