@@ -508,6 +508,10 @@ jobs:
         run: bash tests/e2e/enrolment.sh
       - name: Relay mode across relays and downstreams (compose e2e)
         run: bash tests/e2e/relay.sh
+      - name: AWS signal path against AWS Emulator (no AWS account)
+        run: |
+          docker build -t bower-aws-emulator:ci tests/e2e/aws-emulator
+          bash tests/e2e/aws-emulator.sh
       - name: Smoke-test cloud agent fails closed without a source
         run: |
           set +e

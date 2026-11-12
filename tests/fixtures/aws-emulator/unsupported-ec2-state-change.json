@@ -1,0 +1,1 @@
+{"version":"0","id":"4","detail-type":"EC2 Instance State-change Notification","source":"aws.ec2","account":"123456789012","time":"2026-07-26T02:10:00Z","region":"ap-southeast-2","resources":[],"detail":{"instance-id":"i-0123456789abcdef0","state":"running"}}

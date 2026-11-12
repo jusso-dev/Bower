@@ -366,6 +366,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       "type": "doc",
+      "id": "operations/aws-emulator-testing",
+      "label": "AWS Emulator end-to-end test"
+    },
+    {
+      "type": "doc",
       "id": "operations/event-identity-conflicts",
       "label": "Event identity conflicts"
     },

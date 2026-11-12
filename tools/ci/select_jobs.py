@@ -15,6 +15,12 @@ WEC_PROBE_PROJECTS = (
     "src/Bower.Persistence/", "src/Bower.Source.WindowsEventLog/", "src/Bower.Redaction/",
     "src/Bower.Abstractions/", "src/Bower.Contracts/",
 )
+# Inputs to tests/e2e/aws-emulator.sh, which runs in the containers job.
+AWS_EMULATOR_INPUTS = (
+    "deploy/aws/bower-aws-security.yaml", "deploy/aws/bower-s3-output.yaml",
+    "packs/aws-security/", "tests/fixtures/aws-emulator/",
+    "src/Bower.Agent.Cloud/", "src/Bower.Source.Aws/", "src/Bower.Output.S3/",
+)
 WEC_POSITION_INPUTS = {
     "lab/aws/tests/test_wec_receiving_position.ps1",
     "lab/aws/soak/wec-agent.ps1",
@@ -60,6 +66,8 @@ def select(paths, full=False):
             selected.update(("infrastructure", "dotnet"))
         elif path.startswith("deploy/"):
             selected.add("infrastructure")
+            if path.startswith(AWS_EMULATOR_INPUTS):
+                selected.add("containers")
         elif path.startswith("src/Bower.Output.AmaSyslog/"):
             # The installer test runs this output under the packaged unit and journald (#245).
             selected.update(("dotnet", "windows", "e2e", "platforms", "packaging"))
@@ -67,12 +75,15 @@ def select(paths, full=False):
             selected.update(("dotnet", "windows", "e2e"))
             if path.startswith(WEC_PROBE_PROJECTS):
                 selected.add("infrastructure")
-            if "/Relay/" in path or path.startswith("src/Bower.Forwarding/") or "Enrolment" in path:
+            if ("/Relay/" in path or path.startswith("src/Bower.Forwarding/") or "Enrolment" in path
+                    or path.startswith(AWS_EMULATOR_INPUTS)):
                 selected.add("containers")
         elif path.startswith(("packs/", "policies/", "schemas/")):
             selected.update(("dotnet", "powershell", "e2e"))
             if path.startswith("policies/default/"):
                 selected.update(("platforms", "packaging"))
+            if path.startswith(AWS_EMULATOR_INPUTS):
+                selected.add("containers")
         else:
             # New tooling, global build settings and unrecognised paths fail safe.
             selected.update(JOBS)

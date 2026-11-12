@@ -178,8 +178,9 @@ HMAC key; by default email addresses are masked and secrets redacted.
 ## Limits
 
 - The CloudFormation templates are validated with `ValidateTemplate`, `cfn-lint` and
-  EventBridge `TestEventPattern` against the test fixtures; they have not been
-  deployed by the Bower test suite.
+  EventBridge `TestEventPattern` against the test fixtures. CI deploys them into
+  [AWS Emulator](../operations/aws-emulator-testing.md) and runs the agent and S3 output
+  against them; they have not been deployed to AWS by the Bower test suite.
 - Security Hub's OCSF `Findings Imported V2` events are not mapped yet and are dropped.
 - VPC flow logs and Route 53 resolver logs are parsed by `Bower.Source.Aws` but not
   forwarded by the agent; they are high-volume network telemetry, not semantic events.
