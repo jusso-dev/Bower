@@ -1,6 +1,6 @@
 # Design 003: Stateful policy rollout preview
 
-**Status:** Design for review (not implemented, not approved) · **Date:** 2026-11-12 · **Commit:** `64859aa7d620cec2538aa74fed647e4076e83490` · **Plan:** [003-stateful-policy-preview.md](003-stateful-policy-preview.md)
+**Status:** Design for review (not implemented). Product owner decisions on open questions 1, 4 and 8 recorded 2026-11-13. · **Date:** 2026-11-12, decisions 2026-11-13 · **Commit:** `64859aa7d620cec2538aa74fed647e4076e83490` · **Plan:** [003-stateful-policy-preview.md](003-stateful-policy-preview.md)
 
 ## Decision
 
@@ -9,6 +9,16 @@ Build `bower policy preview` as a **new subcommand that reuses production logic 
 Do **not** write a second, approximate suppression algorithm. Do **not** add an in-memory queue mode. The first slice needs no change to `src/Bower.Persistence`, `src/Bower.Core` or `src/Bower.PolicyEngine`: windows still open at the end are read through the existing public close API on the disposable file (see [Pinned clock and ordering](#pinned-clock-and-ordering)), not through a new queue API. `bower policy diff` and its output stay byte-for-byte unchanged.
 
 No STOP condition is hit (see [STOP assessment](#stop-assessment)). The design depends on four requirements holding in implementation: the preview never accepts a queue path, its output is labelled `simulated`, nothing is printed until cleanup succeeds, and the work root is private (mode 0700 on Unix, a protected owner-only ACL on Windows) or the run fails before any database is written.
+
+## Decisions (2026-11-13)
+
+All three follow the design's recommendation or the option it described. Open questions 1, 4 and 8 are decided; the others stay open.
+
+| ID | Question | Choice | Consequence |
+|---|---|---|---|
+| Q1 | Is a `dataClassification: synthetic` attestation enough? | Yes. A file-level attestation is enough | No per-event `labels.synthetic`. Input validation stays as specified (test I1). The attestation still cannot prove the input is synthetic |
+| Q8 | May a report be untied from its input bytes? | Accepted for the first slice | No input digest in the output (test H2). An operator who needs to pin inputs keeps the scenario directory with the report. An HMAC input digest stays a possible later slice |
+| Q4 | Sweep stale work directories? | Yes, at start: only `bower-policy-preview-*` directories owned by the same user and older than 24 h | New start-up step and tests (see [Cleanup](#cleanup), tests C4 to C6). A directory whose `preview.lock` another run still holds is never swept. Residue after `SIGKILL` is now bounded to about 24 h, if the preview runs again |
 
 ## Drift check (plan step 1)
 
@@ -106,7 +116,7 @@ One strict JSON file (new schema `schemas/configuration/policy-preview-scenario.
 ```
 
 - Unknown properties, duplicate property names, nulls, and numbers or booleans where strings are expected are refused.
-- `dataClassification` must be `synthetic`. This is an attestation, not a check (see open question 1).
+- `dataClassification` must be `synthetic`. This is an attestation, not a check. The product owner accepted that it is enough (decision Q1, 2026-11-13).
 - `start`, `end` and each `at` use the strict `--at` format (`src/Bower.Cli/Commands/CliOptions.cs:16-27`). Requirements: `start <= at[0]`, `at` non-decreasing, `at[last] <= end`.
 - A step has `id` (`^[a-z0-9][a-z0-9-]{0,63}$`, unique) and exactly one of `event` or `action`. The only action is `restart`.
 - `event` is a relative path under the scenario's directory: no absolute paths, no `..`, and no symbolic links in any component. Reusing a file is how a retry or duplicate is expressed.
@@ -124,7 +134,7 @@ One strict JSON file (new schema `schemas/configuration/policy-preview-scenario.
 ### Independent baseline and candidate state
 
 - Both bundles load before any step runs. A load failure is exit 1 with nothing on stdout, as in diff (`docs/operations/suppression-archive-and-source-silence.md:123-125`).
-- One work root per run: `Directory.CreateTempSubdirectory("bower-policy-preview-")` on Unix, and an equivalent `bower-policy-preview-*` directory created with a private ACL on Windows (see [Redaction before persistence](#redaction-before-persistence)). It holds `baseline/queue.db` and `candidate/queue.db`. Each side has its own store, processor, evaluator, redactor, clock and observer.
+- One work root per run: `Directory.CreateTempSubdirectory("bower-policy-preview-")` on Unix, and an equivalent `bower-policy-preview-*` directory created with a private ACL on Windows (see [Redaction before persistence](#redaction-before-persistence)). It holds `baseline/queue.db`, `candidate/queue.db` and an empty `preview.lock` that the run holds open until cleanup (see [Cleanup](#cleanup)). Each side has its own store, processor, evaluator, redactor, clock and observer.
 - The sides run one after the other (baseline, then candidate). The two sides share no state other than the read-only scenario bytes. A test that swaps the run order must give identical output.
 
 ### Limits
@@ -172,7 +182,7 @@ Output is indented JSON from the CLI's source-generated context (`src/Bower.Cli/
 - `changed` is the number of step entries plus window entries, plus 1 when `summary` is present. A summary-only or window-only difference therefore gives `changed > 0` and exit 3 with `--fail-on-change`.
 - `notExercised` (see [What preview does not model](#what-preview-does-not-model)).
 
-The output carries no hash or digest of the scenario or event bytes. An unkeyed hash of raw inputs lets a report recipient test guesses of a low-entropy value (a user name or IP address) when the other input bytes are known, and the `synthetic` attestation does not prevent that. A per-run key would break byte-identical repeated runs (test H3), and an operator-held key adds key handling to a first slice. The cost: a report alone cannot show which inputs produced it, or that two reports used the same inputs. The bundle hashes still identify both sides, and the scenario's step ids, `start` and `end` are printed. An operator who needs to pin inputs keeps the scenario directory with the report (open question 8).
+The output carries no hash or digest of the scenario or event bytes. An unkeyed hash of raw inputs lets a report recipient test guesses of a low-entropy value (a user name or IP address) when the other input bytes are known, and the `synthetic` attestation does not prevent that. A per-run key would break byte-identical repeated runs (test H3), and an operator-held key adds key handling to a first slice. The cost: a report alone cannot show which inputs produced it, or that two reports used the same inputs. The bundle hashes still identify both sides, and the scenario's step ids, `start` and `end` are printed. An operator who needs to pin inputs keeps the scenario directory with the report. The product owner accepted this for the first slice (decision Q8, 2026-11-13).
 
 The output carries no ledger heads, no signatures and no queue paths, so it cannot be mistaken for queue evidence.
 
@@ -197,9 +207,10 @@ Known determinism hazards, all outside the output or unreachable today:
 
 ### Cleanup
 
-- `try`/`finally` around both sides: dispose the stores, call `SqliteConnection.ClearAllPools()` (pooled handles keep files open; tests do the same, for example `tests/Bower.UnitTests/QueueBackupTests.cs:216`), delete the work root recursively, then confirm it no longer exists.
+- `try`/`finally` around both sides: dispose the stores, call `SqliteConnection.ClearAllPools()` (pooled handles keep files open; tests do the same, for example `tests/Bower.UnitTests/QueueBackupTests.cs:216`), close `preview.lock` (see the sweep below), delete the work root recursively, then confirm it no longer exists.
 - Output is written to stdout **only after** cleanup succeeds. A failed delete prints the path on stderr and exits 1.
-- Ctrl+C cancels through the command's cancellation token and runs the same `finally`. A `SIGKILL` or power loss leaves a `bower-policy-preview-*` directory holding redacted synthetic rows (open question 4). The preview never deletes anything outside its own root.
+- Ctrl+C cancels through the command's cancellation token and runs the same `finally`. A `SIGKILL` or power loss leaves a `bower-policy-preview-*` directory holding redacted synthetic rows. The preview never deletes anything outside its own root and the sweep below.
+- Start-up sweep (decision Q4, 2026-11-13). Before it creates its own root, the preview lists the top level of the temp path and deletes a directory only when all of these hold: the name matches `bower-policy-preview-*`; it is a real directory, not a symbolic link or junction (checked without following links); its owner is the current user (Unix uid, Windows owner SID); its last write time is more than 24 h before now; and no preview is still using it. Age alone cannot show that: writes to `baseline/queue.db` and `candidate/queue.db` do not update the root's last write time, and a run can last, or be suspended for, more than 24 h. So each run, straight after creating its root and before any database is opened, creates `preview.lock` in the root and holds it open with an exclusive lock (`FileShare.None`) until cleanup. The operating system releases the lock when the process exits, including after `SIGKILL`. The sweep opens `preview.lock` with `FileShare.None` and leaves the directory alone if that open fails because the file is in use. A directory without `preview.lock` is judged on the other checks only. Deletion is recursive but does not follow links inside the directory. A directory that fails any check is left alone. A failed delete is a warning on stderr and does not stop the run. Apart from trying the lock, the sweep never reads the contents.
 
 ### What preview does not model
 
@@ -260,6 +271,9 @@ Unit tests drive an internal entry point that takes loaded bundles, parsed scena
 | C1 | Cleanup | The work root is gone after success, scenario error, bundle load failure, limit failure, capacity failure and cancellation |
 | C2 | Cleanup | `--database`, `--queue` and any unknown option are exit 1. No file is created outside the work root (the working directory listing is unchanged) |
 | C3 | Cleanup | On Unix, the root is 0700 and the queue files are 0600 |
+| C4 | Stale sweep | Matching directories older than 24 h owned by the current user are removed. Ones 23 h old, owned by another user (or with a different owner SID on Windows), with another prefix, or that are symbolic links, or junctions on Windows, are kept. A link inside a stale directory, or a junction on Windows, is removed without touching its target |
+| C5 | Stale sweep | A delete failure (for example a read-only file) is a stderr warning, the run continues, and stdout is unchanged |
+| C6 | Stale sweep | Two concurrent previews: the first holds `preview.lock` and its root's last write time is set more than 24 h back. The second preview's sweep keeps that root, and the first completes with unchanged stdout. After the first process is killed, its lock is released and the next sweep removes the root |
 | W1 | Windows private root | On the `windows-latest` CI job, with a `BOWER_REQUIRE_*` variable so a skip fails there (pattern `tests/Bower.UnitTests/WindowsSettingsFileTests.cs:15-20`): the root's ACL is protected, grants only SYSTEM, Administrators and the current user, and each side database inherits it. A forced ACL check failure (test seam) is exit 1 before any database file exists, with the root removed and stdout empty |
 | I1 | Input strictness | Unknown property, duplicate property, null, absolute path, `..`, symbolic link component, bad time format, `dataClassification` other than `synthetic`, duplicate step id: each is exit 1 |
 | L1 | Labelling | Output has `simulated: true` and `kind: PolicyPreview`, and no ledger, signature or path fields |
@@ -286,7 +300,9 @@ The recommended design makes no change to `src/Bower.Persistence`. If implementa
 - Behaviour on Windows (file handles kept open after `ClearAllPools`, and whether SQLite's `-wal` and `-shm` files inherit the root's protected ACL) is not verified (test W1).
 - That one drain call at `end + 86,400 s` reports every suppressed open window is argued from the close query and the key limit, not run (test R5).
 - Whether `System.Text.Json` in this target framework can refuse duplicate properties under the CLI's source-generated context is not confirmed. If it cannot, the scenario reader needs a pre-scan with `Utf8JsonReader`.
-- Residue after `SIGKILL` cannot be prevented, only bounded (redacted synthetic data in an owner-only directory).
+- Residue after `SIGKILL` cannot be prevented, only bounded (redacted synthetic data in an owner-only directory, removed by the next run's sweep once older than 24 h). If the preview never runs again, the residue stays.
+- That last write time and owner checks behave the same on every supported file system (including network home directories and Windows junctions) is not verified (tests C4 and C5).
+- That `FileShare.None` gives an exclusive lock that another process sees on every supported Unix file system is not verified (.NET uses advisory locks there, which some network file systems do not honour). Test C6 covers local file systems only.
 - The `dataClassification` attestation cannot prove the input is synthetic.
 - A preview result is not evidence of production behaviour under real traffic, capacity or delivery. It shows what the production code does for the given ordered synthetic steps.
 
@@ -302,14 +318,16 @@ The recommended design makes no change to `src/Bower.Persistence`. If implementa
 
 ## Open questions
 
-1. Is a `dataClassification: synthetic` attestation enough, or should the product owner require something stronger (for example a required `labels.synthetic` on every event)?
+Questions 1, 4 and 8 are decided. See [Decisions (2026-11-13)](#decisions-2026-11-13).
+
+1. **Decided (Q1):** the attestation is enough. Is a `dataClassification: synthetic` attestation enough, or should the product owner require something stronger (for example a required `labels.synthetic` on every event)?
 2. Is a process-wide `SqliteConnection.ClearAllPools()` acceptable in the CLI? The preview is the only SQLite user in that process. The alternative is a store disposal API, which would be a queue change.
 3. Is 10,000 steps per side the right ceiling once the fsync cost is measured?
-4. Should the preview sweep its own stale `bower-policy-preview-*` directories (same user, older than 24 hours) at start, or leave them for the operator?
+4. **Decided (Q4):** sweep at start, same user, older than 24 h. Should the preview sweep its own stale `bower-policy-preview-*` directories (same user, older than 24 hours) at start, or leave them for the operator?
 5. Should a later slice model several producers (source adapters) or clock step-back (`tests/Bower.UnitTests/SuppressionTests.cs:182-209`)? Both are excluded from the first slice.
 6. Resolved: on Windows the root gets a protected owner-only ACL, checked before any database is written, or the run fails (test W1). Open: should the queue itself later set an ACL on Windows? That would be a queue change.
 7. Should windows that only admitted events (no suppression, so no close callback) appear in `windows`? The first slice reports them through step outcomes only. Reporting them would need a read-only window-listing API in `Bower.Persistence`, a scoped queue change that needs the adversarial and crash tests above first.
-8. Is it acceptable that a report cannot be tied to its input bytes? If not, a later slice could add an operator-supplied HMAC key for an input digest, at the cost of key handling and of reports with different keys not being comparable.
+8. **Decided (Q8):** accepted for the first slice. Is it acceptable that a report cannot be tied to its input bytes? If not, a later slice could add an operator-supplied HMAC key for an input digest, at the cost of key handling and of reports with different keys not being comparable.
 
 ## Delivery notes
 

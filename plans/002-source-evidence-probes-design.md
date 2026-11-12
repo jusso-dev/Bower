@@ -1,15 +1,16 @@
 # Design 002: Next source-specific evidence probe
 
-**Status:** DESIGN (for review; not implemented) · **Date:** 2026-11-12 · **Commit:** `64859aa7d620cec2538aa74fed647e4076e83490` · **Plan:** [002-source-evidence-probes.md](002-source-evidence-probes.md)
+**Status:** DESIGN (for review; not implemented). Product owner decisions recorded 2026-11-13. · **Date:** 2026-11-12, decisions 2026-11-13 · **Commit:** `64859aa7d620cec2538aa74fed647e4076e83490` · **Plan:** [002-source-evidence-probes.md](002-source-evidence-probes.md)
 
 ## Decision
 
 Add one opt-in parser probe, `parser:windows-security-logon:0`, with the repo-owned
 synthetic fixture `windows-security-logon/security-4625/network-logon-failure@1`.
-It reuses the existing runner, outcome vocabulary and bundle shape unchanged. The only
-additive behaviour is one extra `untestedPaths` entry and one limitation line that name the
-Windows native transport the probe does not exercise. Both appear only on bundles for this
-profile.
+It reuses the existing runner, outcome vocabulary and bundle shape unchanged. The additive
+behaviour, all opt-in per fixture and so only on bundles for this profile, is: one extra
+`untestedPaths` entry and one limitation line that name the Windows native transport the
+probe does not exercise; an expected policy id check; two extra destination columns; and a
+pack version mismatch limitation (decisions Q1–Q3, 2026-11-13).
 
 A `verified` bundle for this profile proves one thing: one synthetic 4625-shaped JSON record
 posted to `POST /v1/packs/windows-security-logon/parsers/0/events` passed that signed
@@ -21,6 +22,18 @@ Event Log, cloud queue, file tail or any sender).
 
 `linux-authlog-ssh:0` is the runner-up and the recommended next increment once this one is
 qualified.
+
+## Decisions (2026-11-13)
+
+All follow the design's recommendation or the opt-in shape it described. Open questions 1–3
+are decided; 4 and 5 stay open.
+
+| ID | Question | Choice | Consequence |
+|---|---|---|---|
+| P0 | Which probe comes next | `parser:windows-security-logon:0` | As specified in this design |
+| Q1 | Assert more destination columns | Also check `ApplicationName` and `EventOutcomeReason`, opt-in per fixture | New init-only fixture properties `ExpectedApplicationName` and `ExpectedOutcomeReason` (default `null`). Set to `windows-security` and `InvalidCredentials` for the Windows fixture. When set, the KQL projects the columns and a mismatch gives `destination-wrong-event`. `linux-ssh-gateway` KQL and bundle bytes stay unchanged |
+| Q2 | Assert the selecting policy | The fixture names its expected policy id. If another policy selected the event, the result is `policy-not-selected` | New init-only property `ExpectedPolicyId` (default `null`), `BWR-PACK-WIN-LOGON-FAILURE` for the Windows fixture. Checked against `eventPolicyId` from the intake response, before any destination query |
+| Q3 | Pack version outside the qualified one | Flag it as a limitation in the bundle. The run still goes ahead | New init-only property `QualifiedPackVersion` (default `null`), `1.0.2` for the Windows fixture. A different reported `packVersion` adds a `PACK VERSION MISMATCH` limitation. The outcome is unchanged, so a mismatched run can still verify |
 
 ## Drift check (step 1)
 
@@ -189,18 +202,24 @@ Rules:
 
 ### Destination query match
 
-The parser-probe KQL is unchanged (`EvidenceRunner.cs:368-370`). It verifies only when the
-row has:
+The parser-probe KQL (`EvidenceRunner.cs:368-370`) is unchanged for fixtures that do not opt in.
+It verifies only when the row has:
 
 - `EventId` equal to the probe id;
 - `EventType` equal to `authentication_failure`;
 - `PolicyHash` equal to the `eventPolicyHash` from the intake response.
 
-The bundle records `eventPolicyId`, which should be `BWR-PACK-WIN-LOGON-FAILURE`. Expected
-but **not asserted** columns (see open question 1): `ApplicationName` `windows-security`,
-`EventOutcomeReason` `InvalidCredentials` (from `0xc000006a`, `security-4625.json:32,37`),
-`SourceIpAddress` `192.0.2.10`, `ActorUsername` a non-empty `hmac-sha256:<keyId>:<hex>` value
-(`src/Bower.Redaction/KeyedFieldHasher.cs:25-26`).
+For this fixture (decisions Q1 and Q2, 2026-11-13) it also requires:
+
+- `eventPolicyId` from the intake response equal to `BWR-PACK-WIN-LOGON-FAILURE`, checked
+  before any query. Any other policy id gives `policy-not-selected`;
+- `ApplicationName` equal to `windows-security` and `EventOutcomeReason` equal to
+  `InvalidCredentials` (from `0xc000006a`, `security-4625.json:32,37`). The KQL adds these
+  columns to its `project` only when the fixture sets them. A mismatch gives
+  `destination-wrong-event`.
+
+Expected but **not asserted** columns: `SourceIpAddress` `192.0.2.10`, and `ActorUsername` a
+non-empty `hmac-sha256:<keyId>:<hex>` value (`src/Bower.Redaction/KeyedFieldHasher.cs:25-26`).
 
 ### Redaction expectations
 
@@ -208,7 +227,11 @@ but **not asserted** columns (see open question 1): `ApplicationName` `windows-s
   `bower-evidence-probe` must not appear in the queued payload, the database or the bundle.
   An empty username passes through unchanged (`src/Bower.Redaction/Privacy/PolicyApplicator.cs:55`)
   and a missing one becomes an empty column (`src/Bower.Dcr/SentinelSchema.cs:63`), so every
-  check must also require a non-empty HMAC value.
+  check that asserts the username must also require a non-empty HMAC value. Those checks are
+  test 14 (queued payload) and live step 3 (verifier KQL). The runner's destination match does
+  not assert `ActorUsername` for any fixture, because Q1 added only `ApplicationName` and
+  `EventOutcomeReason`, so a `verified` bundle does not show the username was pseudonymised at
+  the destination.
 - Unmapped raw keys (`channel`, `provider`, every `data.*` key) and the raw status codes are
   never forwarded (`docs/deployment/packs.md:173-174`,
   `docs/security/pack-runtime-catalogue.md:70-72`).
@@ -240,8 +263,9 @@ but **not asserted** columns (see open question 1): `ApplicationName` `windows-s
   must be re-qualified before the policy review date of 30-06-2027
   (`windows-logon-failure.yaml:9`) or on any pack, policy or privacy-profile version change,
   whichever comes first. The fixture test (below) fails CI on parse drift. The runner
-  records the collector's actual `packVersion`, but does not refuse a different version (see
-  open question 3).
+  records the collector's actual `packVersion`. A version other than `1.0.2` adds the
+  limitation `PACK VERSION MISMATCH: collector reported <version>; fixture qualified against
+  1.0.2.` The run still goes ahead (decision Q3).
 - **Rows:** probe rows are real `authentication_failure` rows kept for the table's
   retention. Analysts exclude them with `EventId startswith "bower-probe-"`
   (`docs/operations/evidence-bundles.md:157-158`).
@@ -266,18 +290,25 @@ that parser's HTTP intake works", so it does not imply the native source.
 
 ## Implementation scope (bounded)
 
-1. `src/Bower.Evidence/ParserProbe.cs`: add the `NativePathNotTested` property, the
-   `WindowsSecurityLogon` fixture and append it to `All`.
+1. `src/Bower.Evidence/ParserProbe.cs`: add the init-only properties `NativePathNotTested`,
+   `ExpectedPolicyId`, `ExpectedApplicationName`, `ExpectedOutcomeReason` and
+   `QualifiedPackVersion` (all default `null`), the `WindowsSecurityLogon` fixture with all
+   five set, and append it to `All`.
 2. `src/Bower.Evidence/EvidenceRunner.cs`: append the native entry and limitation only when
-   `fixture.NativePathNotTested` is non-null. Make no other change: no KQL, outcome or
-   classification edits.
+   `fixture.NativePathNotTested` is non-null. When `ExpectedPolicyId` is set, compare it with
+   `eventPolicyId` and give `policy-not-selected` on a mismatch, without a query. When
+   `ExpectedApplicationName` or `ExpectedOutcomeReason` is set, add those columns to the
+   probe KQL `project` and map a mismatch to `destination-wrong-event`. When
+   `QualifiedPackVersion` is set and differs from the reported `packVersion`, add the
+   `PACK VERSION MISMATCH` limitation. No new outcomes, and no change for fixtures that leave
+   these properties `null`.
 3. `src/Bower.Management.Api/SetupEndpoints.cs:180`: change the description wording.
 4. `docs/operations/evidence-bundles.md:93-103`: add the table row and the native-transport
    statement. Also update `src/Bower.Evidence/AGENTS.md`, `docs/operations/console-onboarding.md:20`
    and `docs/operations/console-sources.md` (Windows section) to mention the profile.
 5. Tests as listed below.
 
-Out of scope: new outcomes, KQL projection changes, scheduling, native-transport probes,
+Out of scope: new outcomes, KQL projection changes for fixtures that do not opt in, scheduling, native-transport probes,
 console UI changes beyond the description string.
 
 ## Tests (step 4)
@@ -304,9 +335,12 @@ SampleFile)` tuple in place of the `Profile` and `Source` constants
 | 13 | Non-Sentinel output | `:329-363` and `HttpOutputEvidenceTests.cs:15-45` with the Windows profile (`s3`, `http`, a future output, `unknown`) | `collector-output-not-sentinel`, zero records, `NOT SENTINEL` limitation |
 | 14 | Exact destination match | A real collector with the signed Windows pack and `QueueDestination` (`:82-125`) | `verified`; `eventPolicyId` `BWR-PACK-WIN-LOGON-FAILURE`; workspace and table recorded; queued payload lacks `bower-evidence-probe` and every `data.` key; queued `actor.username` is non-empty and equals `KeyedFieldHasher.Hash("bower-evidence-probe", "k1")` with the test key (`:632`); a different workspace gives `destination-row-missing` |
 | 15 | Native-transport marking | The Windows bundle has six `untestedPaths` (the last is the native entry) and the `NOT NATIVE TRANSPORT` limitation. The `linux-ssh-gateway` bundle has exactly the five static entries and no such limitation. | Pass |
-| 16 | Generic bytes unchanged | Generic bundle has no `probe`, uses the same KQL text as `EvidenceRunner.cs:487-489` and the same limitations. `linux-ssh-gateway` KQL and limitations are unchanged. | Pass |
+| 16 | Generic bytes unchanged | Generic bundle has no `probe`, uses the same KQL text as `EvidenceRunner.cs:487-489` and the same limitations. `linux-ssh-gateway` KQL, limitations and outcome checks are unchanged, because it sets none of the new properties. | Pass |
 | 17 | Bundle metadata only | `:531-559` with the Windows profile: signed, verifiable, contains none of the token, `bower-evidence-probe`, `192.0.2.10` or `"data.` | Pass |
 | 18 | Console | `SetupApiTests` asserts `ProbeOptions` contains `parser:windows-security-logon:0` and that saving it is audited (pattern at `tests/Bower.UnitTests/SetupApiTests.cs:64,120-142`). | Pass |
+| 19 | Expected policy id (Q2) | Intake 202 with `eventPolicyId` of another policy (for example a test policy sorting before `BWR-PACK-WIN-LOGON-FAILURE`) | `policy-not-selected`, no destination query, `failed` |
+| 20 | Extra columns (Q1) | Destination row with the right id, type and hash but `ApplicationName` `other` or `EventOutcomeReason` `UnknownUser` | `destination-wrong-event`. The Windows probe KQL projects `ApplicationName` and `EventOutcomeReason`; the `linux-ssh-gateway` KQL text is unchanged (test 16) |
+| 21 | Pack version (Q3) | Status reports `packVersion` `1.0.3` | `PACK VERSION MISMATCH` limitation present; the run proceeds and can still verify. With `1.0.2`, no such limitation |
 
 Note for test 4 to 8: `Start` drops `raw` samples from regressed packs because they would
 fail signing (`ParserProbeEvidenceTests.cs:622-625`). Every Windows sample is `raw`, so the
@@ -369,7 +403,7 @@ No live run is part of this design.
 - Any non-accepting intake response, wrong id, duplicate, suppression or `queued: false`
   means no destination query runs and the mode is `failed`.
 - Only `PollProbeAsync` can return `verified`, and only for an exact id, type and hash
-  match. Acceptance alone, a simulated run, a permission error, a timeout or an
+  match, plus the opted-in columns and policy id for fixtures that set them. Acceptance alone, a simulated run, a permission error, a timeout or an
   incomplete/invalid last answer never verifies.
 - A fixture that stops parsing against the shipped pack fails CI (test 3). That forces a
   versioned fixture change, never a silent edit.
@@ -393,10 +427,14 @@ No live run is part of this design.
   WEF/WEC, other 4625 status codes or logon types, other packs, `/v1/events`, upstream
   agents, relay downstream outputs, other replicas' pack builds, or delivery of any real
   event.
-- `eventPolicyId` is recorded but not asserted. On a collector whose policy directory holds
-  another policy that sorts before `BWR-PACK-WIN-LOGON-FAILURE` and matches
-  `authentication_failure`, that other policy would select the probe and the run would still
-  verify.
+- `eventPolicyId` is now asserted for this fixture (Q2), so another selecting policy fails the
+  run. It stays unasserted for `linux-ssh-gateway`, which does not set `ExpectedPolicyId`.
+- A run against a pack version other than 1.0.2 can still verify (Q3). The bundle flags it,
+  but the fixture is not qualified for that version.
+- That `ApplicationName` and `EventOutcomeReason` arrive as expected at the destination is
+  asserted per run (Q1), but not yet shown live.
+- That `ActorUsername` arrives as a non-empty `hmac-sha256:` value is not asserted by the
+  runner. Only test 14 (queued payload) and live step 3 (verifier KQL) check it.
 
 ## STOP-condition assessment
 
@@ -411,13 +449,15 @@ No STOP condition is hit.
 
 ## Open questions
 
-1. Should parser probes also assert `ApplicationName` and `EventOutcomeReason` at the
+Questions 1–3 are decided. See [Decisions (2026-11-13)](#decisions-2026-11-13).
+
+1. **Decided (Q1):** opt-in per fixture. Should parser probes also assert `ApplicationName` and `EventOutcomeReason` at the
    destination? That would catch lookup-table and mapping regressions the type check misses.
    To keep `linux-ssh-gateway` bundle bytes, any extra projection would have to be opt-in per
    fixture and map to the existing `destination-wrong-event`.
-2. Should a fixture declare its expected policy id and fail (as `policy-not-selected`) when
+2. **Decided (Q2):** yes, as `policy-not-selected`. Should a fixture declare its expected policy id and fail (as `policy-not-selected`) when
    another policy selected it? Today any first-matching policy verifies.
-3. Should the runner refuse or flag a collector `packVersion` outside the fixture's qualified
+3. **Decided (Q3):** flag as a limitation and proceed. Should the runner refuse or flag a collector `packVersion` outside the fixture's qualified
    version? Today it is only recorded.
 4. A native-transport probe (for example a synthetic event on a dedicated Windows test channel,
    or a probe line in a file-tail input) needs its own design. It is out of scope here.
