@@ -110,6 +110,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # zizmor: ignore[cache-poisoning] test-only dependencies; no release artifacts leave this job
         with:
+          # The .NET 10 runtime runs the net10.0 build of the consumer libraries (Bower.Sdk, Bower.Contracts).
+          dotnet-version: 10.0.x
           global-json-file: global.json
           cache: true
           cache-dependency-path: '**/packages.lock.json'
@@ -122,6 +124,10 @@ jobs:
       - run: dotnet test --solution Bower.sln --configuration Release --no-build
         env:
           BOWER_EXPECTED_VERSION: ${{ needs.version.outputs.version }}
+      - name: Bower.Sdk and Bower.Contracts work on .NET 10 and .NET 11
+        run: |
+          dotnet run --project tests/Bower.Sdk.Compatibility --configuration Release --no-build --framework net10.0
+          dotnet run --project tests/Bower.Sdk.Compatibility --configuration Release --no-build --framework net11.0
       - name: The CLI and the collector report the stamped version
         env:
           BOWER_VERSION: ${{ needs.version.outputs.version }}
