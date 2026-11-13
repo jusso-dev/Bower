@@ -641,7 +641,7 @@ public sealed class CloudForwarderWorkerTests
 
     private static CloudMessage Message(string id, string body) => new(id, $"handle-{id}", Encoding.UTF8.GetBytes(body), 1);
 
-    private static string EventId(string json) => JsonDocument.Parse(json).RootElement.GetProperty("eventId").GetString()!;
+    private static string EventId(string json) => JsonElement.Parse(json).GetProperty("eventId").GetString()!;
 
     private static CloudAgentSettings Settings() =>
         new()

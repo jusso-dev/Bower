@@ -1,6 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <Description>Immutable Bower security event contracts.</Description>
+    <!-- Consumer-facing library: also built for .NET 10 LTS so applications not yet on .NET 11
+         can reference it. The rest of Bower targets .NET 11 only. -->
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
+    <TargetFramework></TargetFramework>
     <PackageId>Bower.Contracts</PackageId>
   </PropertyGroup>
 </Project>

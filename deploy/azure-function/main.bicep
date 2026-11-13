@@ -228,7 +228,7 @@ resource site 'Microsoft.Web/sites@2024-04-01' = {
       }
       runtime: {
         name: 'dotnet-isolated'
-        version: '10.0'
+        version: '11.0'
       }
     }
   }

@@ -28,7 +28,7 @@ release tag (`~dev.<n>` / `~rc.<n>` in deb and rpm naming). The MSI ProductVersi
 `MAJOR.MINOR.<run number>`. Each run also uploads `bower-upgrade-test-linux` and
 `bower-upgrade-test-windows`: the same binaries packaged as `<VERSION>-dev.0` for the upgrade
 tests below. They are test fixtures, never releases. The Linux binaries need glibc 2.34 or later: Ubuntu 22.04+, Debian 12+, RHEL,
-Rocky and AlmaLinux 9+. Windows needs a version .NET 10 supports (x64 or arm64).
+Rocky and AlmaLinux 9+. Windows needs a version .NET 11 supports (x64 or arm64).
 
 ## What the packages install
 

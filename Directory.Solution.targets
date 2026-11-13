@@ -1,0 +1,13 @@
+<Project>
+  <!-- Azure.Functions.Sdk generates and restores the Functions host extension project in a
+       post-restore hook that runs only when Bower.Functions.Collector is restored directly.
+       `dotnet restore Bower.sln` would skip it and the build would fall back to a restore at
+       build time (AZFW0108). This walks ProjectReference items so the hook runs on solution
+       restore. https://learn.microsoft.com/azure/azure-functions/errors-diagnostics/msbuild-sdk-rules/azfw0108 -->
+  <Target Name="_RecursiveGenerateFunctionsExtensionProject" AfterTargets="Restore">
+    <MSBuild Projects="@(ProjectReference)" Targets="_RecursiveGenerateFunctionsExtensionProject"
+      SkipNonexistentProjects="true" SkipNonexistentTargets="true" />
+    <MSBuild Projects="@(ProjectReference)" Targets="GenerateFunctionsExtensionProject"
+      SkipNonexistentProjects="true" SkipNonexistentTargets="true" />
+  </Target>
+</Project>

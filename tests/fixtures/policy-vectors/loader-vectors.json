@@ -537,7 +537,7 @@
  {
   "name": "f34-seq-for-string.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: [a, b]\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'f34-seq-for-string.yaml' is invalid at line 5: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'f34-seq-for-string.yaml' is invalid at line 5: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=11.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
  },
  {
   "name": "f35-map-for-list.yaml",
@@ -669,12 +669,12 @@
  {
   "name": "h05.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name:\n    [a, b]\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h05.yaml' is invalid at line 6: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'h05.yaml' is invalid at line 6: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=11.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
  },
  {
   "name": "h06.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - [a]\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'h06.yaml' is invalid at line 10: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'h06.yaml' is invalid at line 10: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=11.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
  },
  {
   "name": "h07.yaml",
@@ -954,7 +954,7 @@
  {
   "name": "i02.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\n    - x\n    - [b]\nrequirements:\n  requiredFields:\n    - eventType\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i02.yaml' is invalid at line 12: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'i02.yaml' is invalid at line 12: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=11.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
  },
  {
   "name": "i03.yaml",
@@ -1016,7 +1016,7 @@
  {
   "name": "i14.yaml",
   "yaml": "apiVersion: bower.security/v1\nkind: TelemetryPolicy\nmetadata:\n  id: BWR-POL-TEST\n  name: Test policy\n  version: 1.0.0\n  owner: Test\nmatch:\n  eventTypes:\n    - authentication_failure\nrequirements:\n  requiredFields:\n    - eventType\nrouting:\n  profile: [a]\ndecision:\n  action: accept\n  minimumValueScore: 1\n  neverSample: true\n",
-  "csharp": "ERR Policy 'i14.yaml' is invalid at line 15: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=10.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
+  "csharp": "ERR Policy 'i14.yaml' is invalid at line 15: No node deserializer was able to deserialize the node into type System.String, System.Private.CoreLib, Version=11.0.0.0, Culture=neutral, PublicKeyToken=7cec85d7bea7798e"
  },
  {
   "name": "i15.yaml",

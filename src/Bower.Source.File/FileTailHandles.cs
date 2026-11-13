@@ -256,6 +256,9 @@ public sealed class FileTailHandle : IDisposable
 /// Linux opens through libc, as the settings loader does: <c>O_NOFOLLOW | O_NONBLOCK</c>,
 /// then <c>statx</c> on the handle (a regular file) and on the path without following links
 /// (same device and inode), so a link or another file swapped in after validation is refused.
+/// <c>O_NONBLOCK</c> only keeps the open itself from blocking on a FIFO or device; once the
+/// handle is a verified regular file it is cleared, because .NET 11 treats a descriptor with it
+/// set as asynchronous and its <see cref="FileStream"/> then reads nothing after a positioned read.
 /// </summary>
 internal static partial class LinuxTailFile
 {
@@ -266,6 +269,8 @@ internal static partial class LinuxTailFile
     private const int EmptyPath = 0x1000;
     private const int SymlinkNoFollow = 0x100;
     private const uint TypeAndInode = 0x1 | 0x100;
+    private const int GetStatusFlags = 3;
+    private const int SetStatusFlags = 4;
     private const ushort TypeMask = 0xf000;
     private const ushort RegularType = 0x8000;
 
@@ -320,12 +325,23 @@ internal static partial class LinuxTailFile
                 throw new FileTailRefusedException();
             }
 
+            ClearNonBlock(handle);
             return (new FileStream(handle, FileAccess.Read, 4_096), Id(opened));
         }
         catch
         {
             handle.Dispose();
             throw;
+        }
+    }
+
+    /// <summary>Clears <c>O_NONBLOCK</c> on a verified regular file, or fails the read (fail closed).</summary>
+    private static void ClearNonBlock(SafeFileHandle handle)
+    {
+        int flags = Fcntl(handle, GetStatusFlags, 0);
+        if (flags < 0 || ((flags & NonBlock) != 0 && Fcntl(handle, SetStatusFlags, flags & ~NonBlock) != 0))
+        {
+            throw new IOException(FileTailFailures.ReadFailed);
         }
     }
 
@@ -359,6 +375,9 @@ internal static partial class LinuxTailFile
 
     [LibraryImport("libc", EntryPoint = "open", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int OpenNative(string path, int flags);
+
+    [LibraryImport("libc", EntryPoint = "fcntl", SetLastError = true)]
+    private static partial int Fcntl(SafeFileHandle descriptor, int command, int argument);
 
     [LibraryImport("libc", EntryPoint = "statx", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
     private static partial int StatxHandle(SafeFileHandle descriptor, string path, int flags, uint mask, out Statx buffer);

@@ -1,6 +1,6 @@
 # Bower.Functions.Collector instructions
 
-Serverless Bower collector on Azure Functions (isolated worker, .NET 10, Flex
+Serverless Bower collector on Azure Functions (isolated worker, .NET 11, Flex
 Consumption). Same `/v1/events` contract as `Bower.Collector`, no durable queue.
 
 - `CollectorFunctions` is a thin HTTP trigger adapter; logic lives in the
@@ -20,3 +20,8 @@ Consumption). Same `/v1/events` contract as `Bower.Collector`, no durable queue.
 - Logs Ingestion uses exactly one managed identity credential (system-assigned unless
   `BOWER_AZURE_CLIENT_ID` names a user-assigned identity). No secrets or chains.
 - Bound every input: 1 MiB body, 16 KiB token, delivery timeout, SDK retries.
+- Build SDK: `Azure.Functions.Sdk` (pinned under `msbuild-sdks` in `global.json`; .NET 11
+  needs 1.0.1 or later) replaces `Microsoft.Azure.Functions.Worker.Sdk`. Keep the explicit
+  `Microsoft.Azure.Functions.Worker` reference. Its post-restore hook generates the host
+  extension project; `Directory.Solution.targets` runs it for `dotnet restore Bower.sln`
+  (AZFW0108). Keep the Bicep `dotnet-isolated` version equal to the target framework.

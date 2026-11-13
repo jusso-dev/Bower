@@ -24,7 +24,7 @@ public sealed partial class AsvsExampleContractTests
     {
         foreach (string line in File.ReadLines(Path.Combine(Root, "expected.jsonl")))
         {
-            JsonElement row = JsonDocument.Parse(line).RootElement;
+            JsonElement row = JsonElement.Parse(line);
             if (!row.TryGetProperty("clientIp", out _))
             {
                 yield return row;
@@ -234,7 +234,7 @@ public sealed partial class AsvsExampleContractTests
         {
             Assert.Contains(from, good, StringComparison.Ordinal);
             List<string> errors = [];
-            Validate(JsonDocument.Parse(good.Replace(from, to, StringComparison.Ordinal)).RootElement, schema.RootElement, schema.RootElement, "$", errors);
+            Validate(JsonElement.Parse(good.Replace(from, to, StringComparison.Ordinal)), schema.RootElement, schema.RootElement, "$", errors);
             Assert.NotEmpty(errors);
         }
     }

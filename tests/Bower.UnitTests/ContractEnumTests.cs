@@ -80,5 +80,5 @@ public sealed class ContractEnumTests
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize(json, BowerJson.Envelope));
     }
 
-    private static JsonTypeInfo<T> TypeInfo<T>() => (JsonTypeInfo<T>)BowerJson.Options.GetTypeInfo(typeof(T));
+    private static JsonTypeInfo<T> TypeInfo<T>() => BowerJson.Options.GetTypeInfo<T>();
 }

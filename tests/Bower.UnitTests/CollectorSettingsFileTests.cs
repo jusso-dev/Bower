@@ -182,6 +182,12 @@ public sealed class CollectorSettingsFileTests
         File.WriteAllText(file, "BOWER_OUTPUT=none");
         File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         Assert.NotNull(CollectorSettingsFile.Load(file));
+        using (FileStream opened = LinuxSettingsFile.Open(file))
+        {
+            // Opened with O_NONBLOCK; the regular file must come back as a synchronous stream.
+            Assert.False(opened.IsAsync);
+            Assert.Equal("BOWER_OUTPUT=none", new StreamReader(opened).ReadToEnd());
+        }
 
         string link = Path.Combine(directory.Path, "linked");
         Directory.CreateSymbolicLink(link, child);

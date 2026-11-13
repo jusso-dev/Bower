@@ -11,7 +11,7 @@ for tag in 264 277; do
   if [ $tag = 264 ]; then tar -C "$d" -xzf /opt/bower-lab/old-linux-x64.tar.gz; else tar -C "$d" -xzf /opt/bower-lab/pr-linux-x64.tar.gz collector; fi
   rm -f "$d"/collector/*.dbg
   cat >"$d/Dockerfile" <<'DOCKER'
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0.14-noble-chiseled
+FROM mcr.microsoft.com/dotnet/runtime-deps:11.0.0-resolute-chiseled
 WORKDIR /app
 COPY collector/ /app/
 COPY --chown=1654:1654 state/ /var/lib/bower/

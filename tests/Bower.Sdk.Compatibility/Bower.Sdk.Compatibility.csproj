@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Bower.Sdk and Bower.Contracts ship for net10.0 and net11.0 (applications on .NET 10 LTS).
+       This check runs both builds with `dotnet run -f <tfm>`; CI installs the .NET 10 runtime for it.
+       A console app, not xUnit: xUnit v3 needs an app host, and the .NET 11 SDK does not restore
+       the net10.0 one. Exits non-zero on the first failed check. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
+    <TargetFramework></TargetFramework>
+    <UseAppHost>false</UseAppHost>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Pinned here, not in Directory.Packages.props: a central pin would also pin the transitive
+         copy in every other project and rewrite their lock files. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" VersionOverride="10.0.15" />
+    <ProjectReference Include="../../src/Bower.Sdk/Bower.Sdk.csproj" />
+  </ItemGroup>
+</Project>

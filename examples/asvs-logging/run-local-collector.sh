@@ -11,8 +11,8 @@
 set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
-bin="$root/src/Bower.Cli/bin/Release/net10.0/bower"
-collector="$root/src/Bower.Collector/bin/Release/net10.0/Bower.Collector"
+bin="$root/src/Bower.Cli/bin/Release/net11.0/bower"
+collector="$root/src/Bower.Collector/bin/Release/net11.0/Bower.Collector"
 work=$(mktemp -d "${TMPDIR:-/tmp}/bower-asvs.XXXXXX")
 trap 'rm -rf "$work"' EXIT
 

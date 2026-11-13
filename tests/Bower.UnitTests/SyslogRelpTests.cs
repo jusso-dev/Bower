@@ -21,7 +21,7 @@ public sealed class SyslogRelpTests
 
     private static string Fixtures => Path.Combine(AppContext.BaseDirectory, "syslog-vectors");
 
-    private static JsonElement Vectors => JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "relp-vectors.json"))).RootElement;
+    private static JsonElement Vectors => JsonElement.Parse(File.ReadAllText(Path.Combine(Fixtures, "relp-vectors.json")));
 
     public static TheoryData<string, int> Chunks => new() { { "whole", 1 << 20 }, { "bytes", 1 }, { "sevens", 7 } };
 
@@ -156,7 +156,7 @@ public sealed class SyslogRelpTests
         static string Id(byte[] frame, DateTimeOffset at)
         {
             Assert.True(SyslogParser.TryParse(frame, at, out SyslogMessage? message, out _));
-            return JsonDocument.Parse(SyslogRecord.Build(message!, frame, "edge", "relp", "10.0.0.1", at)).RootElement.GetProperty("id").GetString()!;
+            return JsonElement.Parse(SyslogRecord.Build(message!, frame, "edge", "relp", "10.0.0.1", at)).GetProperty("id").GetString()!;
         }
     }
 
@@ -207,7 +207,7 @@ public sealed class SyslogRelpTests
         await client.WriteAsync("5 close 0\n", cancellation);
         Assert.Equal("5 rsp 0\n", await client.ReadFrameAsync(cancellation));
         Assert.Null(await client.ReadFrameAsync(cancellation));
-        JsonElement record = JsonDocument.Parse(Assert.Single(sink.Records)).RootElement;
+        JsonElement record = JsonElement.Parse(Assert.Single(sink.Records));
         Assert.Equal("relp", record.GetProperty("protocol").GetString());
         Assert.Equal("accepted", record.GetProperty("message").GetString());
         SyslogListenerStatus status = await WaitFor(source, value => value.ActiveConnections == 0, cancellation);
@@ -348,7 +348,7 @@ public sealed class SyslogRelpTests
         }
 
         Assert.Equal(128, sink.Records.Count);
-        Assert.Equal("window 127", JsonDocument.Parse(sink.Records[127]).RootElement.GetProperty("message").GetString());
+        Assert.Equal("window 127", JsonElement.Parse(sink.Records[127]).GetProperty("message").GetString());
 
         static string CultureInfo(int value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
     }
@@ -402,7 +402,7 @@ public sealed class SyslogRelpTests
             Assert.Equal($"{transaction} rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
         }
 
-        Assert.Equal("fits", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("message").GetString());
+        Assert.Equal("fits", JsonElement.Parse(Assert.Single(sink.Records)).GetProperty("message").GetString());
         Assert.Equal(3, source.Snapshot()[0].Oversized);
     }
 
@@ -447,7 +447,7 @@ public sealed class SyslogRelpTests
         Assert.Null(await client.ReadFrameAsync(cancellation));
         client.Shutdown();
         await stopping;
-        Assert.Equal(["before stop", "in flight"], sink.Records.Select(record => JsonDocument.Parse(record).RootElement.GetProperty("message").GetString()!));
+        Assert.Equal(["before stop", "in flight"], sink.Records.Select(record => JsonElement.Parse(record).GetProperty("message").GetString()!));
         SyslogListenerStatus status = source.Snapshot()[0];
         Assert.Equal((1, 1, 1), (status.RelpAcknowledged, status.RelpServerCloses, status.DrainedFrames));
     }
@@ -538,7 +538,7 @@ public sealed class SyslogRelpTests
         await client.OpenAsync(cancellation);
         await client.SendAsync(2, "<38>Oct 11 22:14:15 gw01 sshd: over mutual tls", cancellation);
         Assert.Equal("2 rsp 6 200 OK\n", await client.ReadFrameAsync(cancellation));
-        Assert.Equal("relp", JsonDocument.Parse(Assert.Single(sink.Records)).RootElement.GetProperty("protocol").GetString());
+        Assert.Equal("relp", JsonElement.Parse(Assert.Single(sink.Records)).GetProperty("protocol").GetString());
 
         X509Certificate2 Load(string name)
         {
@@ -705,7 +705,7 @@ public sealed class SyslogRelpTests
 
         public async ValueTask<SyslogSubmitOutcome> SubmitAsync(SyslogListenerOptions listener, SyslogRoute route, string record, CancellationToken cancellationToken)
         {
-            JsonElement root = JsonDocument.Parse(record).RootElement;
+            JsonElement root = JsonElement.Parse(record);
             string id = root.GetProperty("id").GetString()!;
             if (Committed.ContainsKey(id))
             {

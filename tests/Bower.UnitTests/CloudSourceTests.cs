@@ -223,7 +223,7 @@ public sealed class CloudSourceTests
     public void Firehose_GzipConcatenatedPayloads_YieldOnlyEnvelopes()
     {
         string envelope = JsonSerializer.Serialize(TestEvents.AuthenticationFailure(TestEvents.Now, "app-1"), BowerJson.Options);
-        string lambdaJson = JsonSerializer.Serialize(new { timestamp = "t", level = "INFO", message = JsonDocument.Parse(envelope).RootElement });
+        string lambdaJson = JsonSerializer.Serialize(new { timestamp = "t", level = "INFO", message = JsonElement.Parse(envelope) });
         string first = Subscription("DATA_MESSAGE", envelope, "plain log line", $"2026-07-26T02:00:00Z\treq-1\tINFO\t{envelope}");
         string control = Subscription("CONTROL_MESSAGE", "CWL CONTROL MESSAGE: Checking health of destination Firehose.");
         string second = Subscription("DATA_MESSAGE", lambdaJson);
