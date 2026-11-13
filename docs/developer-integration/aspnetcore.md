@@ -4,6 +4,9 @@ Add `Bower.Sdk`, call `AddBower`, then inject `IBowerTelemetry`. Emit after
 authoritative transaction success. Emit meaningful failures when decision is
 known. Do not emit duplicate copies from controller, service and repository.
 
+`Bower.Sdk` and `Bower.Contracts` target .NET 10 (LTS) and .NET 11, so applications on either can
+reference them. The rest of Bower targets .NET 11 only.
+
 Authentication failures should contain username or user ID, safe failure reason,
 correlation ID and source IP where approved. Never attach request body,
 authorization header, cookies, submitted password or exception messages that may

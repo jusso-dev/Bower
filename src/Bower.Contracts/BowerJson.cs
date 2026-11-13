@@ -16,7 +16,11 @@ public static class BowerJson
 
     /// <summary>Envelope metadata bound to <see cref="Options"/>.</summary>
     public static JsonTypeInfo<SecurityEventEnvelope> Envelope { get; } =
+#if NET11_0_OR_GREATER
         Options.GetTypeInfo<SecurityEventEnvelope>();
+#else
+        (JsonTypeInfo<SecurityEventEnvelope>)Options.GetTypeInfo(typeof(SecurityEventEnvelope));
+#endif
 
     /// <summary>
     /// Creates read-only options with Bower wire semantics over a source-generated resolver,
