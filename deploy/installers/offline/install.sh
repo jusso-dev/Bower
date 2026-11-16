@@ -152,6 +152,9 @@ if [ -n "$token" ]; then
   unset token
 fi
 
+# The package script has just started the unit; flush the start rate counter so this
+# restart is never refused as 'start-limit-hit' (#278).
+systemctl reset-failed bower.service >/dev/null 2>&1 || true
 systemctl restart bower.service
 echo "Bower collector installed; service bower.service restarted."
 

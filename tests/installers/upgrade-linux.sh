@@ -113,7 +113,13 @@ grep -q '^BOWER_INGEST_TOKEN_FILE=' /etc/bower/bower.env || fail "rollback lost 
 [ -f /var/lib/bower/queue.db ] || fail "rollback deleted the queue"
 
 echo "-- same-version reinstall and upgrade back"
-if [ "$kind" = deb ]; then dpkg -i "$new" >/dev/null; dpkg -i "$new" >/dev/null; else rpm -U "$new"; rpm -U --replacepkgs "$new"; fi
+if [ "$kind" = deb ]; then dpkg -i "$new" >/dev/null; else rpm -U "$new"; fi
+# Back-to-back reinstalls start the unit more often than systemd's default start limit
+# (5 in 10s). Package operations must not trip it and leave the collector stopped (#278).
+for _ in 1 2 3 4 5 6; do
+  if [ "$kind" = deb ]; then dpkg -i "$new" >/dev/null; else rpm -U --replacepkgs "$new"; fi
+done
+systemctl is-active --quiet bower.service || fail "repeated reinstalls left bower.service $(systemctl is-active bower.service)"
 wait_healthy
 [ "$(package_version)" = "$(expected_package_version "$version")" ] || fail "reinstalled $(package_version)"
 [ "$(status_version)" = "$version" ] || fail "/v1/status reports $(status_version) after reinstall"
