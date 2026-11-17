@@ -1,3 +1,4 @@
+import ast
 import os
 import json
 import subprocess
@@ -7,7 +8,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from select_jobs import JOBS, changed_paths, select
+from select_jobs import GROUPS, JOBS, changed_paths, select
 
 
 class SelectionTests(unittest.TestCase):
@@ -16,12 +17,52 @@ class SelectionTests(unittest.TestCase):
 
     def test_editorial_changes_do_not_build_product(self):
         self.assertEqual(set(), self.enabled([
-            "docs/getting-started/index.md", "website/src/css/custom.css",
-            "tools/docs/check_links.py", "README.md", "website/docusaurus.config.ts",
+            "website/src/css/custom.css", "website/docusaurus.config.ts", "plans/001-expected-inventory.md",
+            "reports/s3-output-bower-s3-20261105-004926/summary.json", "DESIGN.md", "CONTRIBUTING.md",
+            ".gitignore", "AGENTS.md", ".github/dependabot.yml",
         ]))
 
+    def test_documentation_runs_the_doc_contract_unit_tests(self):
+        # ComplianceCitationTests, CliHelpTests and the Sentinel table test read these.
+        for path in ("docs/security/ism-alignment.md", "docs/reference/cli.md",
+                     "docs/reference/sentinel-table.md", "docs/security/verified/asvs-5.0.0-logging.json",
+                     "tools/docs/generate_cli_reference.py", "tools/compliance/verify_sources.py",
+                     "README.md", "PRODUCT.md", "SECURITY.md"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet"}, self.enabled([path]))
+
     def test_cloudwatch_agent_guide_runs_its_windows_steps(self):
-        self.assertEqual({"infrastructure"}, self.enabled(["docs/getting-started/aws-cloudwatch-agent.md"]))
+        self.assertEqual({"infrastructure", "dotnet"}, self.enabled(["docs/getting-started/aws-cloudwatch-agent.md"]))
+
+    def test_separate_workflows_do_not_run_ci_jobs(self):
+        # workflow-lint (always required) still lints them.
+        for path in (".github/workflows/docs.yml", ".github/workflows/images.yml",
+                     ".github/workflows/asvs-examples.yml"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), self.enabled([path]))
+
+    def test_examples_run_their_unit_and_quick_start_checks(self):
+        for path in ("examples/asvs-logging/contract/expected.jsonl", "examples/cloud-agents/aws/test_logrotate.sh",
+                     "examples/aspnetcore-minimal-api/Program.cs", "examples/policies/collector-health/x.yaml"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet", "infrastructure"}, self.enabled([path]))
+
+    def test_unit_test_content_runs_dotnet_without_platforms(self):
+        for path in ("rules/sigma/auth_failure_burst.yml", "tools/queue-migration-check/Program.cs"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet", "windows", "e2e"}, self.enabled([path]))
+
+    def test_package_bumps_outside_the_native_binaries_skip_the_platform_matrix(self):
+        # e.g. Dependabot test-tool, SQS and Hangfire bumps (#269, #272).
+        result = self.enabled(["Directory.Packages.props", "tests/Bower.UnitTests/packages.lock.json",
+                               "src/Bower.Agent.Cloud/packages.lock.json"])
+        self.assertEqual(set(JOBS) - {"platforms", "packaging"}, result)
+
+    def test_package_bumps_in_the_native_binaries_build_every_platform(self):
+        for lock in ("src/Bower.Cli/packages.lock.json", "src/Bower.Collector/packages.lock.json"):
+            with self.subTest(lock=lock):
+                self.assertEqual(set(JOBS), self.enabled(["Directory.Packages.props", lock]))
+                self.assertTrue({"platforms", "packaging"} <= self.enabled([lock]))
 
     def test_ui_runs_browser_tests_without_platform_matrix(self):
         self.assertEqual({"ui", "e2e"}, self.enabled(["ui/Bower.Management.Web/src/App.tsx"]))
@@ -64,17 +105,21 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue({"dotnet", "powershell", "e2e"} <= result)
 
     def test_default_policy_changes_validate_installers(self):
-        self.assertTrue({"platforms", "packaging"} <= self.enabled(["policies/default/policy.json"]))
+        result = self.enabled(["policies/default/policy.json"])
+        self.assertIn("packaging", result)
+        self.assertNotIn("platforms", result)
 
     def test_installer_changes_have_all_artifacts_and_install_checks(self):
         for path in ("deploy/installers/windows/build.ps1", "deploy/systemd/bower.service",
                      "tests/installers/linux.sh", "deploy/ansible/roles/bower/tasks/main.yml"):
             with self.subTest(path=path):
-                self.assertTrue({"dotnet", "platforms", "packaging", "powershell"} <= self.enabled([path]))
+                # Packaging builds the Linux and Windows binaries; macOS waits for full runs.
+                self.assertEqual({"dotnet", "packaging", "powershell"}, self.enabled([path]))
 
     def test_syslog_output_changes_run_the_installer_syslog_test(self):
         # tests/installers/ama-syslog-output-linux.sh runs it under the packaged unit (#245).
-        self.assertTrue({"dotnet", "platforms", "packaging"} <= self.enabled(["src/Bower.Output.AmaSyslog/AmaSyslogOutput.cs"]))
+        self.assertEqual({"dotnet", "windows", "e2e", "packaging"},
+                         self.enabled(["src/Bower.Output.AmaSyslog/AmaSyslogOutput.cs"]))
 
     def test_relay_and_enrolment_keep_container_integration(self):
         for path in ("src/Bower.Collector/Relay/Listener.cs", "src/Bower.Forwarding/Client.cs",
@@ -111,14 +156,14 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/sentinel/analytics/rules/firewall-deny.kql"]))
 
     def test_unknown_and_workflow_inputs_fail_safe(self):
-        for path in ("global.json", "Directory.Build.props", "Directory.Packages.props",
-                     "nuget.config", "new-tool/config.json",
+        for path in ("global.json", "Directory.Build.props", "Directory.Solution.targets",
+                     "nuget.config", "Bower.sln", "new-tool/config.json",
                      ".github/workflows/ci.yml", "tools/ci/select_jobs.py"):
             self.assertEqual(set(JOBS), self.enabled([path]))
 
     def test_full_runs_every_job_even_without_changes(self):
         self.assertEqual(set(JOBS), self.enabled([], full=True))
-        self.assertEqual(set(JOBS), self.enabled(["README.md"], full=True))
+        self.assertEqual(set(JOBS), self.enabled(["website/package.json"], full=True))
 
     def test_multiple_subsystems_are_unioned(self):
         self.assertEqual({"powershell", "ui", "e2e"}, self.enabled(["powershell/build.ps1", "ui/package.json"]))
@@ -170,8 +215,9 @@ class MergeGateTests(unittest.TestCase):
         script = workflow.read_text(encoding="utf-8").split("python3 - <<'PYTHON'\n", 1)[1]
         script = textwrap.dedent(script.split("          PYTHON", 1)[0])
         jobs = ("changes", "version", "workflow-lint", "build-test", "linux-arm64", "infrastructure",
-                "powershell", "ui", "e2e", "windows-event-log", "docker", "docker-arm64",
-                "publish", "package-linux", "package-windows", "install-linux", "install-windows")
+                "monitoring-windows", "powershell", "ui", "e2e", "windows-event-log", "docker",
+                "docker-arm64", "publish", "publish-macos", "package-linux", "package-windows",
+                "install-linux", "install-windows")
         results = {job: {"result": "success"} for job in jobs}
         results["changes"]["outputs"] = {flag: "false" for flag in JOBS}
         results["changes"]["outputs"].update(selected or {})
@@ -195,6 +241,18 @@ class MergeGateTests(unittest.TestCase):
     def test_selection_and_lint_must_run(self):
         for job in ("changes", "workflow-lint"):
             self.assertNotEqual(0, self.gate({job: "skipped"}))
+
+    def test_gate_groups_match_the_selector(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        block = workflow.split("groups = {", 1)[1].split("}", 1)[0]
+        self.assertEqual(GROUPS, ast.literal_eval("{" + textwrap.dedent(block) + "}"))
+        gate_needs = workflow.split("  ci-success:", 1)[1].split("needs: [", 1)[1].split("]", 1)[0]
+        self.assertTrue({job for jobs in GROUPS.values() for job in jobs} <= {n.strip() for n in gate_needs.split(",")})
+
+    def test_packaging_requires_the_binaries_it_packages(self):
+        self.assertNotEqual(0, self.gate({"publish": "skipped"}, {"packaging": "true"}))
+        self.assertEqual(0, self.gate({"publish-macos": "skipped"}, {"packaging": "true"}))
+        self.assertNotEqual(0, self.gate({"publish-macos": "skipped"}, {"platforms": "true"}))
 
     def test_selected_checks_cannot_be_silently_skipped(self):
         self.assertNotEqual(0, self.gate({"install-windows": "skipped"}, {"packaging": "true"}))

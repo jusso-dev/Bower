@@ -8,15 +8,44 @@ container and installer checks.
 
 | Change | Routine validation |
 | --- | --- |
-| Documentation | Workflow lint; documentation build, links, browser/accessibility tests in the separate Documentation workflow |
+| Documentation (`docs/`, `tools/docs/`, `tools/compliance/`, README, PRODUCT, SECURITY) | Release build and unit tests (citation, CLI reference and Sentinel table contracts read these files); documentation build, links, browser/accessibility tests in the separate Documentation workflow |
+| Site styling, plans, reports, contributor notes, Dependabot config, the Documentation, Images or ASVS examples workflow | Workflow lint only (the separate workflows run themselves) |
+| Examples | Release build and unit tests, and the infrastructure jobs that run the cloud agent quick starts |
+| Package versions (`Directory.Packages.props`) | Everything except the native platform matrix and installers; those also run when the CLI or collector lock file changes |
 | Console | Lint, audit, unit/build checks and browser tests against the management API |
 | C# source/tests | Release build, unit tests, signed pack tests, formatting, Windows event-log tests and management browser tests |
 | Packs, schemas, policies | C#, PowerShell and browser checks; default-policy changes also validate installers |
 | PowerShell | PSScriptAnalyzer and Pester |
 | Infrastructure | CloudFormation lint and Terraform validation; Azure templates also run C# contract tests |
 | Containers, relay or enrolment integration | Container builds, enrolment/relay smoke tests and ARM64 AOT container builds |
-| Installers, Ansible or systemd | Six native targets, Linux/Windows packages and installation tests |
+| Installers, Ansible or systemd, the syslog output, the default policy | The four Linux and Windows native targets, Linux/Windows packages and installation tests |
 | CI definitions, global build settings or unknown paths | Full validation, conservatively |
+
+Every .NET job restores with `--locked-mode`, so a package version change that reaches
+the CLI or collector without regenerating `src/Bower.Cli/packages.lock.json` or
+`src/Bower.Collector/packages.lock.json` fails `build-test` (#270). A version change that
+does regenerate either lock file selects all six native targets and installers.
+
+The installers package only the Linux and Windows binaries, so `publish` builds those four
+targets and the packaging jobs wait only for them. `publish-macos` builds `osx-x64` and
+`osx-arm64` alongside, only when the full platform matrix is selected (CI definitions,
+global build files, CLI or collector lock files, and every full run). The Intel macOS
+runner is the slowest job in a full run (p50 6.7 minutes), and macOS minutes bill at ten
+times Linux on private repositories.
+
+## Merges to main
+
+A merge to `main` usually repeats its pull request's run. `tools/ci/reuse_pr_result.py`
+skips every check (the run still reports `ci-success`) only when all of these hold:
+the push adds one commit; it is the merge commit of exactly one merged pull request;
+that pull request's head contains the previous `main` and has the same tree as the new
+commit; no other pull request came from its branch and it was never retargeted; and a
+successful `pull_request` run of that head, from the pull request's own branch, passed
+every job this push would select. Otherwise, including any Git or API
+error, `main` runs its selected checks as before. Direct pushes, several commits at once,
+pull requests merged without the latest `main`, retargeted (stacked) pull requests, and
+pull request runs that selected fewer checks than the merge does are all validated.
+Replayed over the 24 pushes to `main` from 8 to 17 November, 10 would have been reused.
 
 Release tags (`v*.*.*`), manual CI dispatch and the weekly Monday 03:23 UTC run
 always validate everything, including the six native OS/architecture targets,
