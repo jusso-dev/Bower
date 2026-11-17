@@ -20,6 +20,11 @@ concurrency:
 jobs:
   changes:
     runs-on: ubuntu-latest
+    # Reads pull requests and earlier runs to reuse a passed pull request run on main.
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     outputs:
       dotnet: ${{ steps.select.outputs.dotnet }}
       infrastructure: ${{ steps.select.outputs.infrastructure }}
@@ -41,7 +46,15 @@ jobs:
           REF_TYPE: ${{ github.ref_type }}
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
         run: |
+          # A merge whose tree a passed pull request run already tested selects nothing
+          # (tools/ci/reuse_pr_result.py); any doubt keeps the usual selection.
+          if [[ "$EVENT" == push && "$REF_TYPE" == branch ]]; then
+            python3 tools/ci/reuse_pr_result.py --repo "$REPOSITORY" --before "$BASE" --head "$HEAD"
+            exit
+          fi
           args=(--base "$BASE" --head "$HEAD")
           if [[ "$EVENT" == pull_request ]]; then args+=(--pull-request); fi
           if [[ "$EVENT" == workflow_dispatch || "$EVENT" == schedule || "$REF_TYPE" == tag ]]; then
