@@ -39,12 +39,13 @@ A merge to `main` usually repeats its pull request's run. `tools/ci/reuse_pr_res
 skips every check (the run still reports `ci-success`) only when all of these hold:
 the push adds one commit; it is the merge commit of exactly one merged pull request;
 that pull request's head contains the previous `main` and has the same tree as the new
-commit; and a successful `pull_request` run of that head, from the pull request's own
-branch, passed every job this push would select. Otherwise, including any Git or API
+commit; no other pull request came from its branch and it was never retargeted; and a
+successful `pull_request` run of that head, from the pull request's own branch, passed
+every job this push would select. Otherwise, including any Git or API
 error, `main` runs its selected checks as before. Direct pushes, several commits at once,
-pull requests merged without the latest `main`, and pull request runs that selected
-fewer checks than the merge does are all validated. Replayed over the 24 pushes to `main`
-from 8 to 17 November, 12 would have been reused.
+pull requests merged without the latest `main`, retargeted (stacked) pull requests, and
+pull request runs that selected fewer checks than the merge does are all validated.
+Replayed over the 24 pushes to `main` from 8 to 17 November, 10 would have been reused.
 
 Release tags (`v*.*.*`), manual CI dispatch and the weekly Monday 03:23 UTC run
 always validate everything, including the six native OS/architecture targets,

@@ -10,8 +10,9 @@ of these hold; anything else, including any Git or API error, keeps the selectio
   the head merged into the base of its time; main only moves forward, so that base is
   an ancestor of BEFORE and of the head, the merge is the head's tree, and the commit
   on main is byte-for-byte what the run built and tested;
-- no other pull request, open or closed, came from that head branch (a run of the same
-  head for a pull request into another branch tested a merge into another base);
+- no other pull request, open or closed, came from that head branch, and the pull
+  request was never retargeted (a run of the same head against another base tested a
+  merge into that base);
 - a successful CI pull_request run of that head, from the pull request's own branch,
   ran and passed every job of every group selected for this push. The pull request run
   selected against an older base, so it may have selected less than the push does; then
@@ -67,6 +68,11 @@ def decide(repo, before, head, selected, git=git, is_ancestor=is_ancestor, api=g
                                            f"&head={quote(pulls[0]['head']['label'], safe='')}")}
     if siblings != {number}:
         return False, f"#{number} shares its head branch with other pull requests"
+    # Retargeting does not start a run, so a run from before it tested a merge into the old
+    # base. Fail closed: a retargeted pull request, or one with more events than one page, runs.
+    events = api(f"repos/{repo}/issues/{number}/events?per_page=100")
+    if len(events) >= 100 or any(event.get("event") == "base_ref_changed" for event in events):
+        return False, f"#{number} was retargeted, or its base history is too long to check"
     runs = [run for run in api(f"repos/{repo}/actions/workflows/ci.yml/runs"
                                f"?head_sha={pr_head}&event=pull_request&status=success")["workflow_runs"]
             if ((run.get("head_repository") or {}).get("full_name"), run.get("head_branch")) == source]
