@@ -3,14 +3,16 @@ import unittest
 from reuse_pr_result import decide
 
 BEFORE, HEAD, PR_HEAD, RUN = "b" * 40, "m" * 40, "p" * 40, 42
-SOURCE = {"repo": {"full_name": "jusso-dev/Bower"}, "ref": "fix/thing", "sha": PR_HEAD}
+SOURCE = {"repo": {"full_name": "jusso-dev/Bower"}, "ref": "fix/thing", "label": "jusso-dev:fix/thing", "sha": PR_HEAD}
 
 
 class Repo:
     """A fake push: HEAD merges PR_HEAD onto BEFORE. Override any fact to break one rule."""
 
-    def __init__(self, parent=BEFORE, pr_tree="T", contains_before=True, pulls=None, runs=None, jobs=None):
+    def __init__(self, parent=BEFORE, pr_tree="T", contains_before=True, pulls=None, runs=None, jobs=None,
+                 branch_prs=(7,)):
         self.parent, self.pr_tree, self.contains_before = parent, pr_tree, contains_before
+        self.branch_prs = branch_prs
         self.pulls = pulls if pulls is not None else [
             {"number": 7, "merged_at": "2026-11-17T00:00:00Z", "merge_commit_sha": HEAD, "head": SOURCE}]
         self.runs = runs if runs is not None else [
@@ -33,6 +35,9 @@ class Repo:
     def api(self, path):
         if path.endswith(f"commits/{HEAD}/pulls"):
             return self.pulls
+        if "/pulls?state=all" in path:
+            assert "head=jusso-dev%3Afix%2Fthing" in path, path
+            return [{"number": n} for n in self.branch_prs]
         if "/actions/workflows/ci.yml/runs?" in path:
             assert f"head_sha={PR_HEAD}" in path and "event=pull_request" in path and "status=success" in path
             return {"workflow_runs": self.runs}
@@ -64,6 +69,8 @@ class ReuseTests(unittest.TestCase):
             "merged without the latest main": Repo(contains_before=False),
             "main tree differs from the head": Repo(pr_tree="U"),
             "no successful run": Repo(runs=[]),
+            "branch also heads a pull request into another base": Repo(branch_prs=(7, 9)),
+            "pull request lookup misses this one": Repo(branch_prs=()),
             "run from another branch": Repo(runs=[{"id": RUN, "head_branch": "other", "head_repository": {"full_name": "jusso-dev/Bower"}}]),
             "run from a fork of the same name": Repo(runs=[{"id": RUN, "head_branch": "fix/thing", "head_repository": {"full_name": "fork/Bower"}}]),
             "selected job skipped in the run": Repo(jobs=[{"name": "build-test", "conclusion": "success"},

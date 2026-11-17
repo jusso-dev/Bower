@@ -10,9 +10,12 @@ of these hold; anything else, including any Git or API error, keeps the selectio
   the head merged into the base of its time; main only moves forward, so that base is
   an ancestor of BEFORE and of the head, the merge is the head's tree, and the commit
   on main is byte-for-byte what the run built and tested;
+- no other pull request, open or closed, came from that head branch (a run of the same
+  head for a pull request into another branch tested a merge into another base);
 - a successful CI pull_request run of that head, from the pull request's own branch,
-  ran and passed every job of every group selected for this push. The pull request run selected against an older base,
-  so it may have selected less than the push does; then the push runs.
+  ran and passed every job of every group selected for this push. The pull request run
+  selected against an older base, so it may have selected less than the push does; then
+  the push runs.
 
 Merge commits and squash merges of up-to-date pull requests qualify. A pull request
 merged without the latest main does not, and main runs its selected checks.
@@ -24,6 +27,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from urllib.parse import quote
 
 from select_jobs import GROUPS, JOBS, changed_paths, select
 
@@ -54,8 +58,15 @@ def decide(repo, before, head, selected, git=git, is_ancestor=is_ancestor, api=g
         return False, f"#{number} was merged without the latest main"
     if git("rev-parse", f"{head}^{{tree}}") != git("rev-parse", f"{pr_head}^{{tree}}"):
         return False, f"#{number} head tree differs from main"
-    # The same commit can head pull requests into other branches; take only this one's runs.
+    # A run of this head from another pull request (say, into a release branch) tested a
+    # merge into another base. GitHub empties a run's pull_requests once its pull request
+    # closes, so runs cannot be matched to #number; instead require that no other pull
+    # request, open or closed, ever came from this head branch.
     source = (pulls[0]["head"]["repo"] or {}).get("full_name"), pulls[0]["head"]["ref"]
+    siblings = {pr["number"] for pr in api(f"repos/{repo}/pulls?state=all&per_page=100"
+                                           f"&head={quote(pulls[0]['head']['label'], safe='')}")}
+    if siblings != {number}:
+        return False, f"#{number} shares its head branch with other pull requests"
     runs = [run for run in api(f"repos/{repo}/actions/workflows/ci.yml/runs"
                                f"?head_sha={pr_head}&event=pull_request&status=success")["workflow_runs"]
             if ((run.get("head_repository") or {}).get("full_name"), run.get("head_branch")) == source]
