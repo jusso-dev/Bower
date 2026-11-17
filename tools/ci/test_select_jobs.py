@@ -1,3 +1,4 @@
+import ast
 import os
 import json
 import subprocess
@@ -7,7 +8,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from select_jobs import JOBS, changed_paths, select
+from select_jobs import GROUPS, JOBS, changed_paths, select
 
 
 class SelectionTests(unittest.TestCase):
@@ -104,17 +105,21 @@ class SelectionTests(unittest.TestCase):
         self.assertTrue({"dotnet", "powershell", "e2e"} <= result)
 
     def test_default_policy_changes_validate_installers(self):
-        self.assertTrue({"platforms", "packaging"} <= self.enabled(["policies/default/policy.json"]))
+        result = self.enabled(["policies/default/policy.json"])
+        self.assertIn("packaging", result)
+        self.assertNotIn("platforms", result)
 
     def test_installer_changes_have_all_artifacts_and_install_checks(self):
         for path in ("deploy/installers/windows/build.ps1", "deploy/systemd/bower.service",
                      "tests/installers/linux.sh", "deploy/ansible/roles/bower/tasks/main.yml"):
             with self.subTest(path=path):
-                self.assertTrue({"dotnet", "platforms", "packaging", "powershell"} <= self.enabled([path]))
+                # Packaging builds the Linux and Windows binaries; macOS waits for full runs.
+                self.assertEqual({"dotnet", "packaging", "powershell"}, self.enabled([path]))
 
     def test_syslog_output_changes_run_the_installer_syslog_test(self):
         # tests/installers/ama-syslog-output-linux.sh runs it under the packaged unit (#245).
-        self.assertTrue({"dotnet", "platforms", "packaging"} <= self.enabled(["src/Bower.Output.AmaSyslog/AmaSyslogOutput.cs"]))
+        self.assertEqual({"dotnet", "windows", "e2e", "packaging"},
+                         self.enabled(["src/Bower.Output.AmaSyslog/AmaSyslogOutput.cs"]))
 
     def test_relay_and_enrolment_keep_container_integration(self):
         for path in ("src/Bower.Collector/Relay/Listener.cs", "src/Bower.Forwarding/Client.cs",
@@ -210,8 +215,9 @@ class MergeGateTests(unittest.TestCase):
         script = workflow.read_text(encoding="utf-8").split("python3 - <<'PYTHON'\n", 1)[1]
         script = textwrap.dedent(script.split("          PYTHON", 1)[0])
         jobs = ("changes", "version", "workflow-lint", "build-test", "linux-arm64", "infrastructure",
-                "powershell", "ui", "e2e", "windows-event-log", "docker", "docker-arm64",
-                "publish", "package-linux", "package-windows", "install-linux", "install-windows")
+                "monitoring-windows", "powershell", "ui", "e2e", "windows-event-log", "docker",
+                "docker-arm64", "publish", "publish-macos", "package-linux", "package-windows",
+                "install-linux", "install-windows")
         results = {job: {"result": "success"} for job in jobs}
         results["changes"]["outputs"] = {flag: "false" for flag in JOBS}
         results["changes"]["outputs"].update(selected or {})
@@ -235,6 +241,18 @@ class MergeGateTests(unittest.TestCase):
     def test_selection_and_lint_must_run(self):
         for job in ("changes", "workflow-lint"):
             self.assertNotEqual(0, self.gate({job: "skipped"}))
+
+    def test_gate_groups_match_the_selector(self):
+        workflow = (Path(__file__).resolve().parents[2] / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        block = workflow.split("groups = {", 1)[1].split("}", 1)[0]
+        self.assertEqual(GROUPS, ast.literal_eval("{" + textwrap.dedent(block) + "}"))
+        gate_needs = workflow.split("  ci-success:", 1)[1].split("needs: [", 1)[1].split("]", 1)[0]
+        self.assertTrue({job for jobs in GROUPS.values() for job in jobs} <= {n.strip() for n in gate_needs.split(",")})
+
+    def test_packaging_requires_the_binaries_it_packages(self):
+        self.assertNotEqual(0, self.gate({"publish": "skipped"}, {"packaging": "true"}))
+        self.assertEqual(0, self.gate({"publish-macos": "skipped"}, {"packaging": "true"}))
+        self.assertNotEqual(0, self.gate({"publish-macos": "skipped"}, {"platforms": "true"}))
 
     def test_selected_checks_cannot_be_silently_skipped(self):
         self.assertNotEqual(0, self.gate({"install-windows": "skipped"}, {"packaging": "true"}))

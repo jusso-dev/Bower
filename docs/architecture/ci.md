@@ -18,13 +18,20 @@ container and installer checks.
 | PowerShell | PSScriptAnalyzer and Pester |
 | Infrastructure | CloudFormation lint and Terraform validation; Azure templates also run C# contract tests |
 | Containers, relay or enrolment integration | Container builds, enrolment/relay smoke tests and ARM64 AOT container builds |
-| Installers, Ansible or systemd | Six native targets, Linux/Windows packages and installation tests |
+| Installers, Ansible or systemd, the syslog output, the default policy | The four Linux and Windows native targets, Linux/Windows packages and installation tests |
 | CI definitions, global build settings or unknown paths | Full validation, conservatively |
 
 Every .NET job restores with `--locked-mode`, so a package version change that reaches
 the CLI or collector without regenerating `src/Bower.Cli/packages.lock.json` or
 `src/Bower.Collector/packages.lock.json` fails `build-test` (#270). A version change that
-does regenerate either lock file selects the six native targets and installers.
+does regenerate either lock file selects all six native targets and installers.
+
+The installers package only the Linux and Windows binaries, so `publish` builds those four
+targets and the packaging jobs wait only for them. `publish-macos` builds `osx-x64` and
+`osx-arm64` alongside, only when the full platform matrix is selected (CI definitions,
+global build files, CLI or collector lock files, and every full run). The Intel macOS
+runner is the slowest job in a full run (p50 6.7 minutes), and macOS minutes bill at ten
+times Linux on private repositories.
 
 Release tags (`v*.*.*`), manual CI dispatch and the weekly Monday 03:23 UTC run
 always validate everything, including the six native OS/architecture targets,

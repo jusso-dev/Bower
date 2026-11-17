@@ -8,6 +8,16 @@ import subprocess
 
 JOBS = ("dotnet", "infrastructure", "powershell", "ui", "e2e",
         "windows", "containers", "platforms", "packaging")
+# The CI jobs each selection runs. ci-success in .github/workflows/ci.yml holds the same
+# map (it runs without a checkout); test_select_jobs.py keeps the two equal.
+GROUPS = {
+    "dotnet": ["build-test", "linux-arm64"],
+    "infrastructure": ["infrastructure", "monitoring-windows"], "powershell": ["powershell"],
+    "ui": ["ui"], "e2e": ["e2e"], "windows": ["windows-event-log"],
+    "containers": ["docker", "docker-arm64"], "platforms": ["publish", "publish-macos"],
+    # Packaging builds the Linux and Windows binaries it packages, not the macOS ones.
+    "packaging": ["publish", "package-linux", "package-windows", "install-linux", "install-windows"],
+}
 
 # Direct and transitive project references of lab/aws/upgrade-recovery/probe.
 # Changes here must exercise the compiled evidence probe in the infrastructure job.
@@ -88,7 +98,7 @@ def select(paths, full=False):
         elif path.startswith("powershell/"):
             selected.add("powershell")
         elif path.startswith(("deploy/installers/", "deploy/ansible/", "deploy/systemd/", "tests/installers/")):
-            selected.update(("dotnet", "platforms", "packaging", "powershell"))
+            selected.update(("dotnet", "packaging", "powershell"))
         elif path.startswith(("deploy/docker/", "tests/e2e/")) or path in {
             ".dockerignore", "docker-compose.yml", "compose.yml",
         }:
@@ -102,7 +112,7 @@ def select(paths, full=False):
                 selected.add("containers")
         elif path.startswith("src/Bower.Output.AmaSyslog/"):
             # The installer test runs this output under the packaged unit and journald (#245).
-            selected.update(("dotnet", "windows", "e2e", "platforms", "packaging"))
+            selected.update(("dotnet", "windows", "e2e", "packaging"))
         elif path.startswith(("src/", "tests/")):
             selected.update(("dotnet", "windows", "e2e"))
             if path.startswith(WEC_PROBE_PROJECTS):
@@ -113,7 +123,7 @@ def select(paths, full=False):
         elif path.startswith(("packs/", "policies/", "schemas/")):
             selected.update(("dotnet", "powershell", "e2e"))
             if path.startswith("policies/default/"):
-                selected.update(("platforms", "packaging"))
+                selected.add("packaging")
             if path.startswith(AWS_EMULATOR_INPUTS):
                 selected.add("containers")
         else:

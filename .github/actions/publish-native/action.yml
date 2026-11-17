@@ -1,0 +1,34 @@
+name: Publish native binaries
+description: >
+  Native AOT, self-contained publish of the bower CLI and the collector for one runtime
+  identifier, uploaded as the bower-<rid> artefact. The caller checks out the repository,
+  runs on a native runner for the RID and sets BowerVersion and BowerBuildNumber.
+inputs:
+  rid:
+    description: Runtime identifier, for example linux-x64.
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      with:
+        global-json-file: global.json
+    # Only the two published projects and their references: a solution restore also fetched
+    # the test, Functions and tooling packages, which nothing here builds.
+    - shell: bash
+      run: |
+        dotnet restore src/Bower.Cli/Bower.Cli.csproj --locked-mode
+        dotnet restore src/Bower.Collector/Bower.Collector.csproj --locked-mode
+    - shell: bash
+      env:
+        RID: ${{ inputs.rid }}
+      run: |
+        for project in Cli Collector; do
+          output=$(tr '[:upper:]' '[:lower:]' <<<"$project")
+          dotnet publish "src/Bower.$project/Bower.$project.csproj" --configuration Release \
+            --runtime "$RID" --self-contained true --no-restore --output "artifacts/$RID/$output"
+        done
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: bower-${{ inputs.rid }}
+        path: artifacts/${{ inputs.rid }}

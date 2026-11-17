@@ -98,7 +98,7 @@ jobs:
         env:
           # Read-only token enables zizmor's online audits (impostor commits, known-vulnerable actions).
           GH_TOKEN: ${{ github.token }}
-        run: uvx zizmor==1.31.1 --format github --min-severity high .github/workflows
+        run: uvx zizmor==1.31.1 --format github --min-severity high .github
 
   build-test:
     needs: [changes, version]
@@ -561,7 +561,8 @@ jobs:
 
   publish:
     needs: [changes, version]
-    if: needs.changes.outputs.platforms == 'true'
+    # The installers package these binaries, so packaging changes build them too.
+    if: needs.changes.outputs.platforms == 'true' || needs.changes.outputs.packaging == 'true'
     # Native AOT cannot cross-compile to another OS, and cross-architecture links need
     # a target sysroot, so every RID builds on a native runner.
     runs-on: ${{ matrix.os }}
@@ -578,35 +579,36 @@ jobs:
           - { rid: linux-arm64, os: ubuntu-24.04-arm }
           - { rid: win-x64, os: windows-latest }
           - { rid: win-arm64, os: windows-11-arm }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/publish-native
+        with:
+          rid: ${{ matrix.rid }}
+
+  publish-macos:
+    # No installer or test consumes the macOS binaries, so they build only when the
+    # platform matrix is selected, in a job the packaging jobs do not wait for.
+    needs: [changes, version]
+    if: needs.changes.outputs.platforms == 'true'
+    runs-on: ${{ matrix.os }}
+    env:
+      BowerVersion: ${{ needs.version.outputs.version }}
+      BowerBuildNumber: ${{ needs.version.outputs.build }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
           - { rid: osx-x64, os: macos-15-intel }
           - { rid: osx-arm64, os: macos-latest }
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: ./.github/actions/publish-native
         with:
-          global-json-file: global.json
-      - run: dotnet restore Bower.sln --locked-mode
-      # Native AOT, self-contained (PublishAot in the project): one native binary per host.
-      - run: >
-          dotnet publish src/Bower.Cli/Bower.Cli.csproj
-          --configuration Release
-          --runtime ${{ matrix.rid }}
-          --self-contained true
-          --no-restore
-          --output artifacts/${{ matrix.rid }}/cli
-      - run: >
-          dotnet publish src/Bower.Collector/Bower.Collector.csproj
-          --configuration Release
-          --runtime ${{ matrix.rid }}
-          --self-contained true
-          --no-restore
-          --output artifacts/${{ matrix.rid }}/collector
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: bower-${{ matrix.rid }}
-          path: artifacts/${{ matrix.rid }}
+          rid: ${{ matrix.rid }}
 
   # Installer validation runs for packaging changes and full validation.
   package-linux:
@@ -831,7 +833,7 @@ jobs:
   ci-success:
     name: ci-success
     if: always()
-    needs: [changes, version, workflow-lint, build-test, linux-arm64, windows-event-log, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, package-linux, package-windows, install-linux, install-windows]
+    needs: [changes, version, workflow-lint, build-test, linux-arm64, windows-event-log, infrastructure, monitoring-windows, powershell, ui, e2e, docker, docker-arm64, publish, publish-macos, package-linux, package-windows, install-linux, install-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Require every selected check to pass
@@ -851,8 +853,8 @@ jobs:
               'dotnet': ['build-test', 'linux-arm64'],
               'infrastructure': ['infrastructure', 'monitoring-windows'], 'powershell': ['powershell'],
               'ui': ['ui'], 'e2e': ['e2e'], 'windows': ['windows-event-log'],
-              'containers': ['docker', 'docker-arm64'], 'platforms': ['publish'],
-              'packaging': ['package-linux', 'package-windows', 'install-linux', 'install-windows'],
+              'containers': ['docker', 'docker-arm64'], 'platforms': ['publish', 'publish-macos'],
+              'packaging': ['publish', 'package-linux', 'package-windows', 'install-linux', 'install-windows'],
           }
           for flag, jobs in groups.items():
               if selected.get(flag) not in ('true', 'false'):
