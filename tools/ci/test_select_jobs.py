@@ -16,12 +16,52 @@ class SelectionTests(unittest.TestCase):
 
     def test_editorial_changes_do_not_build_product(self):
         self.assertEqual(set(), self.enabled([
-            "docs/getting-started/index.md", "website/src/css/custom.css",
-            "tools/docs/check_links.py", "README.md", "website/docusaurus.config.ts",
+            "website/src/css/custom.css", "website/docusaurus.config.ts", "plans/001-expected-inventory.md",
+            "reports/s3-output-bower-s3-20261105-004926/summary.json", "DESIGN.md", "CONTRIBUTING.md",
+            ".gitignore", "AGENTS.md", ".github/dependabot.yml",
         ]))
 
+    def test_documentation_runs_the_doc_contract_unit_tests(self):
+        # ComplianceCitationTests, CliHelpTests and the Sentinel table test read these.
+        for path in ("docs/security/ism-alignment.md", "docs/reference/cli.md",
+                     "docs/reference/sentinel-table.md", "docs/security/verified/asvs-5.0.0-logging.json",
+                     "tools/docs/generate_cli_reference.py", "tools/compliance/verify_sources.py",
+                     "README.md", "PRODUCT.md", "SECURITY.md"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet"}, self.enabled([path]))
+
     def test_cloudwatch_agent_guide_runs_its_windows_steps(self):
-        self.assertEqual({"infrastructure"}, self.enabled(["docs/getting-started/aws-cloudwatch-agent.md"]))
+        self.assertEqual({"infrastructure", "dotnet"}, self.enabled(["docs/getting-started/aws-cloudwatch-agent.md"]))
+
+    def test_separate_workflows_do_not_run_ci_jobs(self):
+        # workflow-lint (always required) still lints them.
+        for path in (".github/workflows/docs.yml", ".github/workflows/images.yml",
+                     ".github/workflows/asvs-examples.yml"):
+            with self.subTest(path=path):
+                self.assertEqual(set(), self.enabled([path]))
+
+    def test_examples_run_their_unit_and_quick_start_checks(self):
+        for path in ("examples/asvs-logging/contract/expected.jsonl", "examples/cloud-agents/aws/test_logrotate.sh",
+                     "examples/aspnetcore-minimal-api/Program.cs", "examples/policies/collector-health/x.yaml"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet", "infrastructure"}, self.enabled([path]))
+
+    def test_unit_test_content_runs_dotnet_without_platforms(self):
+        for path in ("rules/sigma/auth_failure_burst.yml", "tools/queue-migration-check/Program.cs"):
+            with self.subTest(path=path):
+                self.assertEqual({"dotnet", "windows", "e2e"}, self.enabled([path]))
+
+    def test_package_bumps_outside_the_native_binaries_skip_the_platform_matrix(self):
+        # e.g. Dependabot test-tool, SQS and Hangfire bumps (#269, #272).
+        result = self.enabled(["Directory.Packages.props", "tests/Bower.UnitTests/packages.lock.json",
+                               "src/Bower.Agent.Cloud/packages.lock.json"])
+        self.assertEqual(set(JOBS) - {"platforms", "packaging"}, result)
+
+    def test_package_bumps_in_the_native_binaries_build_every_platform(self):
+        for lock in ("src/Bower.Cli/packages.lock.json", "src/Bower.Collector/packages.lock.json"):
+            with self.subTest(lock=lock):
+                self.assertEqual(set(JOBS), self.enabled(["Directory.Packages.props", lock]))
+                self.assertTrue({"platforms", "packaging"} <= self.enabled([lock]))
 
     def test_ui_runs_browser_tests_without_platform_matrix(self):
         self.assertEqual({"ui", "e2e"}, self.enabled(["ui/Bower.Management.Web/src/App.tsx"]))
@@ -111,14 +151,14 @@ class SelectionTests(unittest.TestCase):
         self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/sentinel/analytics/rules/firewall-deny.kql"]))
 
     def test_unknown_and_workflow_inputs_fail_safe(self):
-        for path in ("global.json", "Directory.Build.props", "Directory.Packages.props",
-                     "nuget.config", "new-tool/config.json",
+        for path in ("global.json", "Directory.Build.props", "Directory.Solution.targets",
+                     "nuget.config", "Bower.sln", "new-tool/config.json",
                      ".github/workflows/ci.yml", "tools/ci/select_jobs.py"):
             self.assertEqual(set(JOBS), self.enabled([path]))
 
     def test_full_runs_every_job_even_without_changes(self):
         self.assertEqual(set(JOBS), self.enabled([], full=True))
-        self.assertEqual(set(JOBS), self.enabled(["README.md"], full=True))
+        self.assertEqual(set(JOBS), self.enabled(["website/package.json"], full=True))
 
     def test_multiple_subsystems_are_unioned(self):
         self.assertEqual({"powershell", "ui", "e2e"}, self.enabled(["powershell/build.ps1", "ui/package.json"]))

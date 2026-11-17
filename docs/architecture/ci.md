@@ -8,7 +8,10 @@ container and installer checks.
 
 | Change | Routine validation |
 | --- | --- |
-| Documentation | Workflow lint; documentation build, links, browser/accessibility tests in the separate Documentation workflow |
+| Documentation (`docs/`, `tools/docs/`, `tools/compliance/`, README, PRODUCT, SECURITY) | Release build and unit tests (citation, CLI reference and Sentinel table contracts read these files); documentation build, links, browser/accessibility tests in the separate Documentation workflow |
+| Site styling, plans, reports, contributor notes, Dependabot config, the Documentation, Images or ASVS examples workflow | Workflow lint only (the separate workflows run themselves) |
+| Examples | Release build and unit tests, and the infrastructure jobs that run the cloud agent quick starts |
+| Package versions (`Directory.Packages.props`) | Everything except the native platform matrix and installers; those also run when the CLI or collector lock file changes |
 | Console | Lint, audit, unit/build checks and browser tests against the management API |
 | C# source/tests | Release build, unit tests, signed pack tests, formatting, Windows event-log tests and management browser tests |
 | Packs, schemas, policies | C#, PowerShell and browser checks; default-policy changes also validate installers |
@@ -17,6 +20,11 @@ container and installer checks.
 | Containers, relay or enrolment integration | Container builds, enrolment/relay smoke tests and ARM64 AOT container builds |
 | Installers, Ansible or systemd | Six native targets, Linux/Windows packages and installation tests |
 | CI definitions, global build settings or unknown paths | Full validation, conservatively |
+
+Every .NET job restores with `--locked-mode`, so a package version change that reaches
+the CLI or collector without regenerating `src/Bower.Cli/packages.lock.json` or
+`src/Bower.Collector/packages.lock.json` fails `build-test` (#270). A version change that
+does regenerate either lock file selects the six native targets and installers.
 
 Release tags (`v*.*.*`), manual CI dispatch and the weekly Monday 03:23 UTC run
 always validate everything, including the six native OS/architecture targets,
