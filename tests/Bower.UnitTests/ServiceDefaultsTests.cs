@@ -70,6 +70,7 @@ public sealed class ServiceDefaultsTests
         activity.SetTag("url.full", "http://127.0.0.1/health?private=synthetic-private-marker");
         activity.SetTag("client.address", "192.0.2.1");
         activity.SetStatus(ActivityStatusCode.Error, "synthetic-private-marker");
+        activity.TraceStateString = "bower=synthetic-private-marker";
         activity.Stop();
 
         new MetadataOnlyActivityProcessor().OnEnd(activity);
@@ -78,6 +79,7 @@ public sealed class ServiceDefaultsTests
             activity.TagObjects.Select(tag => tag.Key).Order(StringComparer.Ordinal));
         Assert.Equal(ActivityStatusCode.Error, activity.Status);
         Assert.Null(activity.StatusDescription);
+        Assert.Null(activity.TraceStateString);
         Assert.DoesNotContain("synthetic-private-marker", string.Concat(activity.TagObjects.Select(tag => tag.Value)), StringComparison.Ordinal);
     }
 
@@ -122,6 +124,8 @@ public sealed class ServiceDefaultsTests
         using HttpRequestMessage request = new(HttpMethod.Get, $"/service-defaults-probe/{Marker}?private={Marker}");
         request.Headers.UserAgent.ParseAdd(Marker);
         request.Headers.Add("X-Forwarded-For", "192.0.2.10");
+        request.Headers.Add("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+        request.Headers.Add("tracestate", "bower=" + Marker);
         using HttpResponseMessage response = await app.GetTestClient().SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
@@ -149,8 +153,9 @@ public sealed class ServiceDefaultsTests
 
         Assert.Equal("GET", span.GetTagItem("http.request.method"));
         Assert.All(span.TagObjects, tag => Assert.Contains(tag.Key, MetadataOnlyActivityProcessor.AllowedTags));
+        Assert.Null(span.TraceStateString);
         string exportedText = string.Concat(span.TagObjects.Select(tag => tag.Key + "=" + tag.Value))
-            + span.DisplayName + span.StatusDescription;
+            + span.DisplayName + span.StatusDescription + span.TraceStateString;
         Assert.DoesNotContain(Marker, exportedText, StringComparison.Ordinal);
         Assert.DoesNotContain("192.0.2.10", exportedText, StringComparison.Ordinal);
     }

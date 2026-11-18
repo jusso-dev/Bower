@@ -173,7 +173,16 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
             truncated && !string.IsNullOrEmpty(next) ? next : null);
     }
 
-    /// <summary>Non-empty NDJSON lines of an object, gunzipped when it starts with the gzip magic.</summary>
+    /// <summary>Largest decoded object read; Bower's S3 output caps objects at 64 MiB, the sink far lower.</summary>
+    public const int MaximumDecodedBytes = 8 * 1024 * 1024;
+
+    /// <summary>
+    /// Non-empty NDJSON lines of an object, gunzipped when it starts with the gzip magic. Throws
+    /// <see cref="InvalidDataException"/> before returning anything when the decoded object
+    /// exceeds <see cref="MaximumDecodedBytes"/>, a line exceeds
+    /// <see cref="DevSinkStore.MaximumRecordBytes"/>, or it holds more than
+    /// <see cref="DevSinkStore.Capacity"/> lines.
+    /// </summary>
     public static async Task<List<string>> ReadLinesAsync(byte[] content, CancellationToken cancellationToken)
     {
         bool gzip = content.Length > 2 && content[0] == 0x1f && content[1] == 0x8b;
@@ -181,15 +190,54 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
             ? new GZipStream(new MemoryStream(content), CompressionMode.Decompress)
             : new MemoryStream(content));
         List<string> lines = [];
-        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        long decoded = 0;
+        char[] buffer = new char[4096];
+        StringBuilder current = new();
+        int read;
+        while ((read = await reader.ReadAsync(buffer, cancellationToken)) > 0)
         {
-            if (line.Length > 0)
+            decoded += read;
+            if (decoded > MaximumDecodedBytes)
             {
-                lines.Add(line);
+                throw new InvalidDataException("S3 object exceeds the dev sink decode limit.");
+            }
+
+            foreach (char character in buffer.AsSpan(0, read))
+            {
+                if (character == '\n')
+                {
+                    AddLine(lines, current);
+                    continue;
+                }
+
+                if (current.Length >= DevSinkStore.MaximumRecordBytes)
+                {
+                    throw new InvalidDataException("S3 object holds a record above the dev sink record limit.");
+                }
+
+                current.Append(character);
             }
         }
 
+        AddLine(lines, current);
         return lines;
+    }
+
+    private static void AddLine(List<string> lines, StringBuilder current)
+    {
+        string line = current.ToString().TrimEnd('\r');
+        current.Clear();
+        if (line.Length == 0)
+        {
+            return;
+        }
+
+        if (lines.Count == DevSinkStore.Capacity)
+        {
+            throw new InvalidDataException("S3 object holds more records than the dev sink keeps.");
+        }
+
+        lines.Add(line);
     }
 }
 

@@ -6,8 +6,9 @@ namespace Bower.ServiceDefaults;
 /// <summary>
 /// Reduces every span to approved metadata before it reaches the exporter. ASP.NET Core and
 /// HttpClient add request-derived attributes (user agent, client address, full URL and query
-/// string, host header); only the allowlisted attributes below are kept, and the status
-/// description (which can carry exception text) is cleared.
+/// string, host header); only the allowlisted attributes below are kept. The status
+/// description (which can carry exception text) and the W3C trace state (copied from the
+/// caller's <c>tracestate</c> header) are cleared.
 /// </summary>
 public sealed class MetadataOnlyActivityProcessor : BaseProcessor<Activity>
 {
@@ -38,5 +39,8 @@ public sealed class MetadataOnlyActivityProcessor : BaseProcessor<Activity>
         {
             data.SetStatus(data.Status);
         }
+
+        // Caller-supplied, exported separately from tags.
+        data.TraceStateString = null;
     }
 }

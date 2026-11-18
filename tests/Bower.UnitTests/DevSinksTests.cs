@@ -93,4 +93,23 @@ public sealed class DevSinksTests
         await Assert.ThrowsAnyAsync<InvalidDataException>(() =>
             S3ListPage.ReadLinesAsync([0x1f, 0x8b, 1, 2, 3], TestContext.Current.CancellationToken));
     }
+
+    [Fact]
+    public async Task S3ObjectLinesRejectOverLimitObjectsBeforeReturningAny()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        byte[] tooMany = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("{}\n", DevSinkStore.Capacity + 1)));
+        byte[] longRecord = Encoding.UTF8.GetBytes(new string('x', DevSinkStore.MaximumRecordBytes + 1));
+        using MemoryStream bomb = new();
+        await using (GZipStream gzip = new(bomb, CompressionLevel.SmallestSize, leaveOpen: true))
+        {
+            await gzip.WriteAsync(new byte[S3ListPage.MaximumDecodedBytes + 1], cancellationToken);
+        }
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(tooMany, cancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(longRecord, cancellationToken));
+        await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(bomb.ToArray(), cancellationToken));
+        Assert.Equal(DevSinkStore.Capacity, (await S3ListPage.ReadLinesAsync(
+            Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("{}\r\n", DevSinkStore.Capacity))), cancellationToken)).Count);
+    }
 }
