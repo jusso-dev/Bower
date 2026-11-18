@@ -173,6 +173,8 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
             truncated && !string.IsNullOrEmpty(next) ? next : null);
     }
 
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
     /// <summary>Largest decoded object read; Bower's S3 output caps objects at 64 MiB, the sink far lower.</summary>
     public const int MaximumDecodedBytes = 8 * 1024 * 1024;
 
@@ -180,7 +182,7 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
     /// Non-empty NDJSON lines of an object, gunzipped when it starts with the gzip magic. Throws
     /// <see cref="InvalidDataException"/> before returning anything when the decoded object
     /// exceeds <see cref="MaximumDecodedBytes"/>, a line exceeds
-    /// <see cref="DevSinkStore.MaximumRecordBytes"/>, or it holds more than
+    /// <see cref="DevSinkStore.MaximumRecordBytes"/> or is not valid UTF-8, or it holds more than
     /// <see cref="DevSinkStore.Capacity"/> lines.
     /// </summary>
     public static async Task<List<string>> ReadLinesAsync(byte[] content, CancellationToken cancellationToken)
@@ -242,7 +244,17 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
             throw new InvalidDataException("S3 object holds a record above the dev sink record limit.");
         }
 
-        string line = bytes.IsEmpty ? string.Empty : Encoding.UTF8.GetString(bytes);
+        string line;
+        try
+        {
+            // Strict: replacement characters would make the stored record larger than these bytes.
+            line = bytes.IsEmpty ? string.Empty : StrictUtf8.GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new InvalidDataException("S3 object holds a record that is not valid UTF-8.");
+        }
+
         current.SetLength(0);
         if (line.Length == 0)
         {
