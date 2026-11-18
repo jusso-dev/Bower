@@ -1,10 +1,14 @@
 using System.Diagnostics;
 using Bower.ServiceDefaults;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Trace;
@@ -92,6 +96,62 @@ public sealed class ServiceDefaultsTests
             LoggerFilterRule rule = Assert.Single(filters.Rules, rule =>
                 rule.CategoryName == category && rule.ProviderName == typeof(OpenTelemetryLoggerProvider).FullName);
             Assert.Equal(LogLevel.Warning, rule.LogLevel);
+        }
+    }
+
+    [Fact]
+    public async Task ExportedRequestSpansCarryNoRequestMarkers()
+    {
+        const string Marker = "synthetic-private-marker";
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        List<Activity> exported = [];
+        WebApplicationBuilder builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Configuration.AddInMemoryCollection([new(BowerServiceDefaults.OtlpEndpointSetting, "http://127.0.0.1:4317")]);
+        builder.AddBowerServiceDefaults();
+        // Registered after the defaults, as an exporter would be: it sees the allowlisted span.
+        builder.Services.ConfigureOpenTelemetryTracerProvider(tracing =>
+            tracing.AddProcessor(new SimpleActivityExportProcessor(new CapturingExporter(exported))));
+
+        await using WebApplication app = builder.Build();
+        app.MapGet("/health/{name}", (string name) => Results.Ok());
+        await app.StartAsync(cancellationToken);
+
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/health/{Marker}?private={Marker}");
+        request.Headers.UserAgent.ParseAdd(Marker);
+        request.Headers.Add("X-Forwarded-For", "192.0.2.10");
+        using HttpResponseMessage response = await app.GetTestClient().SendAsync(request, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        await app.StopAsync(cancellationToken);
+
+        Activity span;
+        lock (exported)
+        {
+            span = Assert.Single(exported, activity => activity.Kind == ActivityKind.Server);
+        }
+
+        Assert.Equal("/health/{name}", span.GetTagItem("http.route"));
+        Assert.Equal("GET", span.GetTagItem("http.request.method"));
+        Assert.All(span.TagObjects, tag => Assert.Contains(tag.Key, MetadataOnlyActivityProcessor.AllowedTags));
+        string exportedText = string.Concat(span.TagObjects.Select(tag => tag.Key + "=" + tag.Value))
+            + span.DisplayName + span.StatusDescription;
+        Assert.DoesNotContain(Marker, exportedText, StringComparison.Ordinal);
+        Assert.DoesNotContain("192.0.2.10", exportedText, StringComparison.Ordinal);
+    }
+
+    private sealed class CapturingExporter(List<Activity> exported) : BaseExporter<Activity>
+    {
+        public override ExportResult Export(in Batch<Activity> batch)
+        {
+            lock (exported)
+            {
+                foreach (Activity activity in batch)
+                {
+                    exported.Add(activity);
+                }
+            }
+
+            return ExportResult.Success;
         }
     }
 }
