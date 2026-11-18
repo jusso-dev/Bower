@@ -25,6 +25,7 @@
     <ProjectReference Include="../Bower.Source.File/Bower.Source.File.csproj" />
     <ProjectReference Include="../Bower.Source.Syslog/Bower.Source.Syslog.csproj" />
     <ProjectReference Include="../Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />
+    <ProjectReference Include="../Bower.ServiceDefaults/Bower.ServiceDefaults.csproj" />
   </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="Bower.UnitTests" />

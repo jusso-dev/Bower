@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Shared host defaults for the Aspire local harness (docs/getting-started/aspire.md).
+       No Microsoft.AspNetCore.App framework reference: the Azure Functions worker uses this
+       too and must stay a plain Microsoft.NETCore.App process. -->
+  <ItemGroup>
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
+    <PackageReference Include="Microsoft.Extensions.ServiceDiscovery" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
+</Project>

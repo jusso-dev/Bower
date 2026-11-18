@@ -27,6 +27,16 @@
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.23.0" />
     <PackageVersion Include="Microsoft.IdentityModel.Protocols.OpenIdConnect" Version="8.23.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <!-- Aspire local harness only (Bower.ServiceDefaults, Bower.AppHost, Bower.AppHost.Tests);
+         see docs/architecture/dependencies.md. Never shipped in a production image or package
+         except ServiceDefaults, which is inert without OTEL_EXPORTER_OTLP_ENDPOINT. -->
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="17.0.0" />
+    <PackageVersion Include="Aspire.Hosting.Dotnet" Version="17.0.0" />
+    <PackageVersion Include="Aspire.Hosting.Testing" Version="17.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="11.0.0" />
+    <PackageVersion Include="Microsoft.Extensions.ServiceDiscovery" Version="11.0.0" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.21.0" />
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.21.0" />
     <!-- Security pin: Microsoft.Data.SqlClient 7.1.1 pulls 9.0.18, which has known
          moderate and high advisories (NU1902/NU1903). Pinned to the shared framework train (11.0.0). -->
     <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="11.0.0" />

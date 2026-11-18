@@ -23,5 +23,6 @@
     <ProjectReference Include="..\Bower.Jobs\Bower.Jobs.csproj" />
     <ProjectReference Include="..\Bower.Pipeline\Bower.Pipeline.csproj" />
     <ProjectReference Include="..\Bower.Redaction\Bower.Redaction.csproj" />
+    <ProjectReference Include="..\Bower.ServiceDefaults\Bower.ServiceDefaults.csproj" />
   </ItemGroup>
 </Project>

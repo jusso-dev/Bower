@@ -34,6 +34,8 @@
     <ProjectReference Include="../../src/Bower.Source.Aws/Bower.Source.Aws.csproj" />
     <ProjectReference Include="../../src/Bower.Ocsf/Bower.Ocsf.csproj" />
     <ProjectReference Include="../../src/Bower.Detection/Bower.Detection.csproj" />
+    <ProjectReference Include="../../src/Bower.ServiceDefaults/Bower.ServiceDefaults.csproj" />
+    <ProjectReference Include="../../tools/Bower.DevSinks/Bower.DevSinks.csproj" />
   </ItemGroup>
   <ItemGroup>
     <Using Include="Xunit" />
