@@ -186,15 +186,16 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
     public static async Task<List<string>> ReadLinesAsync(byte[] content, CancellationToken cancellationToken)
     {
         bool gzip = content.Length > 2 && content[0] == 0x1f && content[1] == 0x8b;
-        using StreamReader reader = new(gzip
+        await using Stream source = gzip
             ? new GZipStream(new MemoryStream(content), CompressionMode.Decompress)
-            : new MemoryStream(content));
+            : new MemoryStream(content);
+        // Limits count UTF-8 bytes, as DevSinkStore does, so a record accepted here is stored.
         List<string> lines = [];
         long decoded = 0;
-        char[] buffer = new char[4096];
-        StringBuilder current = new();
+        byte[] buffer = new byte[4096];
+        using MemoryStream current = new();
         int read;
-        while ((read = await reader.ReadAsync(buffer, cancellationToken)) > 0)
+        while ((read = await source.ReadAsync(buffer, cancellationToken)) > 0)
         {
             decoded += read;
             if (decoded > MaximumDecodedBytes)
@@ -202,20 +203,25 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
                 throw new InvalidDataException("S3 object exceeds the dev sink decode limit.");
             }
 
-            foreach (char character in buffer.AsSpan(0, read))
+            ReadOnlySpan<byte> chunk = buffer.AsSpan(0, read);
+            while (!chunk.IsEmpty)
             {
-                if (character == '\n')
+                int newline = chunk.IndexOf((byte)'\n');
+                ReadOnlySpan<byte> part = newline < 0 ? chunk : chunk[..newline];
+                if (current.Length + part.Length > DevSinkStore.MaximumRecordBytes + 1)
                 {
-                    AddLine(lines, current);
-                    continue;
-                }
-
-                if (current.Length >= DevSinkStore.MaximumRecordBytes)
-                {
+                    // +1 allows the CR of a CRLF line ending, trimmed in AddLine.
                     throw new InvalidDataException("S3 object holds a record above the dev sink record limit.");
                 }
 
-                current.Append(character);
+                current.Write(part);
+                if (newline < 0)
+                {
+                    break;
+                }
+
+                AddLine(lines, current);
+                chunk = chunk[(newline + 1)..];
             }
         }
 
@@ -223,10 +229,21 @@ internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContin
         return lines;
     }
 
-    private static void AddLine(List<string> lines, StringBuilder current)
+    private static void AddLine(List<string> lines, MemoryStream current)
     {
-        string line = current.ToString().TrimEnd('\r');
-        current.Clear();
+        ReadOnlySpan<byte> bytes = current.GetBuffer().AsSpan(0, (int)current.Length);
+        if (!bytes.IsEmpty && bytes[^1] == (byte)'\r')
+        {
+            bytes = bytes[..^1];
+        }
+
+        if (bytes.Length > DevSinkStore.MaximumRecordBytes)
+        {
+            throw new InvalidDataException("S3 object holds a record above the dev sink record limit.");
+        }
+
+        string line = bytes.IsEmpty ? string.Empty : Encoding.UTF8.GetString(bytes);
+        current.SetLength(0);
         if (line.Length == 0)
         {
             return;

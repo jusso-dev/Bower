@@ -109,6 +109,15 @@ public sealed class DevSinksTests
         await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(tooMany, cancellationToken));
         await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(longRecord, cancellationToken));
         await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(bomb.ToArray(), cancellationToken));
+        // Two UTF-8 bytes per character: within the limit in characters, over it in bytes.
+        byte[] multibyte = Encoding.UTF8.GetBytes(new string('é', (DevSinkStore.MaximumRecordBytes / 2) + 1));
+        await Assert.ThrowsAsync<InvalidDataException>(() => S3ListPage.ReadLinesAsync(multibyte, cancellationToken));
+        string atLimit = new('é', DevSinkStore.MaximumRecordBytes / 2);
+        Assert.Equal([atLimit], await S3ListPage.ReadLinesAsync(Encoding.UTF8.GetBytes(atLimit + "\r\n"), cancellationToken));
+        DevSinkStore store = new();
+        store.Add("s3", null, atLimit);
+        Assert.Single(store.Records("s3"));
+
         Assert.Equal(DevSinkStore.Capacity, (await S3ListPage.ReadLinesAsync(
             Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("{}\r\n", DevSinkStore.Capacity))), cancellationToken)).Count);
     }
