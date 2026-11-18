@@ -114,23 +114,39 @@ public sealed class ServiceDefaultsTests
             tracing.AddProcessor(new SimpleActivityExportProcessor(new CapturingExporter(exported))));
 
         await using WebApplication app = builder.Build();
-        app.MapGet("/health/{name}", (string name) => Results.Ok());
+        // A route no other test serves: the ASP.NET Core activity source is process-wide, so
+        // parallel tests' hosts also produce server spans this tracer sees.
+        app.MapGet("/service-defaults-probe/{name}", (string name) => Results.Ok());
         await app.StartAsync(cancellationToken);
 
-        using HttpRequestMessage request = new(HttpMethod.Get, $"/health/{Marker}?private={Marker}");
+        using HttpRequestMessage request = new(HttpMethod.Get, $"/service-defaults-probe/{Marker}?private={Marker}");
         request.Headers.UserAgent.ParseAdd(Marker);
         request.Headers.Add("X-Forwarded-For", "192.0.2.10");
         using HttpResponseMessage response = await app.GetTestClient().SendAsync(request, cancellationToken);
         response.EnsureSuccessStatusCode();
-        await app.StopAsync(cancellationToken);
 
-        Activity span;
-        lock (exported)
+        // The server span ends after TestServer hands back the response; wait for its export.
+        Activity? span = null;
+        using (CancellationTokenSource exportWait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
         {
-            span = Assert.Single(exported, activity => activity.Kind == ActivityKind.Server);
+            exportWait.CancelAfter(TimeSpan.FromSeconds(10));
+            while (span is null)
+            {
+                lock (exported)
+                {
+                    span = exported.FirstOrDefault(activity => activity.Kind == ActivityKind.Server
+                        && Equals(activity.GetTagItem("http.route"), "/service-defaults-probe/{name}"));
+                }
+
+                if (span is null)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(20), exportWait.Token);
+                }
+            }
         }
 
-        Assert.Equal("/health/{name}", span.GetTagItem("http.route"));
+        await app.StopAsync(cancellationToken);
+
         Assert.Equal("GET", span.GetTagItem("http.request.method"));
         Assert.All(span.TagObjects, tag => Assert.Contains(tag.Key, MetadataOnlyActivityProcessor.AllowedTags));
         string exportedText = string.Concat(span.TagObjects.Select(tag => tag.Key + "=" + tag.Value))
