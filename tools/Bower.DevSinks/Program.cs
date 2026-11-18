@@ -57,8 +57,10 @@ app.MapGet("/api/events/{eventId}", (string eventId) =>
     store.Contains(eventId) ? Results.Ok() : Results.NotFound());
 
 // Pulls every object from the S3 emulator bucket into the "s3" sink (S3Mock serves
-// unauthenticated reads). Idempotent: an object already read is skipped.
-HashSet<string> seenKeys = new(StringComparer.Ordinal);
+// unauthenticated reads). Idempotent: an object is marked read only after all its records
+// were stored, and refreshes run one at a time.
+HashSet<string> readKeys = new(StringComparer.Ordinal);
+SemaphoreSlim refreshGate = new(1, 1);
 app.MapPost("/api/s3/refresh", async (IHttpClientFactory clients, CancellationToken cancellationToken) =>
 {
     string? endpoint = app.Configuration["DEVSINKS_S3_ENDPOINT"];
@@ -68,32 +70,43 @@ app.MapPost("/api/s3/refresh", async (IHttpClientFactory clients, CancellationTo
         return Results.Problem("DEVSINKS_S3_ENDPOINT and DEVSINKS_S3_BUCKET are not set.");
     }
 
-    HttpClient client = clients.CreateClient("s3");
-    Uri bucketUri = new(new Uri(endpoint.TrimEnd('/') + "/"), bucket + "/");
-    string listing = await client.GetStringAsync(new Uri(bucketUri, "?list-type=2"), cancellationToken);
-    XNamespace ns = "http://s3.amazonaws.com/doc/2006-03-01/";
-    int added = 0;
-    foreach (string key in XDocument.Parse(listing).Descendants(ns + "Key").Select(element => element.Value))
+    await refreshGate.WaitAsync(cancellationToken);
+    try
     {
-        if (!seenKeys.Add(key))
+        HttpClient client = clients.CreateClient("s3");
+        Uri bucketUri = new(new Uri(endpoint.TrimEnd('/') + "/"), bucket + "/");
+        int added = 0;
+        string? continuation = null;
+        do
         {
-            continue;
-        }
-
-        byte[] content = await client.GetByteArrayAsync(new Uri(bucketUri, Uri.EscapeDataString(key).Replace("%2F", "/", StringComparison.Ordinal)), cancellationToken);
-        bool gzip = content.Length > 2 && content[0] == 0x1f && content[1] == 0x8b;
-        using StreamReader reader = new(gzip ? new GZipStream(new MemoryStream(content), CompressionMode.Decompress) : new MemoryStream(content));
-        while (await reader.ReadLineAsync(cancellationToken) is { } line)
-        {
-            if (line.Length > 0)
+            string query = continuation is null ? "?list-type=2" : "?list-type=2&continuation-token=" + Uri.EscapeDataString(continuation);
+            S3ListPage page = S3ListPage.Parse(await client.GetStringAsync(new Uri(bucketUri, query), cancellationToken));
+            foreach (string key in page.Keys.Where(key => !readKeys.Contains(key)))
             {
-                store.Add("s3", DevSinkStore.ReadEventId(Encoding.UTF8.GetBytes(line)), line);
-                added++;
-            }
-        }
-    }
+                byte[] content = await client.GetByteArrayAsync(
+                    new Uri(bucketUri, Uri.EscapeDataString(key).Replace("%2F", "/", StringComparison.Ordinal)), cancellationToken);
+                // Decode the whole object before storing any record, so a corrupt object
+                // stores nothing and stays retryable without duplicates.
+                List<string> lines = await S3ListPage.ReadLinesAsync(content, cancellationToken);
+                foreach (string line in lines)
+                {
+                    store.Add("s3", DevSinkStore.ReadEventId(Encoding.UTF8.GetBytes(line)), line);
+                }
 
-    return Results.Ok(new S3RefreshResponse(seenKeys.Count, added));
+                added += lines.Count;
+                readKeys.Add(key);
+            }
+
+            continuation = page.NextContinuationToken;
+        }
+        while (continuation is not null);
+
+        return Results.Ok(new S3RefreshResponse(readKeys.Count, added));
+    }
+    finally
+    {
+        refreshGate.Release();
+    }
 });
 
 app.Run();
@@ -143,6 +156,41 @@ internal static partial class Log
 {
     [LoggerMessage(1, LogLevel.Information, "Syslog stand-in listening on {Path}")]
     public static partial void Listening(ILogger logger, string path);
+}
+
+/// <summary>One ListObjectsV2 page from the S3 emulator.</summary>
+internal sealed record S3ListPage(IReadOnlyList<string> Keys, string? NextContinuationToken)
+{
+    private static readonly XNamespace Ns = "http://s3.amazonaws.com/doc/2006-03-01/";
+
+    public static S3ListPage Parse(string xml)
+    {
+        XElement root = XDocument.Parse(xml).Root ?? throw new InvalidDataException("Empty S3 listing.");
+        bool truncated = string.Equals(root.Element(Ns + "IsTruncated")?.Value, "true", StringComparison.OrdinalIgnoreCase);
+        string? next = root.Element(Ns + "NextContinuationToken")?.Value;
+        return new S3ListPage(
+            [.. root.Elements(Ns + "Contents").Select(item => item.Element(Ns + "Key")?.Value).OfType<string>()],
+            truncated && !string.IsNullOrEmpty(next) ? next : null);
+    }
+
+    /// <summary>Non-empty NDJSON lines of an object, gunzipped when it starts with the gzip magic.</summary>
+    public static async Task<List<string>> ReadLinesAsync(byte[] content, CancellationToken cancellationToken)
+    {
+        bool gzip = content.Length > 2 && content[0] == 0x1f && content[1] == 0x8b;
+        using StreamReader reader = new(gzip
+            ? new GZipStream(new MemoryStream(content), CompressionMode.Decompress)
+            : new MemoryStream(content));
+        List<string> lines = [];
+        while (await reader.ReadLineAsync(cancellationToken) is { } line)
+        {
+            if (line.Length > 0)
+            {
+                lines.Add(line);
+            }
+        }
+
+        return lines;
+    }
 }
 
 internal sealed record S3RefreshResponse(int Objects, int Added);

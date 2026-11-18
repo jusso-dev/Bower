@@ -15,9 +15,11 @@ namespace Bower.ServiceDefaults;
 /// is set, which Aspire sets for every resource it starts and no shipped deployment sets.
 /// </summary>
 /// <remarks>
-/// Exported telemetry is framework metadata only (request routes and status codes, runtime
-/// and HTTP client metrics, log records). It never adds request or response bodies, headers
-/// or query strings. HTTP client resilience and service discovery are not applied here: Bower
+/// Exported telemetry is metadata only. Spans pass through
+/// <see cref="MetadataOnlyActivityProcessor"/> (route, method and status attributes only), and
+/// the OpenTelemetry logger drops framework request logs below Warning
+/// (<see cref="RequestLogCategories"/>), which carry paths, query strings and URIs. It never
+/// adds request or response bodies, headers or query strings. HTTP client resilience and service discovery are not applied here: Bower
 /// owns retries through the durable queue, and the management client's one-time enrolment
 /// token must not be retried by a generic handler. Use
 /// <see cref="AddBowerHttpClientDefaults"/> for a named client that explicitly wants them.
@@ -29,6 +31,14 @@ public static class BowerServiceDefaults
 
     /// <summary>Meter names Bower code may publish; listed so the exporter picks them up.</summary>
     public const string MeterPrefix = "Bower.";
+
+    /// <summary>
+    /// Framework categories whose Information logs carry request paths, query strings or full
+    /// URIs. The OpenTelemetry provider exports them at Warning and above only, whatever the
+    /// host's own console filters are.
+    /// </summary>
+    public static IReadOnlyList<string> RequestLogCategories { get; } =
+        ["Microsoft.AspNetCore", "System.Net.Http.HttpClient"];
 
     /// <summary>True when an OTLP endpoint is configured (the opt-in signal).</summary>
     public static bool IsEnabled(IConfiguration configuration)
@@ -57,6 +67,10 @@ public static class BowerServiceDefaults
             // Scopes can carry request paths with query strings; keep records to the message.
             logging.IncludeScopes = false;
         });
+        foreach (string category in RequestLogCategories)
+        {
+            builder.Logging.AddFilter<OpenTelemetryLoggerProvider>(category, LogLevel.Warning);
+        }
 
         builder.Services.AddOpenTelemetry()
             .WithMetrics(metrics => metrics
@@ -69,7 +83,8 @@ public static class BowerServiceDefaults
                 .AddSource(builder.Environment.ApplicationName)
                 .AddSource("Microsoft.AspNetCore")
                 .AddSource("System.Net.Http")
-                .AddSource(MeterPrefix + "*"))
+                .AddSource(MeterPrefix + "*")
+                .AddProcessor(new MetadataOnlyActivityProcessor()))
             .UseOtlpExporter();
 
         return builder;

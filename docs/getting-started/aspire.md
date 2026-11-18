@@ -121,7 +121,10 @@ OpenTelemetry logs, metrics and traces with the OTLP exporter **only when
 deployment sets. Without it, nothing is registered and production behaviour is unchanged
 (`ServiceDefaultsTests` pins this). Exported data is framework metadata (routes, status
 codes, runtime and HTTP client metrics, log messages without scopes), never request or
-response bodies, headers or query strings.
+response bodies, headers or query strings. Spans keep only allowlisted attributes (method,
+route, status code, scheme, protocol version, error type), so user agents, client addresses
+and full URLs are dropped. Framework request logs (`Microsoft.AspNetCore`,
+`System.Net.Http.HttpClient`) reach the exporter at Warning and above only.
 
 Generic HTTP resilience and service discovery are **not** applied to Bower's clients:
 Bower retries through its durable queue, and the management client's single-use enrolment

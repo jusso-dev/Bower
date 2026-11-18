@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Text;
 using Bower.DevSinks;
 using Bower.Output.AmaSyslog;
@@ -53,5 +54,43 @@ public sealed class DevSinksTests
         Assert.False(store.Contains("e-0"));
         Assert.False(store.Contains("big"));
         Assert.True(store.Contains($"e-{DevSinkStore.Capacity + 9}"));
+    }
+
+    [Fact]
+    public void S3ListPageFollowsContinuationOnlyWhenTruncated()
+    {
+        const string truncated = """
+            <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>true</IsTruncated>
+            <Contents><Key>bower/a</Key></Contents><Contents><Key>bower/b</Key></Contents>
+            <NextContinuationToken>next-1</NextContinuationToken></ListBucketResult>
+            """;
+        const string last = """
+            <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><IsTruncated>false</IsTruncated>
+            <Contents><Key>bower/c</Key></Contents></ListBucketResult>
+            """;
+
+        S3ListPage first = S3ListPage.Parse(truncated);
+        S3ListPage final = S3ListPage.Parse(last);
+
+        Assert.Equal(["bower/a", "bower/b"], first.Keys);
+        Assert.Equal("next-1", first.NextContinuationToken);
+        Assert.Equal(["bower/c"], final.Keys);
+        Assert.Null(final.NextContinuationToken);
+    }
+
+    [Fact]
+    public async Task S3ObjectLinesReadGzipAndPlain()
+    {
+        byte[] plain = Encoding.UTF8.GetBytes("{\"eventId\":\"a\"}\n\n{\"eventId\":\"b\"}\n");
+        using MemoryStream compressed = new();
+        await using (GZipStream gzip = new(compressed, CompressionLevel.Fastest, leaveOpen: true))
+        {
+            await gzip.WriteAsync(plain, TestContext.Current.CancellationToken);
+        }
+
+        Assert.Equal(2, (await S3ListPage.ReadLinesAsync(plain, TestContext.Current.CancellationToken)).Count);
+        Assert.Equal(2, (await S3ListPage.ReadLinesAsync(compressed.ToArray(), TestContext.Current.CancellationToken)).Count);
+        await Assert.ThrowsAnyAsync<InvalidDataException>(() =>
+            S3ListPage.ReadLinesAsync([0x1f, 0x8b, 1, 2, 3], TestContext.Current.CancellationToken));
     }
 }

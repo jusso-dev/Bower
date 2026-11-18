@@ -74,7 +74,12 @@ public sealed class AppHostPipelineTests
         finally
         {
             Directory.Delete(work, recursive: true);
-            Directory.Delete(Path.GetDirectoryName(socket)!, recursive: true);
+            // Only the Unix syslog listener creates it; absent on Windows or after an early failure.
+            string socketDirectory = Path.GetDirectoryName(socket)!;
+            if (Directory.Exists(socketDirectory))
+            {
+                Directory.Delete(socketDirectory, recursive: true);
+            }
         }
     }
 
