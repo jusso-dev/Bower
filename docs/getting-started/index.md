@@ -28,6 +28,7 @@ exact test event in Sentinel proves delivery. A simulated run is labelled
 - **Planning an installation?** [Choose a deployment](deployment.md).
 - **Already using the console?** Find the [dashboard guides](../guides/index.md).
 - **Looking after an existing installation?** Use the [operations guides](../operations/index.md).
+- **Developing Bower itself?** Run the whole pipeline locally with [Aspire](aspire.md).
 
 Bower is a security telemetry bridge. It is not a general log shipper, a SIEM,
 an application performance monitor or a replacement for Azure Monitor Agent.

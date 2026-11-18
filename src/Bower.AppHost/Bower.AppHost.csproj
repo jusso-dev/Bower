@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Aspire local development and integration-test harness (docs/getting-started/aspire.md).
+       Never published, packaged or deployed: Compose, Bicep and the native packages stay the
+       production paths. Resources are added by path (AddDotnetProject), so the AppHost has no
+       ProjectReference to the hosts and building it does not build them. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <IsPublishable>false</IsPublishable>
+    <!-- Orchestrates local processes and containers; never trimmed or AOT published. -->
+    <IsAotCompatible>false</IsAotCompatible>
+    <UserSecretsId>bower-apphost-local</UserSecretsId>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.AppHost" />
+    <PackageReference Include="Aspire.Hosting.Dotnet" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.AppHost.Tests" />
+  </ItemGroup>
+</Project>

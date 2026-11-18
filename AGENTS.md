@@ -42,6 +42,8 @@ control plane, or runtime AI filter.
 - `src/Bower.Source.File`: security-selected local file tail (operator-named files under allowed roots, no wildcards), routed to signed pack parsers with durable cursors (collector `BOWER_FILE_CONFIG`).
 - `src/Bower.Source.WindowsEventLog`: channel and event ID allow-listed Windows Event Log subscriptions with durable bookmarks, mapped by signed pack parsers (C# collector on Windows, `BOWER_WINDOWS_EVENTLOG_CONFIG`).
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
+- `src/Bower.ServiceDefaults`: opt-in OpenTelemetry host defaults; inert unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
+- `src/Bower.AppHost`, `tools/Bower.DevSinks`, `tests/Bower.AppHost.Tests`: Aspire local development and integration-test harness with local stand-in destinations (development only, never deployed). See `docs/getting-started/aspire.md`.
 - `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `linux-authlog-ssh`, `windows-security-logon`, `aws-security`, `gcp-security`, `owasp-asvs-app-logging`).
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal and the S3 output policy (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
@@ -62,6 +64,8 @@ dotnet format --verify-no-changes
 docker compose build
 cd ui/Bower.Management.Web && npm ci && npm run lint && npm test && npm run build
 pwsh -NoProfile -File powershell/build.ps1   # PSScriptAnalyzer + Pester
+DOCKER_CONTEXT=orbstack aspire run --apphost src/Bower.AppHost -lp http   # local harness
+DOCKER_CONTEXT=orbstack BOWER_ASPIRE_TESTS=1 dotnet test --project tests/Bower.AppHost.Tests
 ```
 
 Regenerate NuGet lock files with `dotnet restore --force-evaluate -p:Version=1.0.0`:
