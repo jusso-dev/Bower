@@ -6,6 +6,38 @@ using Bower.Persistence;
 
 namespace Bower.Collector;
 
+public sealed record VolumeHealthStatus(
+    string Volume,
+    string State,
+    long? FreeBytes,
+    long? TotalBytes,
+    double? FreePercent);
+
+/// <summary>
+/// Free-space health across auxiliary Bower volumes (AMA spool and queue archive when configured),
+/// evaluated alongside the queue volume so a full spool or archive volume degrades <c>/health</c>.
+/// Metadata only: never exposes directory paths.
+/// </summary>
+public sealed class MonitoredVolumes(IReadOnlyList<(string Name, StorageGuard Guard)> volumes)
+{
+    public bool HasVolumes => volumes.Count > 0;
+
+    public bool AnyCritical() =>
+        volumes.Any(item => item.Guard.Evaluate().State == StorageState.Critical);
+
+    public IReadOnlyList<VolumeHealthStatus> Evaluate() =>
+        [.. volumes.Select(item =>
+        {
+            StorageWatermarkSnapshot snapshot = item.Guard.Evaluate();
+            return new VolumeHealthStatus(
+                item.Name,
+                StorageWatermarkSnapshot.Name(snapshot.State),
+                snapshot.FreeBytes,
+                snapshot.TotalBytes,
+                snapshot.FreePercent);
+        })];
+}
+
 /// <summary>
 /// Storage pressure facts shared by the monitor, the retention job and status: acknowledged
 /// rows purged early under pressure. In memory; resets on restart.

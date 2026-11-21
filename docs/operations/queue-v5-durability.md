@@ -253,6 +253,28 @@ privacy profile cache writers) older than one hour, from the queue directory and
 recursively, at most 1,000 per run. The AMA spool and the archive already clean their own
 temporaries when they open. No other file is touched.
 
+## Dead-letter retention, auxiliary volumes and service watchdogs
+
+- **Opt-in dead-letter retention.** Dead-lettered rows are kept indefinitely by default
+  so unresolved delivery failures cannot disappear silently. Set
+  `BOWER_DEAD_LETTER_RETENTION_DAYS` (`1`–`3650`) to enable automatic expiry of dead-lettered
+  rows older than the configured age. Before deleting any expired dead-letter row, the
+  retention job logs a pre-expiry warning (`EventId 1510`) for rows within 24 hours of
+  expiry, records a hash-chained `queue_dead_letter_purges` ledger evidence entry (count,
+  cutoff, failure-code summary, oldest/newest timestamps and chain hash), and logs
+  `EventId 1511` with metadata only.
+- **Auxiliary volume health.** When `BOWER_OUTPUT=ama-spool` or `BOWER_ARCHIVE_PATH` is
+  configured, the collector monitors free space on the spool and archive volumes using the
+  same `BOWER_STORAGE_*` watermarks as the queue volume. `/v1/status` reports auxiliary
+  volume state under `volumes`, and a critical auxiliary volume degrades `/health` and
+  `/v1/status` to `degraded`.
+- **Service watchdogs and crash recovery.** `deploy/systemd/bower.service` sets
+  `WatchdogSec=60s` alongside `Restart=always`, and the collector sends `READY=1`,
+  periodic `WATCHDOG=1` heartbeats (at half `WATCHDOG_USEC`), and `STOPPING=1` over
+  `NOTIFY_SOCKET` without external native dependencies. The Windows MSI configures three
+  automatic service-recovery restart actions. Heartbeats carry `recovery` (from unclean
+  shutdown detection) and `oldestDeadLetterAgeSeconds` alongside dead-letter counts.
+
 ## SQL Server timestamp cursor v3 and allocation bounds
 
 Timestamp cursor v3 keeps forward `(eventTime, sequence)` progress separate from a

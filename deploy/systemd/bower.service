@@ -5,7 +5,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# The collector does not send sd_notify readiness, so systemd must not wait for it.
+# Sends sd_notify READY=1 / WATCHDOG=1 / STOPPING=1 when NOTIFY_SOCKET is present.
 Type=exec
 User=bower
 Group=bower
@@ -13,6 +13,7 @@ WorkingDirectory=/opt/bower
 ExecStart=/opt/bower/Bower.Collector
 Restart=on-failure
 RestartSec=5s
+WatchdogSec=60s
 Environment=BOWER_LISTEN_URL=http://127.0.0.1:4319
 Environment=BOWER_QUEUE_PATH=/var/lib/bower/queue.db
 Environment=BOWER_POLICY_DIRECTORY=/etc/bower/policies

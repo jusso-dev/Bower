@@ -104,6 +104,10 @@ internal sealed record StatusResponse(
     /// <summary>Unclean-shutdown check and temporary-file cleanup at the last start. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CrashRecoveryStatus? Recovery { get; init; }
+
+    /// <summary>Free-space health for configured spool and archive volumes. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<VolumeHealthStatus>? Volumes { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
@@ -231,6 +235,14 @@ internal sealed record CollectorHeartbeat(
     /// <summary>WEC runtime status per configured WEC subscription (additive). Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.WindowsEventLog.WecSubscriptionRuntimeStatus>? WecRuntime { get; init; }
+
+    /// <summary>Age in seconds of the oldest dead-lettered event, if any (additive). Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public long? OldestDeadLetterAgeSeconds { get; init; }
+
+    /// <summary>Last start's unclean-shutdown and recovery check (additive). Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CrashRecoveryStatus? Recovery { get; init; }
 }
 
 /// <summary>

@@ -33,6 +33,9 @@ public sealed record CollectorSettings
     /// <summary>How long acknowledged events stay in the queue for duplicate detection.</summary>
     public TimeSpan DeliveredRetention { get; init; } = TimeSpan.FromDays(7);
 
+    /// <summary>Opt-in dead-letter retention (BOWER_DEAD_LETTER_RETENTION_DAYS, 1–3650). Null disables dead-letter purging.</summary>
+    public TimeSpan? DeadLetterRetention { get; init; }
+
     /// <summary>
     /// Acknowledged events younger than this are kept even under storage pressure
     /// (BOWER_QUEUE_PRESSURE_RETENTION_MINUTES, default 60, at most the retention). Older
@@ -346,6 +349,7 @@ public sealed record CollectorSettings
             PressureRetentionFloor = TimeSpan.FromMinutes(ReadInt64(read, "BOWER_QUEUE_PRESSURE_RETENTION_MINUTES", 60)),
             DeliveredRetention = TimeSpan.FromHours(
                 ReadInt64(read, "BOWER_QUEUE_RETENTION_HOURS", 7 * 24)),
+            DeadLetterRetention = ReadOptionalDays(read, "BOWER_DEAD_LETTER_RETENTION_DAYS"),
             IngestToken = string.IsNullOrWhiteSpace(token) ? null : token,
             IngestTokensFile = Blank(read("BOWER_INGEST_TOKENS_FILE")),
             ProducerScopesFile = Blank(read("BOWER_PRODUCER_SCOPES_FILE")),
@@ -498,6 +502,13 @@ public sealed record CollectorSettings
         {
             throw new InvalidOperationException(
                 "BOWER_QUEUE_RETENTION_HOURS must be between 1 and 2160.");
+        }
+
+        if (DeadLetterRetention is { } dlqRetention
+            && (dlqRetention < TimeSpan.FromDays(1) || dlqRetention > TimeSpan.FromDays(3650)))
+        {
+            throw new InvalidOperationException(
+                "BOWER_DEAD_LETTER_RETENTION_DAYS must be between 1 and 3650.");
         }
 
         if (PressureRetentionFloor < TimeSpan.FromMinutes(1) || PressureRetentionFloor > DeliveredRetention)
@@ -915,6 +926,12 @@ public sealed record CollectorSettings
                 + PressureRetentionFloor.TotalMinutes.ToString(CultureInfo.InvariantCulture);
         }
 
+        if (DeadLetterRetention is { } dlqRetention)
+        {
+            material += '\u001f' + "dead-letter-retention-days:"
+                + dlqRetention.TotalDays.ToString(CultureInfo.InvariantCulture);
+        }
+
         if (StorageWatermarks != new Bower.Persistence.StorageWatermarkOptions())
         {
             material += '\u001f' + "storage-watermarks:"
@@ -1103,6 +1120,22 @@ public sealed record CollectorSettings
         return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int parsed)
             ? parsed
             : throw new InvalidOperationException($"{name} must be an integer between {int.MinValue} and {int.MaxValue}.");
+    }
+
+    private static TimeSpan? ReadOptionalDays(Func<string, string?> read, string name)
+    {
+        string? raw = Blank(read(name));
+        if (raw is null)
+        {
+            return null;
+        }
+
+        if (!long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out long days))
+        {
+            throw new InvalidOperationException($"{name} must be an integer number of days.");
+        }
+
+        return days == 0 ? null : TimeSpan.FromDays(days);
     }
 
     private static long ReadInt64(Func<string, string?> read, string name, long fallback)

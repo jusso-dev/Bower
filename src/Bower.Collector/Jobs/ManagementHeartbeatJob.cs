@@ -30,7 +30,8 @@ public sealed partial class ManagementHeartbeatJob(
     PipelineTelemetry? telemetry = null,
     QueueStoragePressure? storagePressure = null,
     WindowsEventLogSource? windowsEventLog = null,
-    WecRuntimeStatusTracker? wecRuntime = null)
+    WecRuntimeStatusTracker? wecRuntime = null,
+    CrashRecoveryState? crashRecovery = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -89,6 +90,15 @@ public sealed partial class ManagementHeartbeatJob(
         Bower.Persistence.QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(eventStore, cancellationToken);
         QueueStorageStatus? storage = await QueueStorageStatus.TryCaptureAsync(
             eventStore, snapshot, storagePressure, telemetry, now, pages, cancellationToken);
+        long? oldestDeadLetterAge = null;
+        if (snapshot.DeadLettered > 0 && eventStore is Bower.Persistence.SqliteEventStore sqliteStore)
+        {
+            Bower.Persistence.DeadLetterHealth dlqHealth = await sqliteStore.GetDeadLetterHealthAsync(cancellationToken);
+            if (dlqHealth.OldestReceivedAt is { } oldestDlq)
+            {
+                oldestDeadLetterAge = Math.Max(0, (long)(now - oldestDlq).TotalSeconds);
+            }
+        }
         string deliveryStatus = DeliveryHealth.Evaluate(settings.OutputType, snapshot,
             settings.MaximumQueueBytes, now, storage?.IntakePaused ?? false, pages?.UsedPercent);
         // Finished command results stay pending until management acknowledges them.
@@ -178,7 +188,9 @@ public sealed partial class ManagementHeartbeatJob(
                     CommandResults = results,
                     Redactions = telemetry?.RedactionSnapshot(),
                     Storage = storage,
-                    WecRuntime = wecSnapshots.Count > 0 ? wecSnapshots : null
+                    WecRuntime = wecSnapshots.Count > 0 ? wecSnapshots : null,
+                    OldestDeadLetterAgeSeconds = oldestDeadLetterAge,
+                    Recovery = crashRecovery?.Last
                 },
                 CollectorJsonContext.Default.CollectorHeartbeat));
         // One budget for the whole exchange, body included: a stalled body cannot hold the
