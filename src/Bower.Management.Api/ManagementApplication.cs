@@ -642,6 +642,7 @@ public static class ManagementApplication
 
         PrivacyProfileEndpoints.Map(api);
         PrivacyProfileForm.Map(api);
+        PolicyFormEndpoints.Map(api);
         SetupEndpoints.Map(api);
         EnrolmentEndpoints.Map(api);
         SourceSetupEndpoints.Map(api);

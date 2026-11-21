@@ -849,6 +849,7 @@
           "Bower.Integrity": "[1.0.0, )",
           "Bower.Jobs": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",
+          "Bower.PolicyEngine": "[1.0.0, )",
           "Bower.Redaction": "[1.0.0, )",
           "Bower.ServiceDefaults": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[11.0.0, )",
