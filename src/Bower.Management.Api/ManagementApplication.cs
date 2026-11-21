@@ -141,6 +141,8 @@ public static class ManagementApplication
             builder.Configuration[SourceSetupSigner.KeyFileSetting]));
         // Optional: without trusted keys offline site bundle imports are refused (503).
         builder.Services.AddSingleton(OfflineSiteTrustKeys.FromConfiguration(builder.Configuration));
+        // Optional: signed pack gallery directory + trusted signing keys (fail closed when keys absent).
+        builder.Services.AddSingleton(PackGalleryService.FromConfiguration(builder.Configuration));
 
         string[] allowedOrigins = builder.Configuration
             .GetSection("Bower:AllowedOrigins")
@@ -346,6 +348,7 @@ public static class ManagementApplication
 
         OfflineSiteEndpoints.Map(api);
         PipelineLiveEndpoints.Map(api);
+        PackGalleryEndpoints.Map(api);
 
         api.MapGet(
                 "/collectors",
