@@ -10,6 +10,7 @@ using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction.Privacy;
+using Bower.Source.WindowsEventLog;
 
 namespace Bower.Cli.Commands;
 
@@ -149,6 +150,21 @@ internal static class DoctorCommand
         if (CliOptions.Get(args, "--syslog-socket") is { } syslogSocket)
         {
             CheckSyslogSocket(syslogSocket, Pass, Fail);
+        }
+
+        // Windows Event Collector (WEC) host readiness checks.
+        IReadOnlyList<string> wecSubscriptions = CliOptions.All(args, "--wec-subscription");
+        string? wecChannel = CliOptions.Get(args, "--wec-channel");
+        if (wecSubscriptions.Count > 0 || wecChannel is not null)
+        {
+            await CheckWecHostAsync(
+                wecSubscriptions,
+                wecChannel ?? "ForwardedEvents",
+                new WindowsWecHostProbe(),
+                DateTimeOffset.UtcNow,
+                Pass,
+                Warn,
+                Fail);
         }
 
         // Local queue ledger.
@@ -318,6 +334,28 @@ internal static class DoctorCommand
         }
 
         pass("ama-syslog", $"{path} is a socket and accepts connections.");
+    }
+
+    internal static async Task CheckWecHostAsync(
+        IReadOnlyList<string> subscriptions,
+        string channelName,
+        IWecHostProbe probe,
+        DateTimeOffset now,
+        Action<string, string> pass,
+        Action<string, string> warn,
+        Action<string, string> fail,
+        CancellationToken cancellationToken = default)
+    {
+        WecHostSnapshot snapshot = await probe.ProbeAsync(subscriptions, channelName, cancellationToken);
+        foreach (WecDoctorFinding finding in WecDoctorEvaluator.Evaluate(snapshot, now))
+        {
+            (finding.Status switch
+            {
+                "FAIL" => fail,
+                "WARN" => warn,
+                _ => pass
+            })(finding.Area, finding.Detail);
+        }
     }
 
     private static void Report(
