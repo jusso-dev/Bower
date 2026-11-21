@@ -9,7 +9,9 @@ public sealed partial class ManagementStore
     public async Task<FleetRecord> FleetAsync(DateTimeOffset now, CancellationToken cancellationToken)
     {
         IReadOnlyList<CollectorRecord> collectors = await ListAsync(null, cancellationToken);
-        return FleetStatus.Evaluate(collectors, await SignedOutCollectorsAsync(now, cancellationToken), now);
+        IReadOnlySet<string> signedOut = await SignedOutCollectorsAsync(now, cancellationToken);
+        IReadOnlySet<string> offlineSites = await OfflineSiteCollectorsAsync(cancellationToken);
+        return FleetStatus.Evaluate(collectors, signedOut, now, offlineSites);
     }
 
     /// <summary>

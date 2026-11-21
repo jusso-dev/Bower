@@ -40,10 +40,12 @@ public static class FleetStatus
     public static FleetRecord Evaluate(
         IReadOnlyList<CollectorRecord> collectors,
         IReadOnlySet<string> signedOut,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        IReadOnlySet<string>? offlineSites = null)
     {
         ArgumentNullException.ThrowIfNull(collectors);
         ArgumentNullException.ThrowIfNull(signedOut);
+        IReadOnlySet<string> offline = offlineSites ?? new HashSet<string>(StringComparer.Ordinal);
         // The newest release; a preview build (dev, rc) never makes released collectors old.
         // A fleet with no release yet compares its pre-releases, so drift still shows.
         string[] fresh = [.. collectors
@@ -55,7 +57,7 @@ public static class FleetStatus
             ?? fresh.LastOrDefault();
 
         FleetCollector[] fleet = collectors
-            .Select(item => Collector(item, newest, signedOut.Contains(item.Id), now))
+            .Select(item => Collector(item, newest, signedOut.Contains(item.Id), offline.Contains(item.Id), now))
             .OrderBy(item => Rank(item.Light))
             .ThenBy(item => Array.FindIndex(Catalogue, entry => entry.Id == item.State))
             .ThenBy(item => item.Site, StringComparer.Ordinal)
@@ -80,12 +82,14 @@ public static class FleetStatus
         return new FleetRecord(now, fleet, states, sites, newest);
     }
 
-    private static FleetCollector Collector(CollectorRecord item, string? newest, bool signedOut, DateTimeOffset now)
+    private static FleetCollector Collector(CollectorRecord item, string? newest, bool signedOut, bool offlineSite, DateTimeOffset now)
     {
-        string connectivity = CollectorConnectivity.Evaluate(item, now);
-        string? path = item.Outputs.Count == 0
-            ? null
-            : item.Outputs.Any(output => Is(output.Type, FleetPaths.Relay)) ? FleetPaths.Relay : FleetPaths.Direct;
+        string connectivity = offlineSite ? "offline-site" : CollectorConnectivity.Evaluate(item, now);
+        string? path = offlineSite
+            ? "offline-bundle"
+            : item.Outputs.Count == 0
+                ? null
+                : item.Outputs.Any(output => Is(output.Type, FleetPaths.Relay)) ? FleetPaths.Relay : FleetPaths.Direct;
         bool viaRelay = path == FleetPaths.Relay;
 
         List<Entry> entries = [];
@@ -93,6 +97,30 @@ public static class FleetStatus
         {
             entries.Add(new Entry(
                 FleetStates.Removed, FleetLights.None, "Was removed from Bower and can no longer connect.", null));
+        }
+        else if (offlineSite)
+        {
+            if (Is(item.DeliveryStatus, "ledger-regression"))
+            {
+                entries.Add(new Entry(
+                    FleetStates.NeedsCheck, HomeStates.Red,
+                    "Reported an event history that changed unexpectedly in its last signed import.",
+                    new("Treat this as a possible tampering sign: check the offline site and the Audit page.", Audit)));
+            }
+            else if (item.DeadLettered > 0)
+            {
+                entries.Add(new Entry(
+                    FleetStates.OfflineSite, HomeStates.Amber,
+                    "Offline site (last signed import reported events set aside for review).",
+                    new("Review set-aside events on the offline collector before the next export.", null)));
+            }
+            else
+            {
+                entries.Add(new Entry(
+                    FleetStates.OfflineSite, HomeStates.Green,
+                    "Offline site reporting via signed, hash-chained export bundles.",
+                    null));
+            }
         }
         else
         {

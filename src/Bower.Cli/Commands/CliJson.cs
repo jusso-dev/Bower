@@ -238,6 +238,33 @@ internal sealed record SourceCheckItem(
     [property: JsonPropertyName("silentSeconds")] long? SilentSeconds,
     [property: JsonPropertyName("allowedSilenceSeconds")] long AllowedSilenceSeconds);
 
+internal sealed record BundleExportOutput(
+    [property: JsonPropertyName("bundleId")] string BundleId,
+    [property: JsonPropertyName("bundleSequence")] long BundleSequence,
+    [property: JsonPropertyName("bundleHash")] string BundleHash,
+    [property: JsonPropertyName("fromLedgerSequence")] long FromLedgerSequence,
+    [property: JsonPropertyName("toLedgerSequence")] long ToLedgerSequence,
+    [property: JsonPropertyName("eventCount")] long EventCount,
+    [property: JsonPropertyName("encrypted")] bool Encrypted);
+
+internal sealed record BundleVerifyOutput(
+    [property: JsonPropertyName("valid")] bool Valid,
+    [property: JsonPropertyName("error")] string? Error,
+    [property: JsonPropertyName("bundleId")] string? BundleId,
+    [property: JsonPropertyName("collectorId")] string? CollectorId,
+    [property: JsonPropertyName("bundleSequence")] long? BundleSequence,
+    [property: JsonPropertyName("bundleHash")] string? BundleHash,
+    [property: JsonPropertyName("eventCount")] long? EventCount,
+    [property: JsonPropertyName("encrypted")] bool? Encrypted);
+
+internal sealed record BundleImportOutput(
+    [property: JsonPropertyName("bundleId")] string BundleId,
+    [property: JsonPropertyName("bundleSequence")] long BundleSequence,
+    [property: JsonPropertyName("eventCount")] long EventCount,
+    [property: JsonPropertyName("dryRun")] bool DryRun,
+    [property: JsonPropertyName("collectorResponses")] IReadOnlyDictionary<string, long> CollectorResponses,
+    [property: JsonPropertyName("managementStatus")] string? ManagementStatus);
+
 /// <summary>
 /// Source-generated metadata for CLI output: System.Text.Json default options with
 /// indentation, as the former <c>new JsonSerializerOptions { WriteIndented = true }</c>.
@@ -256,6 +283,9 @@ internal sealed record SourceCheckItem(
 [JsonSerializable(typeof(SourcesCheckOutput))]
 [JsonSerializable(typeof(ArchiveCreateOutput))]
 [JsonSerializable(typeof(ArchiveVerifyOutput))]
+[JsonSerializable(typeof(BundleExportOutput))]
+[JsonSerializable(typeof(BundleVerifyOutput))]
+[JsonSerializable(typeof(BundleImportOutput))]
 [JsonSerializable(typeof(QueueSnapshot))]
 [JsonSerializable(typeof(IReadOnlyList<DeadLetterRecord>))]
 [JsonSerializable(typeof(SignedEvidence))]

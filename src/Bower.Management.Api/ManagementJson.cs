@@ -98,6 +98,8 @@ public sealed record PipelineValidationResponse(
 [JsonSerializable(typeof(SourceSetupRequestDetail))]
 [JsonSerializable(typeof(List<SourceSetupRequestSummary>))]
 [JsonSerializable(typeof(SignedSourceSetup))]
+[JsonSerializable(typeof(Bower.Evidence.OfflineSiteReportDocument))]
+[JsonSerializable(typeof(Bower.Evidence.SignedOfflineSiteReport))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 [JsonSerializable(typeof(Microsoft.AspNetCore.Mvc.ProblemDetails))]
 [JsonSerializable(typeof(HttpValidationProblemDetails))]
