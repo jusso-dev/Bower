@@ -28,7 +28,8 @@ public sealed partial class ManagedPrivacyProfileJob(
     PolicyBundle bundle,
     ManagedPrivacyProfileState state,
     IHostApplicationLifetime lifetime,
-    ILogger<ManagedPrivacyProfileJob> logger)
+    ILogger<ManagedPrivacyProfileJob> logger,
+    PolicyBundleHolder? bundleHolder = null)
 {
     public const string Id = "managed-privacy-profile";
 
@@ -124,9 +125,10 @@ public sealed partial class ManagedPrivacyProfileJob(
         // Only verified bytes reach the disk, and only through an atomic replace. The new
         // envelope becomes the high-water mark even when it needs no restart.
         ManagedPrivacyProfileCache.WriteAtomically(ManagedPrivacyProfileCache.CachePath(settings), document);
+        PolicyBundle activeBundle = bundleHolder?.CurrentBundle ?? bundle;
         bool changesProtection = verified.IsCleared
-            ? bundle.PrivacyProfileHash is not null
-            : !string.Equals(verified.ContentHash, bundle.PrivacyProfileHash, StringComparison.Ordinal);
+            ? activeBundle.PrivacyProfileHash is not null
+            : !string.Equals(verified.ContentHash, activeBundle.PrivacyProfileHash, StringComparison.Ordinal);
         if (!changesProtection)
         {
             state.MarkResolved(verified);

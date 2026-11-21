@@ -88,9 +88,6 @@ public static partial class CollectorApplication
         builder.Services.AddSingleton(settings.UsesManagedPrivacyProfile
             ? new ManagedPrivacyProfileState(cachedManagedProfile, settings.ManagedPrivacyAllowDefault)
             : ManagedPrivacyProfileState.Local);
-        builder.Services.AddSingleton<IEventRedactor>(new PackDetectionRedactor(
-            new JsonEventRedactor(bundle.Privacy), new DeterministicPolicyEvaluator(bundle.Policies),
-            bundle.LoadedPacks.SelectMany(pack => pack.Detections).ToArray()));
         // Free-space watermarks for the queue volume. Tests may supply an IDiskSpaceProbe.
         builder.Services.AddSingleton(services => new StorageGuard(
             settings.QueuePath,
@@ -126,7 +123,25 @@ public static partial class CollectorApplication
                 settings.MaximumQueueBytes,
                 services.GetRequiredService<TimeProvider>(),
                 services.GetRequiredService<StorageGuard>()));
-        builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(new DeterministicPolicyEvaluator(bundle.Policies));
+        builder.Services.AddSingleton(services => new PolicyBundleHolder(
+            bundle,
+            settings,
+            services.GetRequiredService<IDurableEventStore>(),
+            services.GetRequiredService<TimeProvider>(),
+            services.GetRequiredService<ILogger<PolicyBundleHolder>>()));
+        builder.Services.AddSingleton<IEventRedactor>(services => services.GetRequiredService<PolicyBundleHolder>().Current.Redactor);
+        builder.Services.AddSingleton<ITelemetryPolicyEvaluator>(services => services.GetRequiredService<PolicyBundleHolder>().Current.PolicyEvaluator);
+        builder.Services.AddSingleton<IPolicyRuntimeProvider>(services =>
+        {
+            PolicyBundleHolder holder = services.GetRequiredService<PolicyBundleHolder>();
+            IEventRedactor redactor = services.GetRequiredService<IEventRedactor>();
+            ITelemetryPolicyEvaluator evaluator = services.GetRequiredService<ITelemetryPolicyEvaluator>();
+            ActivePolicyRuntime initial = holder.Current;
+            return ReferenceEquals(redactor, initial.Redactor) && ReferenceEquals(evaluator, initial.PolicyEvaluator)
+                ? holder
+                : new StaticPolicyRuntimeProvider(new ActivePolicyRuntime(redactor, evaluator));
+        });
+        builder.Services.AddHostedService<ConfigHotReloadService>();
         builder.Services.AddSingleton<PipelineTelemetry>();
         // Live post-redaction tap (bower tap). In memory only; never persisted.
         builder.Services.AddSingleton(services =>
@@ -161,41 +176,49 @@ public static partial class CollectorApplication
         builder.Services.AddHostedService<QueueStorageMonitor>();
         if (sources.Syslog is { } syslog)
         {
-            builder.Services.AddSingleton(services => new SyslogSource(
-                syslog,
-                new CollectorSyslogSink(
-                    bundle,
-                    services.GetRequiredService<SecurityEventProcessor>(),
-                    services.GetRequiredService<CollectorIdentity>(),
-                    services.GetRequiredService<ManagedPrivacyProfileState>(),
-                    services.GetRequiredService<PipelineTelemetry>(),
-                    services.GetRequiredService<TimeProvider>(),
-                    services.GetRequiredService<EventTap>()),
-                services.GetRequiredService<TimeProvider>()));
+            builder.Services.AddSingleton(services =>
+            {
+                PolicyBundleHolder bundleHolder = services.GetRequiredService<PolicyBundleHolder>();
+                return new SyslogSource(
+                    syslog,
+                    new CollectorSyslogSink(
+                        () => bundleHolder.CurrentBundle,
+                        services.GetRequiredService<SecurityEventProcessor>(),
+                        services.GetRequiredService<CollectorIdentity>(),
+                        services.GetRequiredService<ManagedPrivacyProfileState>(),
+                        services.GetRequiredService<PipelineTelemetry>(),
+                        services.GetRequiredService<TimeProvider>(),
+                        services.GetRequiredService<EventTap>()),
+                    services.GetRequiredService<TimeProvider>());
+            });
             builder.Services.AddHostedService<SyslogIntakeService>();
         }
         if (sources.WindowsEventLog is { } windowsEventLog)
         {
             // Bookmarks live with the queue, so a restart resumes where the queue left off.
             builder.Services.AddSingleton(new WindowsEventLogBookmarks(settings.QueuePath));
-            builder.Services.AddSingleton(services => new WindowsEventLogSource(
-                windowsEventLog,
-                new CollectorWindowsEventSink(new PackRecordIntake(
-                    bundle,
-                    services.GetRequiredService<SecurityEventProcessor>(),
-                    services.GetRequiredService<CollectorIdentity>(),
-                    services.GetRequiredService<ManagedPrivacyProfileState>(),
-                    services.GetRequiredService<PipelineTelemetry>(),
-                    services.GetRequiredService<TimeProvider>(),
-                    services.GetRequiredService<EventTap>()),
-                    services.GetRequiredService<IDurableEventStore>() as SqliteEventStore),
-                services.GetRequiredService<WindowsEventLogBookmarks>().Store,
-                // Tests supply an in-memory channel; otherwise the Windows reader (Windows only).
-                services.GetService<IWindowsEventChannelFactory>() ?? WindowsEventLogRoutes.PlatformChannels(),
-                services.GetRequiredService<TimeProvider>())
+            builder.Services.AddSingleton(services =>
             {
-                // A busy queue database (for example during a retention batch) is backpressure.
-                IsTransientStorageFailure = QueueStorageErrors.IsBusy
+                PolicyBundleHolder bundleHolder = services.GetRequiredService<PolicyBundleHolder>();
+                return new WindowsEventLogSource(
+                    windowsEventLog,
+                    new CollectorWindowsEventSink(new PackRecordIntake(
+                        () => bundleHolder.CurrentBundle,
+                        services.GetRequiredService<SecurityEventProcessor>(),
+                        services.GetRequiredService<CollectorIdentity>(),
+                        services.GetRequiredService<ManagedPrivacyProfileState>(),
+                        services.GetRequiredService<PipelineTelemetry>(),
+                        services.GetRequiredService<TimeProvider>(),
+                        services.GetRequiredService<EventTap>()),
+                        services.GetRequiredService<IDurableEventStore>() as SqliteEventStore),
+                    services.GetRequiredService<WindowsEventLogBookmarks>().Store,
+                    // Tests supply an in-memory channel; otherwise the Windows reader (Windows only).
+                    services.GetService<IWindowsEventChannelFactory>() ?? WindowsEventLogRoutes.PlatformChannels(),
+                    services.GetRequiredService<TimeProvider>())
+                {
+                    // A busy queue database (for example during a retention batch) is backpressure.
+                    IsTransientStorageFailure = QueueStorageErrors.IsBusy
+                };
             });
             builder.Services.AddHostedService<WindowsEventLogIntakeService>();
             string[] wecSubscriptions = sources.WindowsEventLog.Subscriptions
@@ -217,32 +240,36 @@ public static partial class CollectorApplication
         {
             // Cursors live with the queue, so a restart resumes where the queue left off.
             builder.Services.AddSingleton(new FileTailCursors(settings.QueuePath));
-            builder.Services.AddSingleton(services => new FileTailSource(
-                fileTail,
-                new CollectorFileTailSink(new PackRecordIntake(
-                    bundle,
-                    services.GetRequiredService<SecurityEventProcessor>(),
-                    services.GetRequiredService<CollectorIdentity>(),
-                    services.GetRequiredService<ManagedPrivacyProfileState>(),
-                    services.GetRequiredService<PipelineTelemetry>(),
-                    services.GetRequiredService<TimeProvider>(),
-                    services.GetRequiredService<EventTap>())),
-                services.GetRequiredService<FileTailCursors>().Store,
-                services.GetRequiredService<TimeProvider>(),
-                input => PackRecordIntake.Parser(bundle, input.Route.Pack, input.Route.Parser)?.Multiline is { } rule
-                    ? new FileTailMultilineOptions(
-                        rule.Mode == MultilineMode.Start,
-                        rule.Pattern,
-                        rule.MaxLines,
-                        rule.MaxBytes,
-                        rule.FlushTimeoutMilliseconds,
-                        rule.JoinSeparator)
-                    : null)
+            builder.Services.AddSingleton(services =>
             {
-                // A busy queue database (for example during a retention batch) is backpressure.
-                IsTransientStorageFailure = QueueStorageErrors.IsBusy,
-                // Metadata only: the input id and a reason code, never a path.
-                InputRefused = FileTailIntakeService.Refused(services.GetRequiredService<ILogger<FileTailIntakeService>>())
+                PolicyBundleHolder bundleHolder = services.GetRequiredService<PolicyBundleHolder>();
+                return new FileTailSource(
+                    fileTail,
+                    new CollectorFileTailSink(new PackRecordIntake(
+                        () => bundleHolder.CurrentBundle,
+                        services.GetRequiredService<SecurityEventProcessor>(),
+                        services.GetRequiredService<CollectorIdentity>(),
+                        services.GetRequiredService<ManagedPrivacyProfileState>(),
+                        services.GetRequiredService<PipelineTelemetry>(),
+                        services.GetRequiredService<TimeProvider>(),
+                        services.GetRequiredService<EventTap>())),
+                    services.GetRequiredService<FileTailCursors>().Store,
+                    services.GetRequiredService<TimeProvider>(),
+                    input => PackRecordIntake.Parser(bundleHolder.CurrentBundle, input.Route.Pack, input.Route.Parser)?.Multiline is { } rule
+                        ? new FileTailMultilineOptions(
+                            rule.Mode == MultilineMode.Start,
+                            rule.Pattern,
+                            rule.MaxLines,
+                            rule.MaxBytes,
+                            rule.FlushTimeoutMilliseconds,
+                            rule.JoinSeparator)
+                        : null)
+                {
+                    // A busy queue database (for example during a retention batch) is backpressure.
+                    IsTransientStorageFailure = QueueStorageErrors.IsBusy,
+                    // Metadata only: the input id and a reason code, never a path.
+                    InputRefused = FileTailIntakeService.Refused(services.GetRequiredService<ILogger<FileTailIntakeService>>())
+                };
             });
             builder.Services.AddHostedService<FileTailIntakeService>();
         }
@@ -610,7 +637,7 @@ public static partial class CollectorApplication
                     IDurableEventStore eventQueue,
                     BackgroundJobCatalog jobs,
                     EventIdentityConflicts conflicts,
-                    PolicyBundle bundle,
+                    PolicyBundleHolder bundleHolder,
                     ManagedPrivacyProfileState managedPrivacy,
                     CollectorSettings settings,
                     PipelineTelemetry telemetry,
@@ -622,6 +649,7 @@ public static partial class CollectorApplication
                     HttpContext context,
                     CancellationToken cancellationToken) =>
                 {
+                    PolicyBundle bundle = bundleHolder.CurrentBundle;
                     QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
                     LedgerHead ledger = await eventQueue.GetLedgerHeadAsync(cancellationToken);
                     IReadOnlyList<SourceSilenceStatus> sources = sourceHealth.Evaluate();
@@ -682,9 +710,43 @@ public static partial class CollectorApplication
                         Storage = await QueueStorageStatus.TryCaptureAsync(
                             eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), pages, cancellationToken),
                         Recovery = context.RequestServices.GetRequiredService<CrashRecoveryState>().Last,
-                        Volumes = volumes.HasVolumes ? volumes.Evaluate() : null
+                        Volumes = volumes.HasVolumes ? volumes.Evaluate() : null,
+                        Reload = bundleHolder.LastReload
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
+                })
+            .AddEndpointFilter<IngestAuthenticationFilter>();
+
+        // Operator-triggered zero-downtime hot reload of policies, signed packs and local
+        // privacy profile. Restricted to the shared token ("default") or configured operator
+        // tap producers; invalid configuration is rejected and keeps the active bundle.
+        app.MapPost(
+                "/v1/reload",
+                async (
+                    PolicyBundleHolder bundleHolder,
+                    CollectorSettings settings,
+                    IngestAuthentication authentication,
+                    HttpContext context,
+                    CancellationToken cancellationToken) =>
+                {
+                    string producer = context.Items[IngestAuthenticationFilter.ProducerItem] as string ?? "anonymous";
+                    bool allowed = authentication.Required
+                        ? string.Equals(producer, "default", StringComparison.Ordinal)
+                            || settings.TapProducers.Contains(producer, StringComparer.Ordinal)
+                        : settings.IsLoopbackListener;
+                    if (!allowed)
+                    {
+                        return Results.Json(
+                            new ErrorResponse("Producer is not authorized to reload collector policy."),
+                            CollectorJsonContext.Default.ErrorResponse,
+                            statusCode: StatusCodes.Status403Forbidden);
+                    }
+
+                    ConfigReloadStatus result = await bundleHolder.ReloadAsync("http", cancellationToken);
+                    int statusCode = string.Equals(result.Outcome, "rejected", StringComparison.Ordinal)
+                        ? StatusCodes.Status422UnprocessableEntity
+                        : StatusCodes.Status200OK;
+                    return Results.Json(result, CollectorJsonContext.Default.ConfigReloadStatus, statusCode: statusCode);
                 })
             .AddEndpointFilter<IngestAuthenticationFilter>();
     }

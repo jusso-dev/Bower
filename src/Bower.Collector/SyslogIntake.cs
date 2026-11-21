@@ -12,7 +12,7 @@ namespace Bower.Collector;
 /// to the sender; bytes buffered before admission can be lost on a process crash.
 /// </summary>
 internal sealed class CollectorSyslogSink(
-    PolicyBundle bundle,
+    Func<PolicyBundle> bundleProvider,
     SecurityEventProcessor processor,
     CollectorIdentity identity,
     ManagedPrivacyProfileState managedPrivacy,
@@ -20,7 +20,19 @@ internal sealed class CollectorSyslogSink(
     TimeProvider timeProvider,
     EventTap? tap = null) : ISyslogSink
 {
-    private readonly PackRecordIntake intake = new(bundle, processor, identity, managedPrivacy, telemetry, timeProvider, tap);
+    public CollectorSyslogSink(
+        PolicyBundle bundle,
+        SecurityEventProcessor processor,
+        CollectorIdentity identity,
+        ManagedPrivacyProfileState managedPrivacy,
+        PipelineTelemetry telemetry,
+        TimeProvider timeProvider,
+        EventTap? tap = null)
+        : this(() => bundle, processor, identity, managedPrivacy, telemetry, timeProvider, tap)
+    {
+    }
+
+    private readonly PackRecordIntake intake = new(bundleProvider, processor, identity, managedPrivacy, telemetry, timeProvider, tap);
 
     public async ValueTask<SyslogSubmitOutcome> SubmitAsync(
         SyslogListenerOptions listener,

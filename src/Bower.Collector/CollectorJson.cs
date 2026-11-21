@@ -108,6 +108,10 @@ internal sealed record StatusResponse(
     /// <summary>Free-space health for configured spool and archive volumes. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<VolumeHealthStatus>? Volumes { get; init; }
+
+    /// <summary>Most recent in-process configuration hot reload outcome. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ConfigReloadStatus? Reload { get; init; }
 }
 
 /// <summary>First server-sent event of a tap session: its effective filters and caps.</summary>
@@ -282,4 +286,5 @@ internal sealed record OutputReport(
 [JsonSerializable(typeof(CollectorEnrolmentRequest))]
 [JsonSerializable(typeof(CollectorCredentialRotationRequest))]
 [JsonSerializable(typeof(IssuedCollectorCredential))]
+[JsonSerializable(typeof(ConfigReloadStatus))]
 internal sealed partial class CollectorJsonContext : JsonSerializerContext;

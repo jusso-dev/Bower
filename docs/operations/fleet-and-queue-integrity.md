@@ -34,6 +34,34 @@ POST /api/collectors/{id}/desired-policy
 The console shows each collector as *In sync*, *Drift* or *Unassigned*; drifted
 collectors appear in fleet exceptions. The action is audited.
 
+## Hot reload without restart
+
+Policies (`BOWER_POLICY_DIRECTORY`), signed packs (`BOWER_PACKS` and
+`BOWER_PACK_TRUSTED_KEYS`), pack parsers/detections and local privacy profiles
+(`BOWER_PRIVACY_PROFILE`) can be reloaded in place without stopping the collector,
+closing listener sockets, or interrupting queue delivery:
+
+- **Unix `SIGHUP`:** triggers a serialized atomic reload.
+- **`POST /v1/reload`:** authenticated operator endpoint (requires the shared
+  `BOWER_INGEST_TOKEN` or a producer listed in `BOWER_TAP_PRODUCERS`, or loopback when
+  ingest authentication is off). Returns metadata only (`outcome`, `trigger`, `policyHash`,
+  `previousPolicyHash`, `ledgerSequence`, or `errorType` on HTTP 422).
+- **Optional file watcher:** set `BOWER_POLICY_WATCH=true` (off by default) to watch
+  the configured policy directory, privacy profile and pack files and coalesce rapid saves
+  using `BOWER_POLICY_WATCH_DEBOUNCE_MS` (default `500`, range `100`–`30000`).
+
+Before swapping the active snapshot, the collector validates every policy, pack signature,
+privacy profile, source route (syslog, Windows Event Log, file tail) and health-record
+policy. If any check fails, the reload is rejected with a metadata-only error (`EventId 1702`)
+and the previous bundle stays active untouched. Each applied reload records a hash-chained
+entry in `queue_config_reloads` bound to the queue ledger head before swapping atomically;
+each in-flight event captures one immutable `(redactor, policyEvaluator)` pair so no event
+is ever split across two bundles. `/v1/status` exposes `reload` and the updated `policy.hash`,
+and the next heartbeat reports the new hashes to management.
+
+Listener addresses, output adapters, TLS server sockets and environment variables still
+require a supervised restart (`reload` management command, exit code 75).
+
 ## Fleet overview: exceptions and source coverage
 
 `GET /api/overview` is computed at query time from the 15-minute heartbeat

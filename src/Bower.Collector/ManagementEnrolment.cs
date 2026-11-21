@@ -163,7 +163,8 @@ public sealed partial class ManagementEnrolment(
     CollectorSettings settings,
     PolicyBundle bundle,
     TimeProvider clock,
-    ILogger<ManagementEnrolment> logger) : IDisposable
+    ILogger<ManagementEnrolment> logger,
+    PolicyBundleHolder? bundleHolder = null) : IDisposable
 {
     /// <summary>Scheduled rotation: when 10 of the credential's 30 days remain.</summary>
     public static readonly TimeSpan RotateBefore = TimeSpan.FromDays(10);
@@ -259,7 +260,7 @@ public sealed partial class ManagementEnrolment(
                         settings.Environment,
                         settings.Version,
                         settings.ConfigurationHash(),
-                        bundle.Hash,
+                        (bundleHolder?.CurrentBundle ?? bundle).Hash,
                         publicKey),
                     CollectorJsonContext.Default.CollectorEnrolmentRequest)
             };

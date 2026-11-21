@@ -14,8 +14,13 @@ public sealed class SecurityEventProcessor(
     IDurableEventStore queue,
     TimeProvider clock,
     PipelineTelemetry? telemetry = null,
-    EventTap? tap = null)
+    EventTap? tap = null,
+    IPolicyRuntimeProvider? policyRuntime = null)
 {
+    private (IEventRedactor Redactor, ITelemetryPolicyEvaluator PolicyEvaluator) ActivePolicy() =>
+        policyRuntime is { } provider
+            ? (provider.Current.Redactor, provider.Current.PolicyEvaluator)
+            : (redactor, policyEvaluator);
     public Task<ProcessingResult> ProcessAsync(
         string candidateJson,
         CollectorIdentity collector,
@@ -142,12 +147,13 @@ public sealed class SecurityEventProcessor(
     {
         ArgumentNullException.ThrowIfNull(collector);
         DateTimeOffset now = clock.GetUtcNow();
+        (_, ITelemetryPolicyEvaluator activeEvaluator) = ActivePolicy();
         return queue.CloseExpiredSuppressionWindowsAsync(
             now,
             window =>
             {
                 SecurityEventEnvelope summary = Suppression.CreateSummary(window, collector, now);
-                PolicyDecision decision = policyEvaluator.Evaluate(summary);
+                PolicyDecision decision = activeEvaluator.Evaluate(summary);
                 if (decision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
                 {
                     throw new SuppressionSummaryRejectedException(decision.PolicyId, decision.Action);
@@ -228,12 +234,15 @@ public sealed class SecurityEventProcessor(
         bool internalHealth,
         CancellationToken cancellationToken)
     {
+        // Capture one immutable (redactor, evaluator) pair per event so hot reload never
+        // evaluates an event with mixed privacy and policy versions.
+        (IEventRedactor activeRedactor, ITelemetryPolicyEvaluator activeEvaluator) = ActivePolicy();
         // Captured before redaction, never persisted; see IsArchiveReplayFromAnotherCollector.
         string? replayOrigin = ArchiveReplayOrigin(candidateJson);
         RedactionResult redaction;
         try
         {
-            redaction = redactor.Redact(candidateJson, context);
+            redaction = activeRedactor.Redact(candidateJson, context);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -329,12 +338,13 @@ public sealed class SecurityEventProcessor(
                 redaction,
                 collector,
                 bytesIn,
+                activeEvaluator,
                 cancellationToken);
 
             return quarantined with { PrivacyAlertEventId = alertId };
         }
 
-        PolicyDecision decision = policyEvaluator.Evaluate(candidate);
+        PolicyDecision decision = activeEvaluator.Evaluate(candidate);
         if (decision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
         {
             ProcessingResult rejected = Decided(
@@ -352,6 +362,7 @@ public sealed class SecurityEventProcessor(
                 redaction,
                 collector,
                 bytesIn,
+                activeEvaluator,
                 cancellationToken);
 
             return rejected with { PrivacyAlertEventId = rejectedAlertId };
@@ -444,6 +455,7 @@ public sealed class SecurityEventProcessor(
             redaction,
             collector,
             bytesIn,
+            activeEvaluator,
             cancellationToken);
 
         List<string> reasons = [.. decision.Reasons, .. decision.Warnings];
@@ -504,6 +516,7 @@ public sealed class SecurityEventProcessor(
         RedactionResult redaction,
         CollectorIdentity collector,
         long bytesIn,
+        ITelemetryPolicyEvaluator activeEvaluator,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<string> detected = redaction.PrivacyDetected ?? [];
@@ -610,7 +623,7 @@ public sealed class SecurityEventProcessor(
             }
         };
 
-        PolicyDecision alertDecision = policyEvaluator.Evaluate(alert);
+        PolicyDecision alertDecision = activeEvaluator.Evaluate(alert);
         if (alertDecision.Action is not (DecisionAction.Accept or DecisionAction.RedactAndAccept))
         {
             return null;
