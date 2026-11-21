@@ -1,0 +1,189 @@
+{
+  "version": "Notebook/1.0",
+  "items": [
+    {
+      "type": 1,
+      "content": {
+        "json": "## Bower Security Operations and Pipeline Health\n\nOperational overview of Bower collectors, delivery latency, replay accounting, selected security events, and Privacy & Secret Protection Engine findings in `BowerSecurity_CL`.\n\nAll security event counts use the `BowerSecurityEvents` parser so at-least-once delivery replays are collapsed by `(CollectorId, EventId)`."
+      },
+      "name": "header"
+    },
+    {
+      "type": 9,
+      "content": {
+        "version": "KqlParameterItem/1.0",
+        "parameters": [
+          {
+            "id": "5c2d9a1e-8b14-4d33-9f2a-1e8b4c7a9001",
+            "version": "KqlParameterItem/1.0",
+            "name": "TimeRange",
+            "label": "Time range",
+            "type": 4,
+            "isRequired": true,
+            "value": {
+              "durationMs": 86400000
+            },
+            "typeSettings": {
+              "selectableValues": [
+                { "durationMs": 3600000 },
+                { "durationMs": 14400000 },
+                { "durationMs": 43200000 },
+                { "durationMs": 86400000 },
+                { "durationMs": 259200000 },
+                { "durationMs": 604800000 },
+                { "durationMs": 1209600000 }
+              ]
+            }
+          },
+          {
+            "id": "5c2d9a1e-8b14-4d33-9f2a-1e8b4c7a9002",
+            "version": "KqlParameterItem/1.0",
+            "name": "CollectorId",
+            "label": "Collector",
+            "type": 2,
+            "isRequired": false,
+            "multiSelect": true,
+            "quote": "\"",
+            "delimiter": ",",
+            "query": "BowerSecurity_CL\n| where isnotempty(CollectorId)\n| distinct CollectorId\n| order by CollectorId asc",
+            "typeSettings": {
+              "additionalResourceOptions": [
+                "value::all"
+              ],
+              "showDefault": false
+            },
+            "defaultValue": "value::all",
+            "queryType": 0,
+            "resourceType": "microsoft.operationalinsights/workspaces"
+          }
+        ],
+        "style": "pills",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces"
+      },
+      "name": "parameters"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurityEvents\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| summarize\n    DistinctEvents = count(),\n    TotalRows = sum(BowerCopies),\n    ReplayedEvents = countif(BowerCopies > 1),\n    ExtraRows = sum(BowerCopies - 1),\n    HighSeverityEvents = countif(EventSeverity in~ (\"High\", \"Critical\")),\n    SensitiveDataAlerts = countif(EventType == \"sensitive_data_detected\")",
+        "size": 4,
+        "title": "Security signal and replay summary",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "tiles",
+        "tileSettings": {
+          "showBorder": true,
+          "titleContent": {
+            "columnMatch": "Metric",
+            "formatter": 1
+          }
+        }
+      },
+      "name": "summary-tiles"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurity_CL\n| where EventType == \"collector_health\"\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| summarize arg_max(TimeGenerated, Attributes) by CollectorId\n| project\n    CollectorId,\n    LastRecord = TimeGenerated,\n    Status = tostring(Attributes.status),\n    Problems = tostring(Attributes.problems),\n    Delivery = tostring(Attributes.delivery.status),\n    Undelivered = toint(Attributes.queue.undelivered),\n    OldestAgeSeconds = toint(Attributes.queue.oldestUndeliveredAgeSeconds),\n    QueuePagesPercent = todouble(Attributes.storage.queuePagesUsedPercent),\n    VolumeState = tostring(Attributes.storage.volumeState),\n    VolumeFreePercent = todouble(Attributes.storage.volumeFreePercent),\n    DeadLettered = toint(Attributes.queue.deadLettered)\n| order by CollectorId asc",
+        "size": 0,
+        "title": "Collector overview (newest health record per collector)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "collector-overview"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurity_CL\n| where EventType == \"collector_health\"\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| extend\n    DelaySeconds = datetime_diff('second', ingestion_time(), TimeGenerated),\n    Undelivered = toint(Attributes.queue.undelivered)\n| summarize MaxDelaySeconds = max(DelaySeconds), MaxUndelivered = max(Undelivered) by CollectorId, bin(TimeGenerated, 5m)",
+        "size": 0,
+        "title": "Delivery delay and queue backlog over time",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      },
+      "name": "delivery-delay-backlog"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurityEvents\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| summarize Events = count() by Source = strcat(ApplicationName, \"/\", ApplicationEnvironment), bin(BowerEventTime, 1h)",
+        "size": 0,
+        "title": "Distinct security events per source per hour",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "timechart"
+      },
+      "name": "events-per-source"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurityEvents\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| summarize Events = count() by EventCategory, EventType, EventSeverity\n| order by Events desc",
+        "size": 0,
+        "title": "Security events by category, type and severity",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "events-by-category"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurityEvents\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| summarize\n    Events = count(),\n    Rows = sum(BowerCopies),\n    ReplayedEvents = countif(BowerCopies > 1),\n    ExtraRows = sum(BowerCopies - 1),\n    MaxCopies = max(BowerCopies),\n    RewrittenTimes = countif(BowerTimeRewritten)\n    by CollectorId\n| order by ExtraRows desc, CollectorId asc",
+        "size": 0,
+        "title": "Replay accounting by collector",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "replay-accounting"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "BowerSecurityEvents\n| where EventType == \"sensitive_data_detected\"\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\n| summarize Findings = count(), LastSeen = max(BowerEventTime) by ApplicationName, ApplicationEnvironment, EventSeverity, CollectorId\n| order by Findings desc",
+        "size": 0,
+        "title": "Privacy and Secret Protection Engine alerts (metadata only)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "sensitive-data-findings"
+    },
+    {
+      "type": 3,
+      "content": {
+        "version": "KqlItem/1.0",
+        "query": "SentinelHealth\n| where SentinelResourceType == \"Analytics Rule\" and SentinelResourceName startswith \"Bower\"\n| summarize TotalRuns = count(), Failures = countif(Status != \"Success\"), LastRun = max(TimeGenerated) by SentinelResourceName\n| order by Failures desc, SentinelResourceName asc",
+        "size": 0,
+        "title": "Bower analytics rule health (requires SentinelHealth diagnostics)",
+        "timeContextFromParameter": "TimeRange",
+        "queryType": 0,
+        "resourceType": "microsoft.operationalinsights/workspaces",
+        "visualization": "table"
+      },
+      "name": "sentinel-rule-health"
+    }
+  ],
+  "fallbackResourceIds": [],
+  "fromTemplateId": "sentinel-BowerSecurityOperations",
+  "$schema": "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+}

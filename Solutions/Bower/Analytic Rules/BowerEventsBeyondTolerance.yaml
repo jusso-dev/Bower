@@ -1,0 +1,70 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a2003
+name: 'Bower: events arrived later than the replay-safe rules evaluate'
+description: |
+  Bower events first ingested more than 360 minutes after their event time, or whose
+  TimeGenerated Azure Monitor rewrote. The replay-safe rules did not evaluate them;
+  investigate the outage and hunt manually.
+severity: Informational
+status: Available
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+queryFrequency: 1h
+queryPeriod: 14d
+triggerOperator: gt
+triggerThreshold: 0
+tactics: []
+relevantTechniques: []
+query: |
+  // Bower detection-tolerance monitor: events that first arrived later than the
+  // replay-safe rules' maximum tolerated delay. Those rules never evaluate such events,
+  // so each result is a detection gap to investigate, not a threat. It also reports
+  // events whose TimeGenerated Azure Monitor rewrote (event time more than two days old).
+  let maxDelay = 360m;
+  let settleDelay = 5m;
+  let frequency = 60m;
+  let windowEnd = bin(now() - settleDelay, frequency);
+  let windowStart = windowEnd - frequency;
+  let late = BowerSecurity_CL
+      | where TimeGenerated >= windowStart - 50h
+      | where EventType !in ("collector_health", "collector_canary")
+      | extend BowerIngested = ingestion_time()
+      | where BowerIngested >= windowStart and BowerIngested < windowEnd
+      | extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)
+      | summarize arg_min(BowerIngested, BowerEventTime, TimeGenerated, EventType) by CollectorId, EventId
+      | where BowerIngested - BowerEventTime > maxDelay or BowerEventTime != TimeGenerated;
+  let earlier = BowerSecurity_CL
+      | where EventId in ((late | project EventId))
+      | where ingestion_time() < windowStart
+      | distinct CollectorId, EventId;
+  late
+  | join kind=leftanti earlier on CollectorId, EventId
+  | summarize LateEvents = count(), RewrittenTimes = countif(BowerEventTime != TimeGenerated),
+      OldestEvent = min(BowerEventTime), MaxDeliveryDelay = max(BowerIngested - BowerEventTime),
+      EventTypes = make_set(EventType, 20)
+      by CollectorId
+  | extend WindowStart = windowStart, WindowEnd = windowEnd
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+customDetails:
+  LateEvents: LateEvents
+  RewrittenTimes: RewrittenTimes
+  OldestEvent: OldestEvent
+  MaxDeliveryDelay: MaxDeliveryDelay
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: 24h
+    matchingMethod: Selected
+    groupByEntities:
+      - Host
+version: 1.0.0
+kind: Scheduled

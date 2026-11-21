@@ -195,6 +195,25 @@ Full design: [architecture](docs/architecture/overview.md).
 | Azure Functions collector | Native C# isolated worker (Flex Consumption): Entra-authenticated `/v1/events`, managed identity to Logs Ingestion; no durable queue; tenant test required |
 | PowerShell modules | `Bower.Events`, `Bower.Management`, `Bower.Deployment` (plan-first), `Bower.Privacy` for PowerShell 7.4+ |
 
+## Deploy to Microsoft Sentinel
+
+Deploy Bower's `BowerSecurity_CL` table, Data Collection Endpoint, Data Collection Rule,
+replay-safe KQL parsers (`BowerSecurityEvents`, `BowerSecurityEventsOfType`), scheduled
+analytics rules (created disabled by default), and operations workbook into an existing
+Log Analytics workspace:
+
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2Fjusso-dev%2FBower%2Fmain%2Fdeploy%2Fsentinel%2Fazuredeploy.json)
+
+The button deploys [`deploy/sentinel/azuredeploy.json`](deploy/sentinel/azuredeploy.json),
+compiled from [`deploy/sentinel/deploy-to-azure.bicep`](deploy/sentinel/deploy-to-azure.bicep),
+using `workspaceName` and `location` parameters for an existing workspace. All analytics
+rules start disabled (`enableRules=false`) until validated against live workspace data.
+
+Bower also ships a Microsoft Sentinel Content Hub V3 solution package under
+[`Solutions/Bower/`](Solutions/Bower/README.md) (`Data/Solution_Bower.json`, 2 Parsers,
+10 Analytic Rule templates, 6 Hunting Queries, 1 Workbook, 1 Data Connector definition,
+and `Package/mainTemplate.json` with `Package/createUiDefinition.json`).
+
 ## Getting started
 
 Requires the .NET 11 SDK (`11.0.100`, pinned in `global.json`) and Node.js 26 for

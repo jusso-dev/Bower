@@ -1,0 +1,1847 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.49.2.45890",
+      "templateHash": "13098921949969969284"
+    }
+  },
+  "parameters": {
+    "workspaceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Existing Log Analytics workspace name with Microsoft Sentinel enabled, in this resource group."
+      }
+    },
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Azure region matching the Log Analytics workspace."
+      }
+    },
+    "namePrefix": {
+      "type": "string",
+      "defaultValue": "bower",
+      "minLength": 3,
+      "maxLength": 40,
+      "metadata": {
+        "description": "Resource name prefix for the Data Collection Endpoint and Data Collection Rule."
+      }
+    },
+    "deployIngestionInfrastructure": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy the BowerSecurity_CL table, Data Collection Endpoint and Data Collection Rule. Set to false if deploy/bicep/main.bicep is already deployed."
+      }
+    },
+    "deployAsvsAnalytics": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy the OWASP ASVS starter scheduled analytics rules (password spray, privilege change, after-hours admin, mass export, log silence)."
+      }
+    },
+    "deploySentinelHealthRules": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy the Microsoft Sentinel collector health and source silence analytics rules."
+      }
+    },
+    "deployWorkbook": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Deploy the Bower Security Operations and Pipeline Health Microsoft Sentinel workbook."
+      }
+    },
+    "enableRules": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Create analytics rules enabled. Keep false until rules are validated against this workspace."
+      }
+    },
+    "detectionKeyScope": {
+      "type": "string",
+      "defaultValue": "default",
+      "minLength": 1,
+      "maxLength": 32,
+      "metadata": {
+        "description": "Scopes detection keys and rule names to this deployment. Lowercase letters, digits and hyphens."
+      }
+    },
+    "timeZone": {
+      "type": "string",
+      "defaultValue": "Australia/Sydney",
+      "metadata": {
+        "description": "IANA time zone for business hours in the ASVS after-hours administrative action rule."
+      }
+    },
+    "workbookDisplayName": {
+      "type": "string",
+      "defaultValue": "Bower Security Operations and Pipeline Health",
+      "metadata": {
+        "description": "Display name for the Microsoft Sentinel workbook."
+      }
+    }
+  },
+  "resources": [
+    {
+      "condition": "[parameters('deployIngestionInfrastructure')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-ingestion', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceName": {
+            "value": "[parameters('workspaceName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "namePrefix": {
+            "value": "[parameters('namePrefix')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "4285622170336520466"
+            }
+          },
+          "parameters": {
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Region matching the Log Analytics workspace."
+              }
+            },
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Existing Log Analytics workspace name."
+              }
+            },
+            "namePrefix": {
+              "type": "string",
+              "defaultValue": "bower",
+              "minLength": 3,
+              "maxLength": 40,
+              "metadata": {
+                "description": "Bower resource name prefix."
+              }
+            },
+            "ingestPrincipalObjectId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Existing Entra service-principal object ID for ingestion. Never a client secret or application client ID. Leave empty when creating a managed identity."
+              }
+            },
+            "createIngestIdentity": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Create a user-assigned managed identity and grant it write access on this DCR only. Plan-only until explicitly deployed."
+              }
+            },
+            "federationIssuer": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional exact OIDC issuer for a new identity federation. Use the reviewed plan generator; no wildcards."
+              }
+            },
+            "federationSubject": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional exact OIDC subject, for example system:serviceaccount:namespace:collector."
+              }
+            },
+            "publicNetworkAccess": {
+              "type": "string",
+              "defaultValue": "Enabled",
+              "allowedValues": [
+                "Enabled",
+                "Disabled"
+              ]
+            },
+            "privateLinkScopeName": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional new Azure Monitor Private Link Scope. When set, the DCE and workspace join it so the Logs Ingestion API is reachable over Private Link. Empty changes nothing."
+              }
+            },
+            "privateLinkIngestionAccessMode": {
+              "type": "string",
+              "defaultValue": "PrivateOnly",
+              "allowedValues": [
+                "PrivateOnly",
+                "Open"
+              ],
+              "metadata": {
+                "description": "Ingestion access mode of the new scope. PrivateOnly: networks linked to the scope can ingest only into resources in it."
+              }
+            },
+            "privateEndpointSubnetId": {
+              "type": "string",
+              "defaultValue": "",
+              "metadata": {
+                "description": "Optional subnet resource ID for the scope's private endpoint, in the network where the relay runs. Empty creates the scope without an endpoint."
+              }
+            }
+          },
+          "variables": {
+            "metricsPublisherRole": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '3913510d-42f4-4e42-8a64-420c390055eb')]",
+            "privateEndpointSubnetParts": "[split(parameters('privateEndpointSubnetId'), '/')]"
+          },
+          "resources": [
+            {
+              "condition": "[parameters('createIngestIdentity')]",
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+              "apiVersion": "2023-01-31",
+              "name": "[format('{0}-ingest', parameters('namePrefix'))]",
+              "location": "[parameters('location')]"
+            },
+            {
+              "condition": "[and(and(parameters('createIngestIdentity'), not(empty(parameters('federationIssuer')))), not(empty(parameters('federationSubject'))))]",
+              "type": "Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials",
+              "apiVersion": "2023-01-31",
+              "name": "[format('{0}/{1}', format('{0}-ingest', parameters('namePrefix')), 'bower-ingestion')]",
+              "properties": {
+                "issuer": "[parameters('federationIssuer')]",
+                "subject": "[parameters('federationSubject')]",
+                "audiences": [
+                  "api://AzureADTokenExchange"
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-ingest', parameters('namePrefix')))]"
+              ]
+            },
+            {
+              "type": "Microsoft.OperationalInsights/workspaces/tables",
+              "apiVersion": "2025-07-01",
+              "name": "[format('{0}/{1}', parameters('workspaceName'), 'BowerSecurity_CL')]",
+              "properties": {
+                "plan": "Analytics",
+                "retentionInDays": 90,
+                "totalRetentionInDays": 365,
+                "schema": {
+                  "name": "BowerSecurity_CL",
+                  "columns": [
+                    {
+                      "name": "TimeGenerated",
+                      "type": "dateTime"
+                    },
+                    {
+                      "name": "EventId",
+                      "type": "string"
+                    },
+                    {
+                      "name": "EventOriginalId",
+                      "type": "string"
+                    },
+                    {
+                      "name": "EventCategory",
+                      "type": "string"
+                    },
+                    {
+                      "name": "EventType",
+                      "type": "string"
+                    },
+                    {
+                      "name": "EventAction",
+                      "type": "string"
+                    },
+                    {
+                      "name": "EventResult",
+                      "type": "string"
+                    },
+                    {
+                      "name": "EventSeverity",
+                      "type": "string"
+                    },
+                    {
+                      "name": "ApplicationName",
+                      "type": "string"
+                    },
+                    {
+                      "name": "ApplicationEnvironment",
+                      "type": "string"
+                    },
+                    {
+                      "name": "ActorUserId",
+                      "type": "string"
+                    },
+                    {
+                      "name": "ActorUsername",
+                      "type": "string"
+                    },
+                    {
+                      "name": "SourceIpAddress",
+                      "type": "string"
+                    },
+                    {
+                      "name": "CorrelationId",
+                      "type": "string"
+                    },
+                    {
+                      "name": "PolicyId",
+                      "type": "string"
+                    },
+                    {
+                      "name": "PolicyVersion",
+                      "type": "string"
+                    },
+                    {
+                      "name": "PolicyHash",
+                      "type": "string"
+                    },
+                    {
+                      "name": "ValueScore",
+                      "type": "int"
+                    },
+                    {
+                      "name": "CollectorId",
+                      "type": "string"
+                    },
+                    {
+                      "name": "PrivacyDetected",
+                      "type": "dynamic"
+                    },
+                    {
+                      "name": "Labels",
+                      "type": "dynamic"
+                    },
+                    {
+                      "name": "RawEnvelope",
+                      "type": "dynamic"
+                    },
+                    {
+                      "name": "TimeObserved",
+                      "type": "dateTime"
+                    },
+                    {
+                      "name": "EventOutcomeReason",
+                      "type": "string"
+                    },
+                    {
+                      "name": "Target",
+                      "type": "dynamic"
+                    },
+                    {
+                      "name": "Change",
+                      "type": "dynamic"
+                    },
+                    {
+                      "name": "Attributes",
+                      "type": "dynamic"
+                    },
+                    {
+                      "name": "Origin",
+                      "type": "dynamic"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/dataCollectionEndpoints",
+              "apiVersion": "2024-03-11",
+              "name": "[format('{0}-dce', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "properties": {
+                "description": "Bower Logs Ingestion API endpoint",
+                "networkAcls": {
+                  "publicNetworkAccess": "[parameters('publicNetworkAccess')]"
+                }
+              }
+            },
+            {
+              "type": "Microsoft.Insights/dataCollectionRules",
+              "apiVersion": "2024-03-11",
+              "name": "[format('{0}-dcr', parameters('namePrefix'))]",
+              "location": "[parameters('location')]",
+              "kind": "Direct",
+              "properties": {
+                "dataCollectionEndpointId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('{0}-dce', parameters('namePrefix')))]",
+                "streamDeclarations": {
+                  "Custom-BowerSecurity": {
+                    "columns": [
+                      {
+                        "name": "schemaVersion",
+                        "type": "string"
+                      },
+                      {
+                        "name": "eventId",
+                        "type": "string"
+                      },
+                      {
+                        "name": "eventOriginalId",
+                        "type": "string"
+                      },
+                      {
+                        "name": "timeGenerated",
+                        "type": "datetime"
+                      },
+                      {
+                        "name": "eventCategory",
+                        "type": "string"
+                      },
+                      {
+                        "name": "eventType",
+                        "type": "string"
+                      },
+                      {
+                        "name": "eventAction",
+                        "type": "string"
+                      },
+                      {
+                        "name": "eventResult",
+                        "type": "string"
+                      },
+                      {
+                        "name": "eventSeverity",
+                        "type": "string"
+                      },
+                      {
+                        "name": "application",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "actor",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "source",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "request",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "security",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "collector",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "labels",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "privacy",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "timeObserved",
+                        "type": "datetime"
+                      },
+                      {
+                        "name": "eventOutcomeReason",
+                        "type": "string"
+                      },
+                      {
+                        "name": "target",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "change",
+                        "type": "dynamic"
+                      },
+                      {
+                        "name": "attributes",
+                        "type": "dynamic"
+                      }
+                    ]
+                  }
+                },
+                "destinations": {
+                  "logAnalytics": [
+                    {
+                      "name": "BowerWorkspace",
+                      "workspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+                    }
+                  ]
+                },
+                "dataFlows": [
+                  {
+                    "streams": [
+                      "Custom-BowerSecurity"
+                    ],
+                    "destinations": [
+                      "BowerWorkspace"
+                    ],
+                    "outputStream": "Custom-BowerSecurity_CL",
+                    "transformKql": "          source\n          | where schemaVersion == \"1.0.0\"\n          | project\n              TimeGenerated = timeGenerated,\n              EventId = substring(tostring(eventId), 0, 128),\n              EventOriginalId = substring(tostring(eventOriginalId), 0, 256),\n              EventCategory = substring(tostring(eventCategory), 0, 128),\n              EventType = substring(tostring(eventType), 0, 128),\n              EventAction = substring(tostring(eventAction), 0, 128),\n              EventResult = substring(tostring(eventResult), 0, 32),\n              EventSeverity = substring(tostring(eventSeverity), 0, 32),\n              ApplicationName = substring(tostring(application.name), 0, 128),\n              ApplicationEnvironment = substring(tostring(application.environment), 0, 64),\n              ActorUserId = substring(tostring(actor.userId), 0, 256),\n              ActorUsername = substring(tostring(actor.username), 0, 256),\n              SourceIpAddress = substring(tostring(source.ipAddress), 0, 64),\n              CorrelationId = substring(tostring(request.correlationId), 0, 256),\n              PolicyId = substring(tostring(security.policyId), 0, 128),\n              PolicyVersion = substring(tostring(security.policyVersion), 0, 32),\n              PolicyHash = substring(tostring(security.policyHash), 0, 128),\n              ValueScore = toint(security.valueScore),\n              CollectorId = substring(tostring(collector.id), 0, 128),\n              PrivacyDetected = privacy.detected,\n              Labels = labels,\n              RawEnvelope = pack_all(),\n              TimeObserved = timeObserved,\n              EventOutcomeReason = substring(tostring(eventOutcomeReason), 0, 1024),\n              Target = target,\n              Change = change,\n              Attributes = attributes,\n              Origin = collector.origin\n        "
+                  }
+                ]
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('{0}-dce', parameters('namePrefix')))]",
+                "[resourceId('Microsoft.OperationalInsights/workspaces/tables', parameters('workspaceName'), 'BowerSecurity_CL')]"
+              ]
+            },
+            {
+              "condition": "[or(parameters('createIngestIdentity'), not(empty(parameters('ingestPrincipalObjectId'))))]",
+              "type": "Microsoft.Authorization/roleAssignments",
+              "apiVersion": "2022-04-01",
+              "scope": "[resourceId('Microsoft.Insights/dataCollectionRules', format('{0}-dcr', parameters('namePrefix')))]",
+              "name": "[guid(resourceId('Microsoft.Insights/dataCollectionRules', format('{0}-dcr', parameters('namePrefix'))), if(parameters('createIngestIdentity'), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-ingest', parameters('namePrefix'))), parameters('ingestPrincipalObjectId')), variables('metricsPublisherRole'))]",
+              "properties": {
+                "roleDefinitionId": "[variables('metricsPublisherRole')]",
+                "principalId": "[if(parameters('createIngestIdentity'), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-ingest', parameters('namePrefix'))), '2023-01-31').principalId, parameters('ingestPrincipalObjectId'))]",
+                "principalType": "ServicePrincipal"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-ingest', parameters('namePrefix')))]",
+                "[resourceId('Microsoft.Insights/dataCollectionRules', format('{0}-dcr', parameters('namePrefix')))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('privateLinkScopeName')))]",
+              "type": "microsoft.insights/privateLinkScopes",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName'))]",
+              "location": "global",
+              "properties": {
+                "accessModeSettings": {
+                  "ingestionAccessMode": "[parameters('privateLinkIngestionAccessMode')]",
+                  "queryAccessMode": "Open"
+                }
+              }
+            },
+            {
+              "condition": "[not(empty(parameters('privateLinkScopeName')))]",
+              "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[format('{0}/{1}', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')), format('{0}-dce', parameters('namePrefix')))]",
+              "properties": {
+                "linkedResourceId": "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('{0}-dce', parameters('namePrefix')))]"
+              },
+              "dependsOn": [
+                "[resourceId('Microsoft.Insights/dataCollectionEndpoints', format('{0}-dce', parameters('namePrefix')))]",
+                "[resourceId('microsoft.insights/privateLinkScopes', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')))]"
+              ]
+            },
+            {
+              "condition": "[not(empty(parameters('privateLinkScopeName')))]",
+              "type": "Microsoft.Insights/privateLinkScopes/scopedResources",
+              "apiVersion": "2021-07-01-preview",
+              "name": "[format('{0}/{1}', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')), parameters('workspaceName'))]",
+              "properties": {
+                "linkedResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]"
+              },
+              "dependsOn": [
+                "[resourceId('microsoft.insights/privateLinkScopes', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')))]"
+              ]
+            },
+            {
+              "condition": "[and(not(empty(parameters('privateLinkScopeName'))), not(empty(parameters('privateEndpointSubnetId'))))]",
+              "type": "Microsoft.Resources/deployments",
+              "apiVersion": "2025-04-01",
+              "name": "[format('{0}-ampls-pe', parameters('namePrefix'))]",
+              "subscriptionId": "[if(empty(parameters('privateEndpointSubnetId')), subscription().subscriptionId, variables('privateEndpointSubnetParts')[2])]",
+              "resourceGroup": "[if(empty(parameters('privateEndpointSubnetId')), resourceGroup().name, variables('privateEndpointSubnetParts')[4])]",
+              "properties": {
+                "expressionEvaluationOptions": {
+                  "scope": "inner"
+                },
+                "mode": "Incremental",
+                "parameters": {
+                  "name": {
+                    "value": "[format('{0}-ampls-pe', parameters('namePrefix'))]"
+                  },
+                  "connectionName": {
+                    "value": "[format('{0}-ampls', parameters('namePrefix'))]"
+                  },
+                  "subnetId": {
+                    "value": "[parameters('privateEndpointSubnetId')]"
+                  },
+                  "location": "[if(and(not(empty(parameters('privateLinkScopeName'))), not(empty(parameters('privateEndpointSubnetId')))), createObject('value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', if(empty(parameters('privateEndpointSubnetId')), subscription().subscriptionId, variables('privateEndpointSubnetParts')[2]), if(empty(parameters('privateEndpointSubnetId')), resourceGroup().name, variables('privateEndpointSubnetParts')[4])), 'Microsoft.Network/virtualNetworks', if(empty(parameters('privateEndpointSubnetId')), 'unused', variables('privateEndpointSubnetParts')[8])), '2024-05-01', 'full').location), createObject('value', parameters('location')))]",
+                  "privateLinkScopeId": {
+                    "value": "[resourceId('microsoft.insights/privateLinkScopes', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')))]"
+                  }
+                },
+                "template": {
+                  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+                  "contentVersion": "1.0.0.0",
+                  "metadata": {
+                    "_generator": {
+                      "name": "bicep",
+                      "version": "0.49.2.45890",
+                      "templateHash": "17577140245480451241"
+                    }
+                  },
+                  "parameters": {
+                    "name": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Private endpoint name in the subnet resource group."
+                      }
+                    },
+                    "connectionName": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Connection name, preserved when updating an existing endpoint."
+                      }
+                    },
+                    "subnetId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Full subnet resource ID; the caller scopes this module to that subscription and resource group."
+                      }
+                    },
+                    "privateLinkScopeId": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "Azure Monitor Private Link Scope resource ID, which may be in another subscription."
+                      }
+                    },
+                    "location": {
+                      "type": "string",
+                      "metadata": {
+                        "description": "The existing virtual network location, resolved by the parent deployment."
+                      }
+                    }
+                  },
+                  "resources": [
+                    {
+                      "type": "Microsoft.Network/privateEndpoints",
+                      "apiVersion": "2024-05-01",
+                      "name": "[parameters('name')]",
+                      "location": "[parameters('location')]",
+                      "properties": {
+                        "subnet": {
+                          "id": "[parameters('subnetId')]"
+                        },
+                        "privateLinkServiceConnections": [
+                          {
+                            "name": "[parameters('connectionName')]",
+                            "properties": {
+                              "privateLinkServiceId": "[parameters('privateLinkScopeId')]",
+                              "groupIds": [
+                                "azuremonitor"
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "outputs": {
+                    "privateEndpointId": {
+                      "type": "string",
+                      "value": "[resourceId('Microsoft.Network/privateEndpoints', parameters('name'))]"
+                    }
+                  }
+                }
+              },
+              "dependsOn": [
+                "[resourceId('microsoft.insights/privateLinkScopes', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')))]",
+                "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')), format('{0}-dce', parameters('namePrefix')))]",
+                "[resourceId('Microsoft.Insights/privateLinkScopes/scopedResources', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName')), parameters('workspaceName'))]"
+              ]
+            }
+          ],
+          "outputs": {
+            "ingestManagedIdentityClientId": {
+              "type": "string",
+              "value": "[if(parameters('createIngestIdentity'), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-ingest', parameters('namePrefix'))), '2023-01-31').clientId, '')]"
+            },
+            "ingestPrincipalId": {
+              "type": "string",
+              "value": "[if(parameters('createIngestIdentity'), reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-ingest', parameters('namePrefix'))), '2023-01-31').principalId, parameters('ingestPrincipalObjectId'))]"
+            },
+            "dataCollectionEndpoint": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/dataCollectionEndpoints', format('{0}-dce', parameters('namePrefix'))), '2024-03-11').logsIngestion.endpoint]"
+            },
+            "dataCollectionRuleImmutableId": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/dataCollectionRules', format('{0}-dcr', parameters('namePrefix'))), '2024-03-11').immutableId]"
+            },
+            "streamName": {
+              "type": "string",
+              "value": "Custom-BowerSecurity"
+            },
+            "tableName": {
+              "type": "string",
+              "value": "BowerSecurity_CL"
+            },
+            "privateLinkScopeId": {
+              "type": "string",
+              "value": "[if(empty(parameters('privateLinkScopeName')), '', resourceId('microsoft.insights/privateLinkScopes', if(empty(parameters('privateLinkScopeName')), 'unused', parameters('privateLinkScopeName'))))]"
+            },
+            "privateEndpointId": {
+              "type": "string",
+              "value": "[if(and(not(empty(parameters('privateLinkScopeName'))), not(empty(parameters('privateEndpointSubnetId')))), reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', if(empty(parameters('privateEndpointSubnetId')), subscription().subscriptionId, variables('privateEndpointSubnetParts')[2]), if(empty(parameters('privateEndpointSubnetId')), resourceGroup().name, variables('privateEndpointSubnetParts')[4])), 'Microsoft.Resources/deployments', format('{0}-ampls-pe', parameters('namePrefix'))), '2025-04-01').outputs.privateEndpointId.value, '')]"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-analytics', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceName": {
+            "value": "[parameters('workspaceName')]"
+          },
+          "enableRules": {
+            "value": "[parameters('enableRules')]"
+          },
+          "detectionKeyScope": {
+            "value": "[parameters('detectionKeyScope')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "4060698864706971863"
+            }
+          },
+          "functions": [
+            {
+              "namespace": "__bicep",
+              "members": {
+                "tune": {
+                  "parameters": [
+                    {
+                      "type": "string",
+                      "name": "query"
+                    },
+                    {
+                      "type": "string",
+                      "name": "rule"
+                    },
+                    {
+                      "type": "string",
+                      "name": "scope"
+                    },
+                    {
+                      "type": "int",
+                      "name": "defaultThreshold"
+                    },
+                    {
+                      "type": "int",
+                      "name": "threshold"
+                    },
+                    {
+                      "type": "int",
+                      "name": "frequency"
+                    },
+                    {
+                      "type": "int",
+                      "name": "settle"
+                    },
+                    {
+                      "type": "int",
+                      "name": "catchUp"
+                    },
+                    {
+                      "type": "int",
+                      "name": "maxDelay"
+                    },
+                    {
+                      "type": "int",
+                      "name": "bucket"
+                    },
+                    {
+                      "type": "int",
+                      "name": "spacing"
+                    }
+                  ],
+                  "output": {
+                    "type": "string",
+                    "value": "[replace(replace(replace(replace(replace(replace(replace(replace(parameters('query'), format('let ruleKey = \"{0}:default\";', parameters('rule')), format('let ruleKey = \"{0}:{1}\";', parameters('rule'), parameters('scope'))), format('let threshold = {0};', parameters('defaultThreshold')), format('let threshold = {0};', parameters('threshold'))), 'let bucketSize = 10m;', format('let bucketSize = {0}m;', parameters('bucket'))), 'let settleDelay = 5m;', format('let settleDelay = {0}m;', parameters('settle'))), 'let frequency = 5m;', format('let frequency = {0}m;', parameters('frequency'))), 'let catchUp = 60m;', format('let catchUp = {0}m;', parameters('catchUp'))), 'let maxDelay = 360m;', format('let maxDelay = {0}m;', parameters('maxDelay'))), 'let retrySpacing = 2;', format('let retrySpacing = {0};', parameters('spacing')))]"
+                  }
+                }
+              }
+            }
+          ],
+          "parameters": {
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Existing Log Analytics workspace with Microsoft Sentinel and BowerSecurity_CL."
+              }
+            },
+            "enableRules": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Create the rules enabled. Keep false until the rules are validated against this workspace."
+              }
+            },
+            "frequencyMinutes": {
+              "type": "int",
+              "defaultValue": 5,
+              "minValue": 5,
+              "maxValue": 60,
+              "metadata": {
+                "description": "Minutes between scheduled runs. Shorter runs alert sooner and cost more queries."
+              }
+            },
+            "settleDelayMinutes": {
+              "type": "int",
+              "defaultValue": 5,
+              "minValue": 1,
+              "maxValue": 60,
+              "metadata": {
+                "description": "Minutes after ingestion before a row is evaluated, so it is queryable when the run reads it."
+              }
+            },
+            "catchUpMinutes": {
+              "type": "int",
+              "defaultValue": 60,
+              "minValue": 15,
+              "maxValue": 1440,
+              "metadata": {
+                "description": "Minutes of first-ingestion history re-checked for crossings that a missed or late run did not alert. Must be at least (alertVisibilityRuns + 1) x frequencyMinutes, or no retry slot exists; deployment fails otherwise."
+              }
+            },
+            "alertVisibilityRuns": {
+              "type": "int",
+              "defaultValue": 2,
+              "minValue": 2,
+              "maxValue": 12,
+              "metadata": {
+                "description": "Runs after which a rule run's alerts are queryable in SecurityAlert. A missed crossing is retried only every this many runs, so a retry never runs before the previous attempt's alert is visible. Raise it if SecurityAlert ingestion is slower than (alertVisibilityRuns - 1) x frequencyMinutes; too low a value can raise a second alert (grouping still keeps one incident)."
+              }
+            },
+            "detectionKeyScope": {
+              "type": "string",
+              "defaultValue": "default",
+              "minLength": 1,
+              "maxLength": 32,
+              "metadata": {
+                "description": "Scopes detection keys and rule names to this deployment. Use a distinct value for each deployment of this content in one workspace, so they never suppress each other's alerts. Lowercase letters, digits and hyphens."
+              }
+            },
+            "toleranceFrequencyMinutes": {
+              "type": "int",
+              "defaultValue": 60,
+              "minValue": 60,
+              "maxValue": 1440,
+              "metadata": {
+                "description": "Minutes between runs of the beyond-tolerance monitor; each run evaluates exactly the first ingestions of the last interval."
+              }
+            },
+            "maxIngestionDelayMinutes": {
+              "type": "int",
+              "defaultValue": 360,
+              "minValue": 30,
+              "maxValue": 2820,
+              "metadata": {
+                "description": "Longest delay between event time and first ingestion that the rules evaluate (outage SLO plus drain). Azure Monitor rewrites event times older than two days."
+              }
+            },
+            "bucketMinutes": {
+              "type": "int",
+              "defaultValue": 10,
+              "minValue": 1,
+              "maxValue": 60,
+              "metadata": {
+                "description": "Event-time bucket for threshold counting."
+              }
+            },
+            "bruteForceThreshold": {
+              "type": "int",
+              "defaultValue": 10,
+              "minValue": 2,
+              "metadata": {
+                "description": "Distinct failed network logons from one address in one bucket that raise an alert."
+              }
+            },
+            "firewallDenyThreshold": {
+              "type": "int",
+              "defaultValue": 20,
+              "minValue": 2,
+              "metadata": {
+                "description": "Distinct firewall denials from one address in one bucket that raise an alert."
+              }
+            },
+            "incidentGroupingLookback": {
+              "type": "string",
+              "defaultValue": "PT5H",
+              "metadata": {
+                "description": "Alerts for the same IP entity within this duration join one incident."
+              }
+            },
+            "reopenClosedIncidents": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Reopen a closed matching incident instead of creating a new one. Unavailable in the Defender portal."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "// BowerSecurityEvents: one row per Bower security event, with delivery replays collapsed.\n// Bower delivers at least once. Every replay path re-sends the stored queue row, so the\n// copies share the collector-stamped (CollectorId, EventId): an ambiguous Logs Ingestion\n// acknowledgement (accepted, response lost), a crash before the acknowledgement commit,\n// a restored queue backup and a dead-letter replay. A source resend (RELP or TCP syslog\n// after a collector restart, a WEC re-read) of a record whose queue row was lost or\n// purged gets the same source-computed EventId. `bower archive replay` must go through a collector with\n// the original BOWER_COLLECTOR_ID (a collector with another id refuses it), so it keeps\n// the same identity too. Labels never change the identity: producers control them.\n// The first copy is kept, so a later row (replayed, or sent by a producer that reused an\n// EventId) never replaces content that detections already evaluated.\n//   BowerFirstIngested  ingestion_time() of the first copy. Detections use it to evaluate\n//                       a late event once, when it first arrived.\n//   BowerLastIngested   ingestion_time() of the latest copy.\n//   BowerCopies         rows that share the identity (1 = no replay).\n//   BowerEventTime      the event time Bower sent. Azure Monitor rewrites TimeGenerated\n//                       to the receive time when it is more than two days old; the\n//                       original survives in RawEnvelope.timeGenerated.\n//   BowerTimeRewritten  true when TimeGenerated no longer equals the sent event time.\n// Collector health records and synthetic canaries are operational signals, not security\n// events: deploy/sentinel/monitoring queries them from BowerSecurity_CL directly.\n// The caller's time range still filters TimeGenerated. All copies of an event share\n// TimeGenerated unless Azure rewrote it, so a range keeps or drops them together.\n// Count events with count() after this function, never dcount() on the raw table:\n// dcount() is an estimate.\nBowerSecurity_CL\n| where EventType !in (\"collector_health\", \"collector_canary\")\n| extend BowerIngested = ingestion_time()\n| summarize arg_min(BowerIngested, *), BowerLastIngested = max(BowerIngested), BowerCopies = count()\n    by CollectorId, EventId\n| project-rename BowerFirstIngested = BowerIngested\n| extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)\n| extend BowerTimeRewritten = BowerEventTime != TimeGenerated\n",
+            "$fxv#1": "// BowerSecurityEventsOfType(eventTypes: dynamic): BowerSecurityEvents for the listed event\n// types, for scheduled rules. The first copy is chosen exactly as BowerSecurityEvents\n// chooses it: over every row of the identity (CollectorId, EventId), whatever its type,\n// so an EventId reused with another event type picks the same winner; only then are the\n// winners filtered by type. To stay cheap it collapses only identities that have a row of\n// a listed type, and drops the large dynamic columns (RawEnvelope, Attributes, Target,\n// Change, Labels, PrivacyDetected) first; BowerEventTime is read from RawEnvelope before.\nlet identities = BowerSecurity_CL\n    | where EventType in (eventTypes)\n    | distinct CollectorId, EventId;\n// ingestion_time() is read before the join: it is null on a join's output rows.\nBowerSecurity_CL\n| where EventType !in (\"collector_health\", \"collector_canary\")\n| extend BowerIngested = ingestion_time(), BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)\n| project-away RawEnvelope, Attributes, Target, Change, Labels, PrivacyDetected\n| join kind=leftsemi identities on CollectorId, EventId\n| summarize arg_min(BowerIngested, *), BowerLastIngested = max(BowerIngested), BowerCopies = count()\n    by CollectorId, EventId\n| where EventType in (eventTypes)\n| project-rename BowerFirstIngested = BowerIngested\n| extend BowerTimeRewritten = BowerEventTime != TimeGenerated\n",
+            "$fxv#2": "// Bower replay-safe detection: Windows failed network logons (Security 4625 through\n// WEF/WEC and the windows-security-logon pack) from one source address.\n// Alerts once per (SourceIpAddress, event-time bucket) when the bucket first reaches\n// the threshold. Replayed rows never change the count; late events are counted in the\n// run that first sees them. See docs/production-readiness/02-replay-safe-detections.md.\n// The main.bicep parameters replace the next seven values; keep them on one line each.\nlet threshold = 10;\nlet bucketSize = 10m;\nlet settleDelay = 5m;\nlet frequency = 5m;\nlet catchUp = 60m;\nlet maxDelay = 360m;\n// Runs between retries of a missed crossing: a run's alerts must be queryable in\n// SecurityAlert by the run that many runs later (alertVisibilityRuns in main.bicep).\nlet retrySpacing = 2;\n// Detection keys are scoped per deployment (detectionKeyScope in main.bicep), so two\n// deployments in one workspace never suppress each other's alerts.\nlet ruleKey = \"bower-wec-brute-force:default\";\n// In a scheduled run now() is the end of the run's query window. Windows sit on a fixed\n// grid of `frequency`, so a redeploy or re-enable that moves the schedule cannot create\n// partly overlapping windows.\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet catchUpStart = windowEnd - catchUp;\nlet horizon = bin(catchUpStart - maxDelay, bucketSize);\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\nlet candidates = materialize(BowerSecurityEventsOfType(dynamic([\"authentication_failure\"]))\n    | where EventType == \"authentication_failure\" and ApplicationName == \"windows-security\"\n    | where isnotempty(SourceIpAddress)\n    | where BowerEventTime >= horizon and BowerFirstIngested < windowEnd\n    | where BowerFirstIngested - BowerEventTime <= maxDelay\n    | extend BucketStart = bin(BowerEventTime, bucketSize));\n// Rank only buckets that reach the threshold: the ranking and every aggregate below see\n// exactly the same rows per bucket as ranking all buckets, and a bucket below the\n// threshold is dropped by `DistinctEvents >= threshold` either way.\nlet crossedBuckets = candidates\n    | summarize BucketEvents = count() by SourceIpAddress, BucketStart\n    | where BucketEvents >= threshold\n    | project SourceIpAddress, BucketStart;\ncandidates\n| join kind=inner crossedBuckets on SourceIpAddress, BucketStart\n| sort by SourceIpAddress asc, BucketStart asc, BowerFirstIngested asc, CollectorId asc, EventId asc\n| extend Rank = row_number(1, prev(SourceIpAddress) != SourceIpAddress or prev(BucketStart) != BucketStart)\n| summarize CrossedAt = minif(BowerFirstIngested, Rank == threshold), DistinctEvents = count(),\n    ReplayedRows = sum(BowerCopies - 1), LateEvents = countif(BowerFirstIngested - BowerEventTime > settleDelay + frequency),\n    MaxDeliveryDelay = max(BowerFirstIngested - BowerEventTime), Collectors = make_set(CollectorId, 10),\n    TargetAccounts = make_set(ActorUsername, 20), FirstEvent = min(BowerEventTime), LastEvent = max(BowerEventTime)\n    by SourceIpAddress, BucketStart\n| where DistinctEvents >= threshold\n| where CrossedAt >= catchUpStart and CrossedAt < windowEnd\n// Slot 0 is this run's own window; runs tile it. A crossing missed there (skipped run,\n// late-queryable row) is retried every retrySpacing runs only: a run's alerts have\n// TimeGenerated after its window end, so they are outside the next run's look-back.\n| extend Slot = toint((windowEnd - CrossedAt) / frequency)\n| where Slot == 0 or (Slot >= retrySpacing and Slot % retrySpacing == 0)\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", SourceIpAddress, \"|\", tostring(BucketStart))\n| where BowerDetectionKey !in (alerted)\n| extend EvaluationPath = iff(Slot == 0, \"owned-window\", strcat(\"catch-up-\", Slot)), EvaluatedAt = now()\n| project BowerDetectionKey, SourceIpAddress, BucketStart, DistinctEvents, CrossedAt, EvaluationPath, EvaluatedAt,\n    ReplayedRows, LateEvents, MaxDeliveryDelay, Collectors, TargetAccounts, FirstEvent, LastEvent\n",
+            "$fxv#3": "// Bower replay-safe detection: firewall denials (for example nftables or appliance\n// syslog over mutual TLS) from one source address.\n// Alerts once per (SourceIpAddress, event-time bucket) when the bucket first reaches\n// the threshold. Replayed rows never change the count; late events are counted in the\n// run that first sees them. See docs/production-readiness/02-replay-safe-detections.md.\n// The main.bicep parameters replace the next seven values; keep them on one line each.\nlet threshold = 20;\nlet bucketSize = 10m;\nlet settleDelay = 5m;\nlet frequency = 5m;\nlet catchUp = 60m;\nlet maxDelay = 360m;\n// Runs between retries of a missed crossing: a run's alerts must be queryable in\n// SecurityAlert by the run that many runs later (alertVisibilityRuns in main.bicep).\nlet retrySpacing = 2;\n// Detection keys are scoped per deployment (detectionKeyScope in main.bicep), so two\n// deployments in one workspace never suppress each other's alerts.\nlet ruleKey = \"bower-firewall-deny:default\";\n// In a scheduled run now() is the end of the run's query window. Windows sit on a fixed\n// grid of `frequency`, so a redeploy or re-enable that moves the schedule cannot create\n// partly overlapping windows.\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet catchUpStart = windowEnd - catchUp;\nlet horizon = bin(catchUpStart - maxDelay, bucketSize);\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\nlet candidates = materialize(BowerSecurityEventsOfType(dynamic([\"network_connection_denied\"]))\n    | where EventType == \"network_connection_denied\" and EventResult == \"denied\"\n    | where isnotempty(SourceIpAddress)\n    | where BowerEventTime >= horizon and BowerFirstIngested < windowEnd\n    | where BowerFirstIngested - BowerEventTime <= maxDelay\n    | extend BucketStart = bin(BowerEventTime, bucketSize));\n// Rank only buckets that reach the threshold: the ranking and every aggregate below see\n// exactly the same rows per bucket as ranking all buckets, and a bucket below the\n// threshold is dropped by `DistinctEvents >= threshold` either way.\nlet crossedBuckets = candidates\n    | summarize BucketEvents = count() by SourceIpAddress, BucketStart\n    | where BucketEvents >= threshold\n    | project SourceIpAddress, BucketStart;\ncandidates\n| join kind=inner crossedBuckets on SourceIpAddress, BucketStart\n| sort by SourceIpAddress asc, BucketStart asc, BowerFirstIngested asc, CollectorId asc, EventId asc\n| extend Rank = row_number(1, prev(SourceIpAddress) != SourceIpAddress or prev(BucketStart) != BucketStart)\n| summarize CrossedAt = minif(BowerFirstIngested, Rank == threshold), DistinctEvents = count(),\n    ReplayedRows = sum(BowerCopies - 1), LateEvents = countif(BowerFirstIngested - BowerEventTime > settleDelay + frequency),\n    MaxDeliveryDelay = max(BowerFirstIngested - BowerEventTime), Collectors = make_set(CollectorId, 10),\n    Applications = make_set(ApplicationName, 10), FirstEvent = min(BowerEventTime), LastEvent = max(BowerEventTime)\n    by SourceIpAddress, BucketStart\n| where DistinctEvents >= threshold\n| where CrossedAt >= catchUpStart and CrossedAt < windowEnd\n// Slot 0 is this run's own window; runs tile it. A crossing missed there (skipped run,\n// late-queryable row) is retried every retrySpacing runs only: a run's alerts have\n// TimeGenerated after its window end, so they are outside the next run's look-back.\n| extend Slot = toint((windowEnd - CrossedAt) / frequency)\n| where Slot == 0 or (Slot >= retrySpacing and Slot % retrySpacing == 0)\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", SourceIpAddress, \"|\", tostring(BucketStart))\n| where BowerDetectionKey !in (alerted)\n| extend EvaluationPath = iff(Slot == 0, \"owned-window\", strcat(\"catch-up-\", Slot)), EvaluatedAt = now()\n| project BowerDetectionKey, SourceIpAddress, BucketStart, DistinctEvents, CrossedAt, EvaluationPath, EvaluatedAt,\n    ReplayedRows, LateEvents, MaxDeliveryDelay, Collectors, Applications, FirstEvent, LastEvent\n",
+            "$fxv#4": "// Bower detection-tolerance monitor: events that first arrived later than the\n// replay-safe rules' maximum tolerated delay. Those rules never evaluate such events,\n// so each result is a detection gap to investigate, not a threat. It also reports\n// events whose TimeGenerated Azure Monitor rewrote (event time more than two days old).\n// The main.bicep parameters replace maxDelay, settleDelay and frequency (which is the\n// rule's queryFrequency); keep them on one line each.\nlet maxDelay = 360m;\nlet settleDelay = 5m;\nlet frequency = 60m;\n// One non-overlapping slot of first ingestion per run, on a fixed grid of `frequency`,\n// so each late event alerts once even after the schedule moves.\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet windowStart = windowEnd - frequency;\n// Candidates: rows ingested in the slot. Their TimeGenerated is at most two days before\n// ingestion (Azure Monitor rewrites older values), so this bound keeps every candidate.\nlet late = BowerSecurity_CL\n    | where TimeGenerated >= windowStart - 50h\n    | where EventType !in (\"collector_health\", \"collector_canary\")\n    | extend BowerIngested = ingestion_time()\n    | where BowerIngested >= windowStart and BowerIngested < windowEnd\n    | extend BowerEventTime = coalesce(todatetime(RawEnvelope.timeGenerated), TimeGenerated)\n    // Collapse first: an on-time first copy in the slot must not hide behind a late replay.\n    | summarize arg_min(BowerIngested, BowerEventTime, TimeGenerated, EventType) by CollectorId, EventId\n    | where BowerIngested - BowerEventTime > maxDelay or BowerEventTime != TimeGenerated;\n// A copy ingested before the slot means the candidate is a replay, not a late event,\n// even when Azure rewrote the replay's TimeGenerated and the original keeps an old one.\n// The rule looks back 14 days (the Sentinel maximum) for that copy.\nlet earlier = BowerSecurity_CL\n    | where EventId in ((late | project EventId))\n    | where ingestion_time() < windowStart\n    | distinct CollectorId, EventId;\nlate\n| join kind=leftanti earlier on CollectorId, EventId\n| summarize LateEvents = count(), RewrittenTimes = countif(BowerEventTime != TimeGenerated),\n    OldestEvent = min(BowerEventTime), MaxDeliveryDelay = max(BowerIngested - BowerEventTime),\n    EventTypes = make_set(EventType, 20)\n    by CollectorId\n| extend WindowStart = windowStart, WindowEnd = windowEnd\n",
+            "catchUpMinutesChecked": "[if(greaterOrEquals(parameters('catchUpMinutes'), mul(add(parameters('alertVisibilityRuns'), 1), parameters('frequencyMinutes'))), parameters('catchUpMinutes'), fail('catchUpMinutes must be at least (alertVisibilityRuns + 1) x frequencyMinutes, or missed crossings are never retried.'))]",
+            "queryPeriodMinutes": "[add(add(add(add(add(parameters('maxIngestionDelayMinutes'), parameters('bucketMinutes')), variables('catchUpMinutesChecked')), parameters('settleDelayMinutes')), parameters('frequencyMinutes')), 10)]",
+            "bruteForceQuery": "[__bicep.tune(variables('$fxv#2'), 'bower-wec-brute-force', parameters('detectionKeyScope'), 10, parameters('bruteForceThreshold'), parameters('frequencyMinutes'), parameters('settleDelayMinutes'), variables('catchUpMinutesChecked'), parameters('maxIngestionDelayMinutes'), parameters('bucketMinutes'), parameters('alertVisibilityRuns'))]",
+            "firewallQuery": "[__bicep.tune(variables('$fxv#3'), 'bower-firewall-deny', parameters('detectionKeyScope'), 20, parameters('firewallDenyThreshold'), parameters('frequencyMinutes'), parameters('settleDelayMinutes'), variables('catchUpMinutesChecked'), parameters('maxIngestionDelayMinutes'), parameters('bucketMinutes'), parameters('alertVisibilityRuns'))]",
+            "toleranceQuery": "[replace(replace(replace(variables('$fxv#4'), 'let maxDelay = 360m;', format('let maxDelay = {0}m;', parameters('maxIngestionDelayMinutes'))), 'let settleDelay = 5m;', format('let settleDelay = {0}m;', parameters('settleDelayMinutes'))), 'let frequency = 60m;', format('let frequency = {0}m;', parameters('toleranceFrequencyMinutes')))]",
+            "nameSuffix": "[if(equals(parameters('detectionKeyScope'), 'default'), '', format(' [{0}]', parameters('detectionKeyScope')))]",
+            "detectionDetails": {
+              "BowerDetectionKey": "BowerDetectionKey",
+              "BucketStart": "BucketStart",
+              "DistinctEvents": "DistinctEvents",
+              "CrossedAt": "CrossedAt",
+              "EvaluationPath": "EvaluationPath",
+              "EvaluatedAt": "EvaluatedAt",
+              "ReplayedRows": "ReplayedRows",
+              "LateEvents": "LateEvents",
+              "MaxDeliveryDelay": "MaxDeliveryDelay"
+            },
+            "ipGrouping": {
+              "createIncident": true,
+              "groupingConfiguration": {
+                "enabled": true,
+                "reopenClosedIncident": "[parameters('reopenClosedIncidents')]",
+                "lookbackDuration": "[parameters('incidentGroupingLookback')]",
+                "matchingMethod": "Selected",
+                "groupByEntities": [
+                  "IP"
+                ],
+                "groupByAlertDetails": [],
+                "groupByCustomDetails": []
+              }
+            }
+          },
+          "resources": {
+            "workspace": {
+              "existing": true,
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2025-07-01",
+              "name": "[parameters('workspaceName')]"
+            },
+            "parser": {
+              "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+              "apiVersion": "2025-07-01",
+              "name": "[format('{0}/{1}', parameters('workspaceName'), 'bower-security-events')]",
+              "properties": {
+                "category": "Bower",
+                "displayName": "BowerSecurityEvents: replay-collapsed Bower events",
+                "functionAlias": "BowerSecurityEvents",
+                "query": "[variables('$fxv#0')]",
+                "version": 2
+              }
+            },
+            "typedParser": {
+              "type": "Microsoft.OperationalInsights/workspaces/savedSearches",
+              "apiVersion": "2025-07-01",
+              "name": "[format('{0}/{1}', parameters('workspaceName'), 'bower-security-events-of-type')]",
+              "properties": {
+                "category": "Bower",
+                "displayName": "BowerSecurityEventsOfType: replay-collapsed Bower events of given types",
+                "functionAlias": "BowerSecurityEventsOfType",
+                "functionParameters": "eventTypes:dynamic",
+                "query": "[variables('$fxv#1')]",
+                "version": 2
+              }
+            },
+            "bruteForce": {
+              "type": "Microsoft.SecurityInsights/alertRules",
+              "apiVersion": "2025-09-01",
+              "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-wec-brute-force', parameters('detectionKeyScope'))]",
+              "kind": "Scheduled",
+              "properties": {
+                "displayName": "[format('Bower: Windows failed network logons from one address (replay-safe){0}', variables('nameSuffix'))]",
+                "description": "[format('At least {0} distinct Windows 4625 network logon failures from one source address in a {1}-minute event-time bucket. Replayed Bower rows are collapsed by BowerSecurityEvents and late events are evaluated once, at first ingestion, up to {2} minutes late.', parameters('bruteForceThreshold'), parameters('bucketMinutes'), parameters('maxIngestionDelayMinutes'))]",
+                "enabled": "[parameters('enableRules')]",
+                "severity": "Medium",
+                "query": "[variables('bruteForceQuery')]",
+                "queryFrequency": "[format('PT{0}M', parameters('frequencyMinutes'))]",
+                "queryPeriod": "[format('PT{0}M', variables('queryPeriodMinutes'))]",
+                "triggerOperator": "GreaterThan",
+                "triggerThreshold": 0,
+                "suppressionEnabled": false,
+                "suppressionDuration": "PT5H",
+                "tactics": [
+                  "CredentialAccess"
+                ],
+                "techniques": [
+                  "T1110"
+                ],
+                "eventGroupingSettings": {
+                  "aggregationKind": "AlertPerResult"
+                },
+                "entityMappings": [
+                  {
+                    "entityType": "IP",
+                    "fieldMappings": [
+                      {
+                        "identifier": "Address",
+                        "columnName": "SourceIpAddress"
+                      }
+                    ]
+                  }
+                ],
+                "customDetails": "[variables('detectionDetails')]",
+                "alertDetailsOverride": {
+                  "alertDisplayNameFormat": "Bower: failed network logons from {{SourceIpAddress}}",
+                  "alertDescriptionFormat": "{{DistinctEvents}} distinct failures in the bucket starting {{BucketStart}} (key {{BowerDetectionKey}})."
+                },
+                "incidentConfiguration": "[variables('ipGrouping')]"
+              },
+              "dependsOn": [
+                "parser",
+                "typedParser"
+              ]
+            },
+            "firewallDeny": {
+              "type": "Microsoft.SecurityInsights/alertRules",
+              "apiVersion": "2025-09-01",
+              "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-firewall-deny', parameters('detectionKeyScope'))]",
+              "kind": "Scheduled",
+              "properties": {
+                "displayName": "[format('Bower: repeated firewall denials from one address (replay-safe){0}', variables('nameSuffix'))]",
+                "description": "[format('At least {0} distinct firewall denials from one source address in a {1}-minute event-time bucket. Replayed Bower rows are collapsed by BowerSecurityEvents and late events are evaluated once, at first ingestion, up to {2} minutes late.', parameters('firewallDenyThreshold'), parameters('bucketMinutes'), parameters('maxIngestionDelayMinutes'))]",
+                "enabled": "[parameters('enableRules')]",
+                "severity": "Low",
+                "query": "[variables('firewallQuery')]",
+                "queryFrequency": "[format('PT{0}M', parameters('frequencyMinutes'))]",
+                "queryPeriod": "[format('PT{0}M', variables('queryPeriodMinutes'))]",
+                "triggerOperator": "GreaterThan",
+                "triggerThreshold": 0,
+                "suppressionEnabled": false,
+                "suppressionDuration": "PT5H",
+                "tactics": [
+                  "Discovery"
+                ],
+                "techniques": [
+                  "T1046"
+                ],
+                "eventGroupingSettings": {
+                  "aggregationKind": "AlertPerResult"
+                },
+                "entityMappings": [
+                  {
+                    "entityType": "IP",
+                    "fieldMappings": [
+                      {
+                        "identifier": "Address",
+                        "columnName": "SourceIpAddress"
+                      }
+                    ]
+                  }
+                ],
+                "customDetails": "[variables('detectionDetails')]",
+                "alertDetailsOverride": {
+                  "alertDisplayNameFormat": "Bower: repeated firewall denials from {{SourceIpAddress}}",
+                  "alertDescriptionFormat": "{{DistinctEvents}} distinct denials in the bucket starting {{BucketStart}} (key {{BowerDetectionKey}})."
+                },
+                "incidentConfiguration": "[variables('ipGrouping')]"
+              },
+              "dependsOn": [
+                "parser",
+                "typedParser"
+              ]
+            },
+            "beyondTolerance": {
+              "type": "Microsoft.SecurityInsights/alertRules",
+              "apiVersion": "2025-09-01",
+              "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-beyond-tolerance', parameters('detectionKeyScope'))]",
+              "kind": "Scheduled",
+              "properties": {
+                "displayName": "[format('Bower: events arrived later than the replay-safe rules evaluate{0}', variables('nameSuffix'))]",
+                "description": "[format('Bower events first ingested more than {0} minutes after their event time, or whose TimeGenerated Azure Monitor rewrote. The replay-safe rules did not evaluate them; investigate the outage and hunt manually.', parameters('maxIngestionDelayMinutes'))]",
+                "enabled": "[parameters('enableRules')]",
+                "severity": "Informational",
+                "query": "[variables('toleranceQuery')]",
+                "queryFrequency": "[format('PT{0}M', parameters('toleranceFrequencyMinutes'))]",
+                "queryPeriod": "P14D",
+                "triggerOperator": "GreaterThan",
+                "triggerThreshold": 0,
+                "suppressionEnabled": false,
+                "suppressionDuration": "PT5H",
+                "tactics": [],
+                "techniques": [],
+                "eventGroupingSettings": {
+                  "aggregationKind": "AlertPerResult"
+                },
+                "entityMappings": [
+                  {
+                    "entityType": "Host",
+                    "fieldMappings": [
+                      {
+                        "identifier": "HostName",
+                        "columnName": "CollectorId"
+                      }
+                    ]
+                  }
+                ],
+                "customDetails": {
+                  "LateEvents": "LateEvents",
+                  "RewrittenTimes": "RewrittenTimes",
+                  "OldestEvent": "OldestEvent",
+                  "MaxDeliveryDelay": "MaxDeliveryDelay"
+                },
+                "incidentConfiguration": {
+                  "createIncident": true,
+                  "groupingConfiguration": {
+                    "enabled": true,
+                    "reopenClosedIncident": false,
+                    "lookbackDuration": "PT24H",
+                    "matchingMethod": "Selected",
+                    "groupByEntities": [
+                      "Host"
+                    ],
+                    "groupByAlertDetails": [],
+                    "groupByCustomDetails": []
+                  }
+                }
+              },
+              "dependsOn": [
+                "parser",
+                "typedParser"
+              ]
+            }
+          },
+          "outputs": {
+            "parserFunction": {
+              "type": "string",
+              "value": "[reference('parser').functionAlias]"
+            },
+            "ruleIds": {
+              "type": "array",
+              "value": [
+                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-wec-brute-force', parameters('detectionKeyScope')))]",
+                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-firewall-deny', parameters('detectionKeyScope')))]",
+                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-beyond-tolerance', parameters('detectionKeyScope')))]"
+              ]
+            },
+            "queryPeriod": {
+              "type": "string",
+              "value": "[format('PT{0}M', variables('queryPeriodMinutes'))]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-ingestion', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deployAsvsAnalytics')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-asvs-analytics', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceName": {
+            "value": "[parameters('workspaceName')]"
+          },
+          "enableRules": {
+            "value": "[parameters('enableRules')]"
+          },
+          "detectionKeyScope": {
+            "value": "[parameters('detectionKeyScope')]"
+          },
+          "timeZone": {
+            "value": "[parameters('timeZone')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "languageVersion": "2.0",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "2679495628733251426"
+            }
+          },
+          "functions": [
+            {
+              "namespace": "__bicep",
+              "members": {
+                "scoped": {
+                  "parameters": [
+                    {
+                      "type": "string",
+                      "name": "query"
+                    },
+                    {
+                      "type": "string",
+                      "name": "rule"
+                    },
+                    {
+                      "type": "string",
+                      "name": "scope"
+                    }
+                  ],
+                  "output": {
+                    "type": "string",
+                    "value": "[replace(parameters('query'), format('let ruleKey = \"{0}:default\";', parameters('rule')), format('let ruleKey = \"{0}:{1}\";', parameters('rule'), parameters('scope')))]"
+                  }
+                }
+              }
+            }
+          ],
+          "parameters": {
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Existing Log Analytics workspace with Microsoft Sentinel, BowerSecurity_CL and the main.bicep functions."
+              }
+            },
+            "enableRules": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Create the rules enabled. Keep false until they are validated against this workspace."
+              }
+            },
+            "detectionKeyScope": {
+              "type": "string",
+              "defaultValue": "default",
+              "minLength": 1,
+              "maxLength": 32,
+              "metadata": {
+                "description": "Scopes detection keys and rule names to this deployment. Lowercase letters, digits and hyphens."
+              }
+            },
+            "timeZone": {
+              "type": "string",
+              "defaultValue": "Australia/Sydney",
+              "metadata": {
+                "description": "IANA time zone for business hours in the after-hours rule."
+              }
+            },
+            "businessStartHour": {
+              "type": "int",
+              "defaultValue": 7,
+              "minValue": 0,
+              "maxValue": 23,
+              "metadata": {
+                "description": "First business hour (local, 0-23)."
+              }
+            },
+            "businessEndHour": {
+              "type": "int",
+              "defaultValue": 19,
+              "minValue": 1,
+              "maxValue": 24,
+              "metadata": {
+                "description": "Hour business ends (local, 1-24, exclusive)."
+              }
+            },
+            "sprayAccountThreshold": {
+              "type": "int",
+              "defaultValue": 10,
+              "minValue": 2,
+              "metadata": {
+                "description": "Distinct accounts with failed sign-ins from one address in one bucket that raise a spraying alert."
+              }
+            },
+            "exportRecordThreshold": {
+              "type": "int",
+              "defaultValue": 10000,
+              "minValue": 1,
+              "metadata": {
+                "description": "Records exported or read by one user in one hour that raise a mass export alert."
+              }
+            },
+            "exportCountThreshold": {
+              "type": "int",
+              "defaultValue": 5,
+              "minValue": 1,
+              "metadata": {
+                "description": "Exports by one user in one hour that raise a mass export alert."
+              }
+            },
+            "silenceMinutes": {
+              "type": "int",
+              "defaultValue": 60,
+              "minValue": 15,
+              "maxValue": 1440,
+              "metadata": {
+                "description": "Minutes without events after which an application with recent history counts as silent."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "// Bower ASVS pack: password spraying or credential stuffing from one address.\n// Application authentication_failure events (BWR-POL-AUTH-FAILURE) from one source address\n// against at least `accountThreshold` distinct accounts in one event-time bucket. Usernames\n// are HMAC pseudonyms (owasp-asvs-app-logging privacy profile), so accounts stay countable\n// without being readable. Successful sign-ins from the same address in the bucket are\n// reported as `SuccessesAfterFailures`: stuffing that worked. ASVS 5.0 V16.3.1, V6.3.1.\n// Replay-safe: counts the collapsed rows of BowerSecurityEventsOfType and alerts once per\n// (address, bucket) through the detection key. Late rows are re-evaluated for `catchUp`.\n// asvs.bicep replaces the values below; keep them on one line each.\nlet accountThreshold = 10;\nlet bucketSize = 10m;\nlet settleDelay = 5m;\nlet frequency = 5m;\nlet catchUp = 60m;\nlet maxDelay = 360m;\nlet ruleKey = \"bower-asvs-password-spray:default\";\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet catchUpStart = windowEnd - catchUp;\nlet horizon = bin(catchUpStart - maxDelay, bucketSize);\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\nlet candidates = materialize(BowerSecurityEventsOfType(dynamic([\"authentication_failure\", \"authentication_success\"]))\n    // Host sign-ins have their own rules (wec-brute-force, ssh packs).\n    | where ApplicationName !in (\"windows-security\", \"ssh-gateway\", \"linux-sshd\")\n    | where isnotempty(SourceIpAddress) and isnotempty(coalesce(ActorUsername, ActorUserId))\n    | where BowerEventTime >= horizon and BowerFirstIngested < windowEnd\n    | where BowerFirstIngested - BowerEventTime <= maxDelay\n    | extend Account = coalesce(ActorUsername, ActorUserId), BucketStart = bin(BowerEventTime, bucketSize));\ncandidates\n// count_distinctif is exact; dcount() is an estimate and must not gate an alert.\n| summarize Failures = countif(EventType == \"authentication_failure\"),\n    DistinctAccounts = count_distinctif(Account, EventType == \"authentication_failure\"),\n    SuccessesAfterFailures = countif(EventType == \"authentication_success\"),\n    FailedAccounts = make_set_if(Account, EventType == \"authentication_failure\", 20),\n    Applications = make_set(ApplicationName, 10), Collectors = make_set(CollectorId, 10),\n    LastIngested = max(BowerFirstIngested), FirstEvent = min(BowerEventTime), LastEvent = max(BowerEventTime)\n    by SourceIpAddress, BucketStart\n| where DistinctAccounts >= accountThreshold\n| where LastIngested >= catchUpStart\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", SourceIpAddress, \"|\", tostring(BucketStart))\n| where BowerDetectionKey !in (alerted)\n| project BowerDetectionKey, SourceIpAddress, BucketStart, Failures, DistinctAccounts, SuccessesAfterFailures,\n    FailedAccounts, Applications, Collectors, FirstEvent, LastEvent, EvaluatedAt = now()\n",
+            "$fxv#1": "// Bower ASVS pack: privilege, role or permission change.\n// One alert per change: role_membership_changed (BWR-POL-ROLE-MEMBERSHIP), and\n// permission_changed or admin_action with action admin.grant (BWR-PACK-ASVS-ADMIN).\n// ASVS 5.0 V16.3.3, V8.3.2; ISM-1650. Replay-safe: alerts once per (CollectorId, EventId).\nlet settleDelay = 5m;\nlet frequency = 5m;\nlet catchUp = 60m;\nlet maxDelay = 360m;\nlet ruleKey = \"bower-asvs-privilege-change:default\";\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet catchUpStart = windowEnd - catchUp;\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\nBowerSecurityEventsOfType(dynamic([\"role_membership_changed\", \"permission_changed\", \"admin_action\"]))\n| where EventResult == \"success\"\n| where EventType != \"admin_action\" or EventAction == \"admin.grant\"\n| where BowerFirstIngested >= catchUpStart and BowerFirstIngested < windowEnd\n| where BowerFirstIngested - BowerEventTime <= maxDelay\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", CollectorId, \"|\", EventId)\n| where BowerDetectionKey !in (alerted)\n| project BowerDetectionKey, BowerEventTime, ApplicationName, ApplicationEnvironment, EventType, EventAction,\n    ActorUserId, SourceIpAddress, CorrelationId, CollectorId, EventId, EvaluatedAt = now()\n",
+            "$fxv#2": "// Bower ASVS pack: privileged or configuration action outside business hours.\n// admin_action, configuration_changed, permission_changed and role_membership_changed\n// events whose event time falls outside `businessStart`-`businessEnd` on a weekday, or at any\n// time on a weekend, in `timeZone` (IANA name, default Australia/Sydney; daylight saving is\n// applied by datetime_utc_to_local). ASVS 5.0 V16.3.3. Replay-safe: once per event.\nlet timeZone = \"Australia/Sydney\";\nlet businessStart = 7;\nlet businessEnd = 19;\nlet settleDelay = 5m;\nlet frequency = 5m;\nlet catchUp = 60m;\nlet maxDelay = 360m;\nlet ruleKey = \"bower-asvs-admin-after-hours:default\";\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet catchUpStart = windowEnd - catchUp;\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\nBowerSecurityEventsOfType(dynamic([\"admin_action\", \"configuration_changed\", \"permission_changed\", \"role_membership_changed\"]))\n| where EventResult == \"success\"\n| where BowerFirstIngested >= catchUpStart and BowerFirstIngested < windowEnd\n| where BowerFirstIngested - BowerEventTime <= maxDelay\n| extend LocalTime = datetime_utc_to_local(BowerEventTime, timeZone)\n| extend LocalHour = hourofday(LocalTime), LocalDay = toint(dayofweek(LocalTime) / 1d)\n// dayofweek: 0 = Sunday, 6 = Saturday.\n| where LocalDay in (0, 6) or LocalHour < businessStart or LocalHour >= businessEnd\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", CollectorId, \"|\", EventId)\n| where BowerDetectionKey !in (alerted)\n| project BowerDetectionKey, BowerEventTime, LocalTime, TimeZone = timeZone, ApplicationName, EventType, EventAction,\n    ActorUserId, SourceIpAddress, CorrelationId, CollectorId, EventId, EvaluatedAt = now()\n",
+            "$fxv#3": "// Bower ASVS pack: mass export or bulk sensitive reads by one user.\n// sensitive_data_exported (BWR-POL-SENSITIVE-EXPORT) and sensitive_data_accessed\n// (BWR-PACK-ASVS-SENSITIVE-DATA) records summed per user and application in one event-time\n// bucket. Alerts when the record total reaches `recordThreshold` or the export count reaches\n// `exportThreshold`. ASVS 5.0 V16.3.2, V2.4.1. Replay-safe: once per (user, app, bucket).\nlet recordThreshold = 10000;\nlet exportThreshold = 5;\nlet bucketSize = 60m;\nlet settleDelay = 5m;\nlet frequency = 5m;\nlet catchUp = 60m;\nlet maxDelay = 360m;\nlet ruleKey = \"bower-asvs-mass-export:default\";\nlet windowEnd = bin(now() - settleDelay, frequency);\nlet catchUpStart = windowEnd - catchUp;\nlet horizon = bin(catchUpStart - maxDelay, bucketSize);\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\n// The typed parser drops Attributes; join the record count back from the raw table by identity.\nlet counts = BowerSecurity_CL\n    | where EventType in (\"sensitive_data_exported\", \"sensitive_data_accessed\")\n    | summarize RecordCount = take_any(tolong(Attributes.recordCount)) by CollectorId, EventId;\nBowerSecurityEventsOfType(dynamic([\"sensitive_data_exported\", \"sensitive_data_accessed\"]))\n| where EventResult == \"success\" and isnotempty(ActorUserId)\n| where BowerEventTime >= horizon and BowerFirstIngested < windowEnd\n| where BowerFirstIngested - BowerEventTime <= maxDelay\n| join kind=leftouter counts on CollectorId, EventId\n| extend BucketStart = bin(BowerEventTime, bucketSize)\n| summarize Records = sum(coalesce(RecordCount, 1)), Exports = countif(EventType == \"sensitive_data_exported\"),\n    Events = count(), LastIngested = max(BowerFirstIngested), FirstEvent = min(BowerEventTime), LastEvent = max(BowerEventTime),\n    Collectors = make_set(CollectorId, 10)\n    by ActorUserId, ApplicationName, BucketStart\n| where Records >= recordThreshold or Exports >= exportThreshold\n| where LastIngested >= catchUpStart\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", ApplicationName, \"|\", ActorUserId, \"|\", tostring(BucketStart))\n| where BowerDetectionKey !in (alerted)\n| project BowerDetectionKey, ActorUserId, ApplicationName, BucketStart, Records, Exports, Events, Collectors,\n    FirstEvent, LastEvent, EvaluatedAt = now()\n",
+            "$fxv#4": "// Bower ASVS pack: an application stopped sending security events.\n// Applications that sent ASVS pack or default application events in the baseline period\n// and none in the last `silence`. Complements the collector's own source expectations\n// (deploy/sentinel/monitoring/queries/source-overdue.kql), which need BOWER_SOURCE_EXPECTATIONS:\n// this rule needs no configuration but only sees applications with recent history.\n// ASVS 5.0 V16.4.3; ISM-1405, ISM-1906. One alert per application, environment and silence\n// start, so a long outage alerts once.\nlet silence = 60m;\nlet baseline = 7d;\nlet minimumBaselineEvents = 20;\nlet ruleKey = \"bower-asvs-log-silence:default\";\nlet alerted = SecurityAlert\n    | where ProviderName == \"ASI Scheduled Alerts\"\n    | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)[\"Custom Details\"])).BowerDetectionKey[0])\n    | where BowerDetectionKey startswith strcat(ruleKey, \"|\")\n    | distinct BowerDetectionKey;\nBowerSecurity_CL\n| where TimeGenerated > ago(baseline)\n| where EventType !in (\"collector_health\", \"collector_canary\", \"telemetry_aggregation_summary\")\n| summarize LastSeen = max(TimeGenerated), BaselineEvents = count(), Collectors = make_set(CollectorId, 10)\n    by ApplicationName, ApplicationEnvironment\n| where BaselineEvents >= minimumBaselineEvents\n| where LastSeen < ago(silence)\n| extend BowerDetectionKey = strcat(ruleKey, \"|\", ApplicationName, \"|\", ApplicationEnvironment, \"|\", tostring(LastSeen))\n| where BowerDetectionKey !in (alerted)\n| project BowerDetectionKey, ApplicationName, ApplicationEnvironment, LastSeen,\n    SilentMinutes = datetime_diff(\"minute\", now(), LastSeen), BaselineEvents, Collectors, EvaluatedAt = now()\n",
+            "nameSuffix": "[if(equals(parameters('detectionKeyScope'), 'default'), '', format(' [{0}]', parameters('detectionKeyScope')))]",
+            "sprayQuery": "[replace(__bicep.scoped(variables('$fxv#0'), 'bower-asvs-password-spray', parameters('detectionKeyScope')), 'let accountThreshold = 10;', format('let accountThreshold = {0};', parameters('sprayAccountThreshold')))]",
+            "privilegeQuery": "[__bicep.scoped(variables('$fxv#1'), 'bower-asvs-privilege-change', parameters('detectionKeyScope'))]",
+            "afterHoursQuery": "[replace(replace(replace(__bicep.scoped(variables('$fxv#2'), 'bower-asvs-admin-after-hours', parameters('detectionKeyScope')), 'let timeZone = \"Australia/Sydney\";', format('let timeZone = \"{0}\";', parameters('timeZone'))), 'let businessStart = 7;', format('let businessStart = {0};', parameters('businessStartHour'))), 'let businessEnd = 19;', format('let businessEnd = {0};', parameters('businessEndHour')))]",
+            "exportQuery": "[replace(replace(__bicep.scoped(variables('$fxv#3'), 'bower-asvs-mass-export', parameters('detectionKeyScope')), 'let recordThreshold = 10000;', format('let recordThreshold = {0};', parameters('exportRecordThreshold'))), 'let exportThreshold = 5;', format('let exportThreshold = {0};', parameters('exportCountThreshold')))]",
+            "silenceQuery": "[replace(__bicep.scoped(variables('$fxv#4'), 'bower-asvs-log-silence', parameters('detectionKeyScope')), 'let silence = 60m;', format('let silence = {0}m;', parameters('silenceMinutes')))]",
+            "queryPeriod": "PT500M",
+            "rules": [
+              {
+                "key": "bower-asvs-password-spray",
+                "displayName": "Bower ASVS: password spraying or credential stuffing from one address",
+                "description": "[format('At least {0} distinct accounts failed application sign-in from one source address in a 10-minute bucket. SuccessesAfterFailures shows sign-ins that worked from the same address.', parameters('sprayAccountThreshold'))]",
+                "severity": "Medium",
+                "query": "[variables('sprayQuery')]",
+                "period": "[variables('queryPeriod')]",
+                "tactics": [
+                  "CredentialAccess"
+                ],
+                "techniques": [
+                  "T1110"
+                ],
+                "entity": {
+                  "entityType": "IP",
+                  "fieldMappings": [
+                    {
+                      "identifier": "Address",
+                      "columnName": "SourceIpAddress"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "bower-asvs-privilege-change",
+                "displayName": "Bower ASVS: privilege, role or permission change",
+                "description": "A role membership, permission or privileged grant changed in an application.",
+                "severity": "Low",
+                "query": "[variables('privilegeQuery')]",
+                "period": "[variables('queryPeriod')]",
+                "tactics": [
+                  "PrivilegeEscalation",
+                  "Persistence"
+                ],
+                "techniques": [
+                  "T1098"
+                ],
+                "entity": {
+                  "entityType": "Account",
+                  "fieldMappings": [
+                    {
+                      "identifier": "Name",
+                      "columnName": "ActorUserId"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "bower-asvs-admin-after-hours",
+                "displayName": "Bower ASVS: administrative action outside business hours",
+                "description": "[format('A privileged or configuration action outside {0}:00-{1}:00 on a weekday, or on a weekend, in {2}.', parameters('businessStartHour'), parameters('businessEndHour'), parameters('timeZone'))]",
+                "severity": "Medium",
+                "query": "[variables('afterHoursQuery')]",
+                "period": "[variables('queryPeriod')]",
+                "tactics": [
+                  "Persistence",
+                  "DefenseEvasion"
+                ],
+                "techniques": [
+                  "T1078"
+                ],
+                "entity": {
+                  "entityType": "Account",
+                  "fieldMappings": [
+                    {
+                      "identifier": "Name",
+                      "columnName": "ActorUserId"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "bower-asvs-mass-export",
+                "displayName": "Bower ASVS: mass export or bulk sensitive reads by one user",
+                "description": "[format('One user exported or read at least {0} sensitive records, or ran at least {1} exports, in one hour.', parameters('exportRecordThreshold'), parameters('exportCountThreshold'))]",
+                "severity": "High",
+                "query": "[variables('exportQuery')]",
+                "period": "[variables('queryPeriod')]",
+                "tactics": [
+                  "Exfiltration",
+                  "Collection"
+                ],
+                "techniques": [
+                  "T1567",
+                  "T1530"
+                ],
+                "entity": {
+                  "entityType": "Account",
+                  "fieldMappings": [
+                    {
+                      "identifier": "Name",
+                      "columnName": "ActorUserId"
+                    }
+                  ]
+                }
+              },
+              {
+                "key": "bower-asvs-log-silence",
+                "displayName": "Bower ASVS: application stopped sending security events",
+                "description": "[format('An application that sent security events in the last 7 days has sent none for {0} minutes.', parameters('silenceMinutes'))]",
+                "severity": "Medium",
+                "query": "[variables('silenceQuery')]",
+                "period": "P7D",
+                "tactics": [
+                  "DefenseEvasion"
+                ],
+                "techniques": [
+                  "T1562"
+                ],
+                "entity": {
+                  "entityType": "CloudApplication",
+                  "fieldMappings": [
+                    {
+                      "identifier": "Name",
+                      "columnName": "ApplicationName"
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          "resources": {
+            "workspace": {
+              "existing": true,
+              "type": "Microsoft.OperationalInsights/workspaces",
+              "apiVersion": "2025-07-01",
+              "name": "[parameters('workspaceName')]"
+            },
+            "alertRules": {
+              "copy": {
+                "name": "alertRules",
+                "count": "[length(variables('rules'))]"
+              },
+              "type": "Microsoft.SecurityInsights/alertRules",
+              "apiVersion": "2025-09-01",
+              "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), variables('rules')[copyIndex()].key, parameters('detectionKeyScope'))]",
+              "kind": "Scheduled",
+              "properties": {
+                "displayName": "[format('{0}{1}', variables('rules')[copyIndex()].displayName, variables('nameSuffix'))]",
+                "description": "[variables('rules')[copyIndex()].description]",
+                "enabled": "[parameters('enableRules')]",
+                "severity": "[variables('rules')[copyIndex()].severity]",
+                "query": "[variables('rules')[copyIndex()].query]",
+                "queryFrequency": "[if(equals(variables('rules')[copyIndex()].key, 'bower-asvs-log-silence'), 'PT15M', 'PT5M')]",
+                "queryPeriod": "[variables('rules')[copyIndex()].period]",
+                "triggerOperator": "GreaterThan",
+                "triggerThreshold": 0,
+                "suppressionEnabled": false,
+                "suppressionDuration": "PT5H",
+                "tactics": "[variables('rules')[copyIndex()].tactics]",
+                "techniques": "[variables('rules')[copyIndex()].techniques]",
+                "eventGroupingSettings": {
+                  "aggregationKind": "AlertPerResult"
+                },
+                "entityMappings": [
+                  "[variables('rules')[copyIndex()].entity]"
+                ],
+                "customDetails": {
+                  "BowerDetectionKey": "BowerDetectionKey"
+                },
+                "incidentConfiguration": {
+                  "createIncident": true,
+                  "groupingConfiguration": {
+                    "enabled": true,
+                    "reopenClosedIncident": false,
+                    "lookbackDuration": "PT5H",
+                    "matchingMethod": "AllEntities",
+                    "groupByEntities": [],
+                    "groupByAlertDetails": [],
+                    "groupByCustomDetails": []
+                  }
+                }
+              }
+            }
+          },
+          "outputs": {
+            "ruleIds": {
+              "type": "array",
+              "copy": {
+                "count": "[length(variables('rules'))]",
+                "input": "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), variables('rules')[copyIndex()].key, parameters('detectionKeyScope')))]"
+              }
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-analytics', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deploySentinelHealthRules')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-sentinel-health', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceName": {
+            "value": "[parameters('workspaceName')]"
+          },
+          "enabled": {
+            "value": "[parameters('enableRules')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "17812628640448787719"
+            }
+          },
+          "parameters": {
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Log Analytics workspace (Microsoft Sentinel enabled) name in this resource group."
+              }
+            },
+            "enabled": {
+              "type": "bool",
+              "defaultValue": false,
+              "metadata": {
+                "description": "Create the rules enabled. Default false: validate against the tenant first."
+              }
+            },
+            "queryFrequency": {
+              "type": "string",
+              "defaultValue": "PT5M",
+              "metadata": {
+                "description": "How often each rule runs (Sentinel minimum is five minutes)."
+              }
+            },
+            "queryPeriod": {
+              "type": "string",
+              "defaultValue": "P1D",
+              "metadata": {
+                "description": "Look-back for both rules. Sentinel requires a frequency of at least one hour once the look-back reaches two days."
+              }
+            },
+            "expectedCollectorIds": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Collector IDs that must keep sending health records; they alert even if never seen in the look-back."
+              }
+            },
+            "healthMissingMinutes": {
+              "type": "int",
+              "defaultValue": 15,
+              "minValue": 2,
+              "metadata": {
+                "description": "Minutes without a newly ingested collector_health record before a collector is reported missing."
+              }
+            },
+            "sourceSilenceMinutes": {
+              "type": "int",
+              "defaultValue": 60,
+              "minValue": 5,
+              "metadata": {
+                "description": "Default minutes without new security events from a collector and application/environment."
+              }
+            },
+            "sourceSilenceOverrides": {
+              "type": "array",
+              "defaultValue": [],
+              "metadata": {
+                "description": "Per-source silence allowances: [{ application, environment, maximumSilenceMinutes }]."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "// Bower: collector health record missing (collector down, host down, or delivery to Sentinel failing).\n// One row per collector whose newest collector_health record was ingested more than\n// __MISSING_MINUTES__ minutes ago, or (when listed in the expected set) never arrived in the window.\n// Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy on each collector.\nlet missingAfter = __MISSING_MINUTES__m;\nlet expected = print CollectorId = dynamic(__EXPECTED_COLLECTORS__)\n    | mv-expand CollectorId to typeof(string)\n    | where isnotempty(CollectorId);\nlet seen = BowerSecurity_CL\n    | where EventType == \"collector_health\" and isnotempty(CollectorId)\n    | summarize LastIngested = max(ingestion_time()), LastRecordAt = max(TimeGenerated) by CollectorId;\nunion\n    (expected | join kind=leftanti seen on CollectorId | extend LastIngested = datetime(null), LastRecordAt = datetime(null)),\n    seen\n| where isnull(LastIngested) or LastIngested < ago(missingAfter)\n| extend MinutesSinceLastRecord = iff(isnull(LastIngested), real(null), round(datetime_diff('second', now(), LastIngested) / 60.0, 1))\n| project CollectorId, LastIngested, LastRecordAt, MinutesSinceLastRecord\n",
+            "$fxv#1": "// Bower: source silent at the destination. Independent of collector logic and health records:\n// one row per collector and application/environment whose newest security event (not a health\n// record or canary) was ingested more than its allowance ago, while it sent within the window.\n// Default allowance __SILENCE_MINUTES__ minutes; per-source overrides in the table below.\nlet defaultMinutes = __SILENCE_MINUTES__;\nlet overrides = print Rule = dynamic(__SILENCE_OVERRIDES__)\n    | mv-expand Rule\n    | where isnotempty(Rule)\n    | project ApplicationName = tostring(Rule.application), ApplicationEnvironment = tostring(Rule.environment),\n        AllowedMinutes = toint(Rule.maximumSilenceMinutes);\nBowerSecurity_CL\n| where EventType !in (\"collector_health\", \"collector_canary\")\n// Bower envelopes always carry both; rows without them did not come from a Bower collector.\n| where isnotempty(CollectorId) and isnotempty(ApplicationName)\n// Archive replays are one-off copies sent through a replay collector, not a live source.\n| where isempty(tostring(Labels.bowerReplay))\n| summarize LastIngested = max(ingestion_time()), LastEventAt = max(TimeGenerated) by CollectorId, ApplicationName, ApplicationEnvironment\n| join kind=leftouter overrides on ApplicationName, ApplicationEnvironment\n| extend AllowedMinutes = coalesce(AllowedMinutes, defaultMinutes)\n| extend SilentMinutes = round(datetime_diff('second', now(), LastIngested) / 60.0, 1)\n| where SilentMinutes > AllowedMinutes\n| project CollectorId, Source = strcat(ApplicationName, \"/\", ApplicationEnvironment), LastIngested, LastEventAt, SilentMinutes, AllowedMinutes\n",
+            "missingQuery": "[format('{0}\n| extend LastIngestedText = tostring(LastIngested), MinutesText = tostring(MinutesSinceLastRecord)', replace(replace(variables('$fxv#0'), '__MISSING_MINUTES__', string(parameters('healthMissingMinutes'))), '__EXPECTED_COLLECTORS__', string(parameters('expectedCollectorIds'))))]",
+            "freshnessQuery": "[format('{0}\n| extend LastIngestedText = tostring(LastIngested), MinutesText = tostring(SilentMinutes)', replace(replace(variables('$fxv#1'), '__SILENCE_MINUTES__', string(parameters('sourceSilenceMinutes'))), '__SILENCE_OVERRIDES__', string(parameters('sourceSilenceOverrides'))))]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.SecurityInsights/alertRules",
+              "apiVersion": "2024-03-01",
+              "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-collector-health-missing')]",
+              "kind": "Scheduled",
+              "properties": {
+                "displayName": "Bower collector health record missing",
+                "description": "A Bower collector stopped sending collector_health records: collector or host down, or delivery to Sentinel failing. Security events from it are not arriving either.",
+                "severity": "High",
+                "enabled": "[parameters('enabled')]",
+                "query": "[variables('missingQuery')]",
+                "queryFrequency": "[parameters('queryFrequency')]",
+                "queryPeriod": "[parameters('queryPeriod')]",
+                "triggerOperator": "GreaterThan",
+                "triggerThreshold": 0,
+                "suppressionDuration": "PT1H",
+                "suppressionEnabled": false,
+                "tactics": [
+                  "DefenseEvasion"
+                ],
+                "eventGroupingSettings": {
+                  "aggregationKind": "AlertPerResult"
+                },
+                "customDetails": {
+                  "CollectorId": "CollectorId",
+                  "LastIngested": "LastIngestedText",
+                  "MinutesSilent": "MinutesText"
+                },
+                "alertDetailsOverride": {
+                  "alertDisplayNameFormat": "Bower collector {{CollectorId}} stopped reporting"
+                },
+                "incidentConfiguration": {
+                  "createIncident": true,
+                  "groupingConfiguration": {
+                    "enabled": true,
+                    "reopenClosedIncident": false,
+                    "lookbackDuration": "PT6H",
+                    "matchingMethod": "Selected",
+                    "groupByEntities": [],
+                    "groupByAlertDetails": [],
+                    "groupByCustomDetails": [
+                      "CollectorId"
+                    ]
+                  }
+                }
+              }
+            },
+            {
+              "type": "Microsoft.SecurityInsights/alertRules",
+              "apiVersion": "2024-03-01",
+              "scope": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+              "name": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-destination-freshness')]",
+              "kind": "Scheduled",
+              "properties": {
+                "displayName": "Bower source silent at the destination",
+                "description": "A collector and application/environment that sent security events recently has sent none for longer than its allowance (firewall or WEC stopped sending, or its path to Bower failed).",
+                "severity": "Medium",
+                "enabled": "[parameters('enabled')]",
+                "query": "[variables('freshnessQuery')]",
+                "queryFrequency": "[parameters('queryFrequency')]",
+                "queryPeriod": "[parameters('queryPeriod')]",
+                "triggerOperator": "GreaterThan",
+                "triggerThreshold": 0,
+                "suppressionDuration": "PT1H",
+                "suppressionEnabled": false,
+                "tactics": [
+                  "DefenseEvasion"
+                ],
+                "eventGroupingSettings": {
+                  "aggregationKind": "AlertPerResult"
+                },
+                "customDetails": {
+                  "CollectorId": "CollectorId",
+                  "Source": "Source",
+                  "LastIngested": "LastIngestedText",
+                  "MinutesSilent": "MinutesText"
+                },
+                "alertDetailsOverride": {
+                  "alertDisplayNameFormat": "Bower source {{Source}} on {{CollectorId}} is silent"
+                },
+                "incidentConfiguration": {
+                  "createIncident": true,
+                  "groupingConfiguration": {
+                    "enabled": true,
+                    "reopenClosedIncident": false,
+                    "lookbackDuration": "PT6H",
+                    "matchingMethod": "Selected",
+                    "groupByEntities": [],
+                    "groupByAlertDetails": [],
+                    "groupByCustomDetails": [
+                      "CollectorId",
+                      "Source"
+                    ]
+                  }
+                }
+              }
+            }
+          ],
+          "outputs": {
+            "ruleIds": {
+              "type": "array",
+              "value": [
+                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-collector-health-missing'))]",
+                "[extensionResourceId(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'Microsoft.SecurityInsights/alertRules', guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-destination-freshness'))]"
+              ]
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-ingestion', parameters('namePrefix')))]"
+      ]
+    },
+    {
+      "condition": "[parameters('deployWorkbook')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "[format('{0}-workbook', parameters('namePrefix'))]",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "workspaceName": {
+            "value": "[parameters('workspaceName')]"
+          },
+          "location": {
+            "value": "[parameters('location')]"
+          },
+          "workbookDisplayName": {
+            "value": "[parameters('workbookDisplayName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.49.2.45890",
+              "templateHash": "1967547610177478649"
+            }
+          },
+          "parameters": {
+            "workspaceName": {
+              "type": "string",
+              "metadata": {
+                "description": "Existing Log Analytics workspace with Microsoft Sentinel and BowerSecurity_CL."
+              }
+            },
+            "location": {
+              "type": "string",
+              "defaultValue": "[resourceGroup().location]",
+              "metadata": {
+                "description": "Azure region matching the Log Analytics workspace."
+              }
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "defaultValue": "Bower Security Operations and Pipeline Health",
+              "metadata": {
+                "description": "Display name for the Microsoft Sentinel workbook."
+              }
+            }
+          },
+          "variables": {
+            "$fxv#0": "{\n  \"version\": \"Notebook/1.0\",\n  \"items\": [\n    {\n      \"type\": 1,\n      \"content\": {\n        \"json\": \"## Bower Security Operations and Pipeline Health\\n\\nOperational overview of Bower collectors, delivery latency, replay accounting, selected security events, and Privacy & Secret Protection Engine findings in `BowerSecurity_CL`.\\n\\nAll security event counts use the `BowerSecurityEvents` parser so at-least-once delivery replays are collapsed by `(CollectorId, EventId)`.\"\n      },\n      \"name\": \"header\"\n    },\n    {\n      \"type\": 9,\n      \"content\": {\n        \"version\": \"KqlParameterItem/1.0\",\n        \"parameters\": [\n          {\n            \"id\": \"5c2d9a1e-8b14-4d33-9f2a-1e8b4c7a9001\",\n            \"version\": \"KqlParameterItem/1.0\",\n            \"name\": \"TimeRange\",\n            \"label\": \"Time range\",\n            \"type\": 4,\n            \"isRequired\": true,\n            \"value\": {\n              \"durationMs\": 86400000\n            },\n            \"typeSettings\": {\n              \"selectableValues\": [\n                { \"durationMs\": 3600000 },\n                { \"durationMs\": 14400000 },\n                { \"durationMs\": 43200000 },\n                { \"durationMs\": 86400000 },\n                { \"durationMs\": 259200000 },\n                { \"durationMs\": 604800000 },\n                { \"durationMs\": 1209600000 }\n              ]\n            }\n          },\n          {\n            \"id\": \"5c2d9a1e-8b14-4d33-9f2a-1e8b4c7a9002\",\n            \"version\": \"KqlParameterItem/1.0\",\n            \"name\": \"CollectorId\",\n            \"label\": \"Collector\",\n            \"type\": 2,\n            \"isRequired\": false,\n            \"multiSelect\": true,\n            \"quote\": \"\\\"\",\n            \"delimiter\": \",\",\n            \"query\": \"BowerSecurity_CL\\n| where isnotempty(CollectorId)\\n| distinct CollectorId\\n| order by CollectorId asc\",\n            \"typeSettings\": {\n              \"additionalResourceOptions\": [\n                \"value::all\"\n              ],\n              \"showDefault\": false\n            },\n            \"defaultValue\": \"value::all\",\n            \"queryType\": 0,\n            \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n          }\n        ],\n        \"style\": \"pills\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\"\n      },\n      \"name\": \"parameters\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurityEvents\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| summarize\\n    DistinctEvents = count(),\\n    TotalRows = sum(BowerCopies),\\n    ReplayedEvents = countif(BowerCopies > 1),\\n    ExtraRows = sum(BowerCopies - 1),\\n    HighSeverityEvents = countif(EventSeverity in~ (\\\"High\\\", \\\"Critical\\\")),\\n    SensitiveDataAlerts = countif(EventType == \\\"sensitive_data_detected\\\")\",\n        \"size\": 4,\n        \"title\": \"Security signal and replay summary\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"tiles\",\n        \"tileSettings\": {\n          \"showBorder\": true,\n          \"titleContent\": {\n            \"columnMatch\": \"Metric\",\n            \"formatter\": 1\n          }\n        }\n      },\n      \"name\": \"summary-tiles\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurity_CL\\n| where EventType == \\\"collector_health\\\"\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| summarize arg_max(TimeGenerated, Attributes) by CollectorId\\n| project\\n    CollectorId,\\n    LastRecord = TimeGenerated,\\n    Status = tostring(Attributes.status),\\n    Problems = tostring(Attributes.problems),\\n    Delivery = tostring(Attributes.delivery.status),\\n    Undelivered = toint(Attributes.queue.undelivered),\\n    OldestAgeSeconds = toint(Attributes.queue.oldestUndeliveredAgeSeconds),\\n    QueuePagesPercent = todouble(Attributes.storage.queuePagesUsedPercent),\\n    VolumeState = tostring(Attributes.storage.volumeState),\\n    VolumeFreePercent = todouble(Attributes.storage.volumeFreePercent),\\n    DeadLettered = toint(Attributes.queue.deadLettered)\\n| order by CollectorId asc\",\n        \"size\": 0,\n        \"title\": \"Collector overview (newest health record per collector)\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"table\"\n      },\n      \"name\": \"collector-overview\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurity_CL\\n| where EventType == \\\"collector_health\\\"\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| extend\\n    DelaySeconds = datetime_diff('second', ingestion_time(), TimeGenerated),\\n    Undelivered = toint(Attributes.queue.undelivered)\\n| summarize MaxDelaySeconds = max(DelaySeconds), MaxUndelivered = max(Undelivered) by CollectorId, bin(TimeGenerated, 5m)\",\n        \"size\": 0,\n        \"title\": \"Delivery delay and queue backlog over time\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"timechart\"\n      },\n      \"name\": \"delivery-delay-backlog\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurityEvents\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| summarize Events = count() by Source = strcat(ApplicationName, \\\"/\\\", ApplicationEnvironment), bin(BowerEventTime, 1h)\",\n        \"size\": 0,\n        \"title\": \"Distinct security events per source per hour\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"timechart\"\n      },\n      \"name\": \"events-per-source\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurityEvents\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| summarize Events = count() by EventCategory, EventType, EventSeverity\\n| order by Events desc\",\n        \"size\": 0,\n        \"title\": \"Security events by category, type and severity\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"table\"\n      },\n      \"name\": \"events-by-category\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurityEvents\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| summarize\\n    Events = count(),\\n    Rows = sum(BowerCopies),\\n    ReplayedEvents = countif(BowerCopies > 1),\\n    ExtraRows = sum(BowerCopies - 1),\\n    MaxCopies = max(BowerCopies),\\n    RewrittenTimes = countif(BowerTimeRewritten)\\n    by CollectorId\\n| order by ExtraRows desc, CollectorId asc\",\n        \"size\": 0,\n        \"title\": \"Replay accounting by collector\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"table\"\n      },\n      \"name\": \"replay-accounting\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"BowerSecurityEvents\\n| where EventType == \\\"sensitive_data_detected\\\"\\n| where ('*' in ({CollectorId}) or CollectorId in ({CollectorId}))\\n| summarize Findings = count(), LastSeen = max(BowerEventTime) by ApplicationName, ApplicationEnvironment, EventSeverity, CollectorId\\n| order by Findings desc\",\n        \"size\": 0,\n        \"title\": \"Privacy and Secret Protection Engine alerts (metadata only)\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"table\"\n      },\n      \"name\": \"sensitive-data-findings\"\n    },\n    {\n      \"type\": 3,\n      \"content\": {\n        \"version\": \"KqlItem/1.0\",\n        \"query\": \"SentinelHealth\\n| where SentinelResourceType == \\\"Analytics Rule\\\" and SentinelResourceName startswith \\\"Bower\\\"\\n| summarize TotalRuns = count(), Failures = countif(Status != \\\"Success\\\"), LastRun = max(TimeGenerated) by SentinelResourceName\\n| order by Failures desc, SentinelResourceName asc\",\n        \"size\": 0,\n        \"title\": \"Bower analytics rule health (requires SentinelHealth diagnostics)\",\n        \"timeContextFromParameter\": \"TimeRange\",\n        \"queryType\": 0,\n        \"resourceType\": \"microsoft.operationalinsights/workspaces\",\n        \"visualization\": \"table\"\n      },\n      \"name\": \"sentinel-rule-health\"\n    }\n  ],\n  \"fallbackResourceIds\": [],\n  \"fromTemplateId\": \"sentinel-BowerSecurityOperations\",\n  \"$schema\": \"https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json\"\n}\n",
+            "workbookId": "[guid(resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName')), 'bower-security-operations-workbook')]"
+          },
+          "resources": [
+            {
+              "type": "Microsoft.Insights/workbooks",
+              "apiVersion": "2022-04-01",
+              "name": "[variables('workbookId')]",
+              "location": "[parameters('location')]",
+              "kind": "shared",
+              "properties": {
+                "displayName": "[parameters('workbookDisplayName')]",
+                "serializedData": "[variables('$fxv#0')]",
+                "version": "1.0",
+                "sourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', parameters('workspaceName'))]",
+                "category": "sentinel"
+              }
+            }
+          ],
+          "outputs": {
+            "workbookId": {
+              "type": "string",
+              "value": "[resourceId('Microsoft.Insights/workbooks', variables('workbookId'))]"
+            },
+            "workbookDisplayName": {
+              "type": "string",
+              "value": "[reference(resourceId('Microsoft.Insights/workbooks', variables('workbookId')), '2022-04-01').displayName]"
+            }
+          }
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Resources/deployments', format('{0}-analytics', parameters('namePrefix')))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "parserFunction": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-analytics', parameters('namePrefix'))), '2025-04-01').outputs.parserFunction.value]"
+    },
+    "analyticsRuleIds": {
+      "type": "array",
+      "value": "[reference(resourceId('Microsoft.Resources/deployments', format('{0}-analytics', parameters('namePrefix'))), '2025-04-01').outputs.ruleIds.value]"
+    },
+    "asvsRuleIds": {
+      "type": "array",
+      "value": "[if(parameters('deployAsvsAnalytics'), reference(resourceId('Microsoft.Resources/deployments', format('{0}-asvs-analytics', parameters('namePrefix'))), '2025-04-01').outputs.ruleIds.value, createArray())]"
+    },
+    "healthRuleIds": {
+      "type": "array",
+      "value": "[if(parameters('deploySentinelHealthRules'), reference(resourceId('Microsoft.Resources/deployments', format('{0}-sentinel-health', parameters('namePrefix'))), '2025-04-01').outputs.ruleIds.value, createArray())]"
+    },
+    "workbookId": {
+      "type": "string",
+      "value": "[if(parameters('deployWorkbook'), reference(resourceId('Microsoft.Resources/deployments', format('{0}-workbook', parameters('namePrefix'))), '2025-04-01').outputs.workbookId.value, '')]"
+    },
+    "dataCollectionEndpoint": {
+      "type": "string",
+      "value": "[if(parameters('deployIngestionInfrastructure'), reference(resourceId('Microsoft.Resources/deployments', format('{0}-ingestion', parameters('namePrefix'))), '2025-04-01').outputs.dataCollectionEndpoint.value, '')]"
+    },
+    "dataCollectionRuleImmutableId": {
+      "type": "string",
+      "value": "[if(parameters('deployIngestionInfrastructure'), reference(resourceId('Microsoft.Resources/deployments', format('{0}-ingestion', parameters('namePrefix'))), '2025-04-01').outputs.dataCollectionRuleImmutableId.value, '')]"
+    },
+    "tableName": {
+      "type": "string",
+      "value": "[if(parameters('deployIngestionInfrastructure'), reference(resourceId('Microsoft.Resources/deployments', format('{0}-ingestion', parameters('namePrefix'))), '2025-04-01').outputs.tableName.value, 'BowerSecurity_CL')]"
+    }
+  }
+}

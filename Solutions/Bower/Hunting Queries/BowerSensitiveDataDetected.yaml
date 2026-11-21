@@ -1,0 +1,43 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a3005
+name: Bower - High-risk sensitive data and secret redaction findings
+description: |
+  Hunts for sensitive_data_detected events emitted by Bower's Privacy & Secret Protection Engine
+  when regulated Australian identifiers (TFN, Medicare, IHI, ABN/ACN), payment cards, credentials
+  or cryptographic material are detected and redacted before persistence. Only metadata is
+  recorded; original sensitive values are never stored or forwarded.
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+tactics:
+  - Collection
+  - Exfiltration
+relevantTechniques:
+  - T1552
+  - T1530
+query: |
+  // High-risk privacy and secret redaction alerts (metadata only; original values are never persisted).
+  BowerSecurityEvents
+  | where BowerEventTime > ago(7d)
+  | where EventType == "sensitive_data_detected"
+  | project
+      BowerEventTime,
+      ApplicationName,
+      ApplicationEnvironment,
+      EventSeverity,
+      ActorUserId,
+      SourceIpAddress,
+      CollectorId,
+      CorrelationId,
+      PrivacyDetected
+  | order by BowerEventTime desc
+entityMappings:
+  - entityType: CloudApplication
+    fieldMappings:
+      - identifier: Name
+        columnName: ApplicationName
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+version: 1.0.0

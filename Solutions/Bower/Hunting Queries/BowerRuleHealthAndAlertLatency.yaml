@@ -1,0 +1,34 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a3006
+name: Bower - Sentinel rule health and alert visibility latency
+description: |
+  Checks failed Bower analytics rule executions in SentinelHealth and measures SecurityAlert
+  queryability lag against the alert-visibility budget assumed by replay-safe catch-up slots.
+  Requires Sentinel auditing and health monitoring to be enabled on the workspace.
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Failed Bower analytics rule executions from SentinelHealth (drop ingestion_time filter for ad-hoc hunts).
+  SentinelHealth
+  | where TimeGenerated > ago(7d)
+  | where SentinelResourceType == "Analytics Rule" and SentinelResourceName startswith "Bower"
+  | where Status != "Success"
+  | project
+      TimeGenerated,
+      SentinelResourceName,
+      Status,
+      Reason,
+      Issue = tostring(ExtendedProperties.Issues[0].Code),
+      WindowEnd = todatetime(ExtendedProperties.QueryEndTimeUTC)
+  | order by TimeGenerated desc
+entityMappings:
+  - entityType: CloudApplication
+    fieldMappings:
+      - identifier: Name
+        columnName: SentinelResourceName
+version: 1.0.0

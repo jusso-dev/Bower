@@ -1,0 +1,20 @@
+{
+  "publisherId": "jusso-dev",
+  "offerId": "azure-sentinel-solution-bower",
+  "firstPublishDate": "2026-11-21",
+  "providers": [
+    "Bower"
+  ],
+  "categories": {
+    "domains": [
+      "Security - Threat Protection",
+      "Compliance",
+      "Application"
+    ]
+  },
+  "support": {
+    "name": "Bower",
+    "tier": "Community",
+    "link": "https://github.com/jusso-dev/Bower/issues"
+  }
+}

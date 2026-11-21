@@ -1,0 +1,51 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a3002
+name: Bower - Delivery reconciliation (queued vs arrived events)
+description: |
+  Compares events queued by each Bower collector (sum of pipeline.eventsQueued from
+  collector_health records) against distinct EventId values ingested into BowerSecurity_CL.
+  Designed for outputs that cannot confirm destination arrival, such as BOWER_OUTPUT=ama-syslog.
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Bower: events each collector queued against rows that arrived in BowerSecurity_CL, per CollectorId.
+  // Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy.
+  let lookback = 24h;
+  let lag = 30m;
+  let tolerancePercent = 0.5;
+  let windowEnd = now() - lag;
+  let windowStart = windowEnd - lookback;
+  let reported = BowerSecurity_CL
+      | where EventType == "collector_health" and isnotempty(CollectorId)
+      | where TimeGenerated between (windowStart .. windowEnd)
+      | summarize
+          Reported = sum(tolong(Attributes.pipeline.eventsQueued)),
+          Records = count(),
+          Output = take_any(tostring(Attributes.delivery.output)),
+          arg_max(TimeGenerated, DeadLetteredNow = tolong(Attributes.queue.deadLettered))
+          by CollectorId;
+  let arrived = BowerSecurity_CL
+      | where isnotempty(CollectorId)
+      | where ingestion_time() between (windowStart .. windowEnd + lag)
+      | distinct CollectorId, EventId
+      | summarize Arrived = count() by CollectorId;
+  reported
+  | join kind=leftouter arrived on CollectorId
+  | extend Arrived = coalesce(Arrived, 0)
+  | extend Missing = Reported - Arrived
+  | extend MissingPercent = iff(Reported == 0, real(0), round(100.0 * Missing / Reported, 2))
+  | where MissingPercent > tolerancePercent
+  | project CollectorId, Output, Records, Reported, Arrived, Missing, MissingPercent, DeadLetteredNow,
+      WindowStart = windowStart, WindowEnd = windowEnd
+  | order by MissingPercent desc
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+version: 1.0.0
