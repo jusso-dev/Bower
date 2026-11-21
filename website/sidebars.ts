@@ -200,6 +200,16 @@ const sidebars: SidebarsConfig = {
         },
         {
           "type": "doc",
+          "id": "deployment/journald-source",
+          "label": "systemd journald"
+        },
+        {
+          "type": "doc",
+          "id": "deployment/kubernetes-source",
+          "label": "Kubernetes container logs"
+        },
+        {
+          "type": "doc",
           "id": "deployment/ama-companion",
           "label": "Azure Monitor Agent companion"
         },

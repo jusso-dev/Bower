@@ -147,6 +147,22 @@ evidence.
   (including not-selected, rejected, invalid and oversized records); event ids from
   channel, computer, record id and creation time deduplicate re-reads. Counters and
   failure codes only. See [Windows Event Log source](../deployment/windows-event-log-source.md).
+- systemd journald source (`Bower.Source.Journald`, new trust boundary: host journal
+  read via `libsystemd.so.0`): requires explicit unit or `SYSLOG_IDENTIFIER`
+  allow-lists (wildcards and collect-all forms are rejected at load and enforced in
+  managed code). Records are bounded to 32 KiB, mapped through signed pack parsers,
+  redacted before persistence, and cursors advance in `ISourceCursorStore` only after
+  durable acknowledgement. The service account needs only read membership in
+  `systemd-journal`, never root. See [journald source](../deployment/journald-source.md).
+- Kubernetes container log source (`Bower.Source.Kubernetes`, new trust boundary:
+  namespaced Kubernetes API pod metadata lookup and read-only `/var/log/pods` mount):
+  enforces explicit namespace and label-selector allow-lists with no cluster-wide
+  default and no pod annotation auto-discovery. RBAC is limited to namespaced `Role`
+  `get`/`list` on `pods` in approved namespaces; ServiceAccount tokens are read only
+  from files and never logged. File reads reuse `Bower.Source.File`'s symlink-safe,
+  bounded tailer; CRI partial joins are capped; only allow-listed metadata labels are
+  attached (and pass through the privacy engine); non-envelope stdout noise is dropped.
+  See [Kubernetes source](../deployment/kubernetes-source.md).
 - Event injection: the collector requires a shared bearer token
   (`BOWER_INGEST_TOKEN`, compared in constant time) whenever it listens beyond
   loopback and refuses to start without one. Kubernetes manifests add a

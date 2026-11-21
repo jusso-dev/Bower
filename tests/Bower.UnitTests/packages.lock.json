@@ -998,6 +998,22 @@
           "Bower.Contracts": "[1.0.0, )"
         }
       },
+      "bower.source.journald": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Contracts": "[1.0.0, )"
+        }
+      },
+      "bower.source.kubernetes": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Pipeline": "[1.0.0, )",
+          "Bower.Source.File": "[1.0.0, )"
+        }
+      },
       "bower.source.sqlserver": {
         "type": "Project",
         "dependencies": {

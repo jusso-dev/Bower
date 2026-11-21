@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- LibraryImport for Linux libsystemd.so.0 journald reading (LibSystemdJournalReader.cs). -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bower.Abstractions/Bower.Abstractions.csproj" />
+    <ProjectReference Include="../Bower.Contracts/Bower.Contracts.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Bower.UnitTests" />
+  </ItemGroup>
+</Project>
