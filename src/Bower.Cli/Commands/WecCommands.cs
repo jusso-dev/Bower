@@ -37,7 +37,7 @@ internal static class WecCommands
         string xml = WecSubscription.Generate(subscription, options);
         if (CliOptions.Get(args, "--out") is string path)
         {
-            File.WriteAllText(path, xml);
+            File.WriteAllText(path, xml, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             Console.Error.WriteLine($"Wrote {path}. On the WEC host: wecutil cs \"{path}\"");
         }
         else

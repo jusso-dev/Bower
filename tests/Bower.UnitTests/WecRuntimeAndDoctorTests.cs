@@ -171,10 +171,32 @@ public sealed class WecRuntimeAndDoctorTests
     }
 
     [Fact]
+    public void WecSubscription_Generate_DeclaresUtf8MatchingWrittenBytes()
+    {
+        WindowsEventSubscriptionOptions subscription = new(
+            Id: "security-logon",
+            Channel: "Security",
+            EventIds: [4625],
+            Pack: "windows-security-logon",
+            Parser: 0,
+            Providers: ["Microsoft-Windows-Security-Auditing"]);
+
+        string xml = WecSubscription.Generate(subscription, new WecSubscriptionOptions());
+
+        Assert.StartsWith("<?xml version=\"1.0\" encoding=\"utf-8\"?>", xml, StringComparison.Ordinal);
+        Assert.DoesNotContain("encoding=\"utf-16\"", xml, StringComparison.OrdinalIgnoreCase);
+
+        byte[] utf8Bytes = new System.Text.UTF8Encoding(false).GetBytes(xml);
+        using MemoryStream stream = new(utf8Bytes);
+        System.Xml.Linq.XDocument doc = System.Xml.Linq.XDocument.Load(stream);
+        Assert.Equal("Subscription", doc.Root?.Name.LocalName);
+    }
+
+    [Fact]
     public async Task Collector_WecRuntimeStatusAndPerSubscriptionSilence_ReportInStatusAndDegradeHealth()
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
-        using TemporaryDirectory directory = new();
+        using SqliteTemporaryDirectory directory = new();
         (string privatePem, string publicPem, _) = DetachedSigner.GenerateKeyPair();
         string packPath = PackArchive.Build(
             Path.Combine(AppContext.BaseDirectory, "packs", "windows-security-logon"),
