@@ -66,7 +66,9 @@ public sealed record CollectorHeartbeat(
     CanaryReport? LastCanary = null,
     IReadOnlyList<string>? CommandCapabilities = null,
     IReadOnlyList<CommandResultReport>? CommandResults = null,
-    RedactionReport? Redactions = null)
+    RedactionReport? Redactions = null,
+    PipelineReport? Pipeline = null,
+    IReadOnlyList<SourceActivityReport>? Activity = null)
 {
     /// <summary>A body without schemaVersion is a v1 heartbeat.</summary>
     [System.Text.Json.Serialization.JsonIgnore]

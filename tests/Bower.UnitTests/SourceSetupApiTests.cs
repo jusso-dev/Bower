@@ -55,7 +55,7 @@ public sealed class SourceSetupApiTests
         SourceTypeDefinition[] types = (await ManagementApiTests.Client(app, BowerRoles.Viewer)
             .GetFromJsonAsync<SourceTypeDefinition[]>("/api/sources/types", ManagementApiTests.ApiJson, cancellationToken))!;
 
-        Assert.Equal(["syslog", "windows-eventlog", "file", "docker", "aws", "gcp", "ama", "http-sdk"], types.Select(type => type.Id));
+        Assert.Equal(["syslog", "windows-eventlog", "file", "sql-server", "docker", "aws", "gcp", "ama", "http-sdk"], types.Select(type => type.Id));
         string[] kinds =
         [
             SourceFieldKinds.Text, SourceFieldKinds.Number, SourceFieldKinds.Choice, SourceFieldKinds.Boolean,

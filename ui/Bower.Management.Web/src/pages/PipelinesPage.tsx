@@ -1,4 +1,5 @@
 import { GitBranch } from "lucide-react";
+import { PipelineFlowDiagram } from "../components/PipelineFlowDiagram";
 import { Page, EmptyState, ResourceState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import type { Access, PipelineTemplate } from "../types";
@@ -13,11 +14,14 @@ export function PipelinesPage() {
   return (
     <Page
       title="Pipeline builder"
-      description="Infer custom log parsers, validate transformed fields and use reusable pipeline templates."
+      description="Inspect live five-stage collector flows, infer custom log parsers, validate transformed fields and use reusable pipeline templates."
     >
-      {canEdit ? <CustomLogWorkbench /> : <p className="permission-note">
-        Viewing only. An operator can generate and preview parser configuration. You can read the available templates below.
-      </p>}
+      <PipelineFlowDiagram canOperate={canEdit} />
+      <div className="section-gap">
+        {canEdit ? <CustomLogWorkbench /> : <p className="permission-note">
+          Viewing only. An operator can sample redacted events and generate parser configuration. You can inspect live pipeline counters and read the available templates below.
+        </p>}
+      </div>
       <ResourceState loading={loading} error={error} data={data}>
         {(templates) =>
           templates.length ? (
