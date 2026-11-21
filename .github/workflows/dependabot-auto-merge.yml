@@ -2,8 +2,9 @@ name: Dependabot auto-merge
 
 on:
   # Dependabot PRs receive a read-only GITHUB_TOKEN on pull_request. This workflow
-  # never checks out PR code, checks the pull request author ID, and relies on
-  # dependabot/fetch-metadata to verify the PR author and commit signature.
+  # never checks out PR code, checks the pull request author ID, restricts auto-merge
+  # to single-commit PRs (dependabot/fetch-metadata verifies only commits[0]), and
+  # relies on dependabot/fetch-metadata to verify the PR author and commit signature.
   pull_request_target: # zizmor: ignore[dangerous-triggers]
 
 permissions: {}
@@ -11,7 +12,7 @@ permissions: {}
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.id == '49699333'
+    if: github.event.pull_request.user.id == '49699333' && github.event.pull_request.commits == 1
     permissions:
       pull-requests: write
       contents: write
