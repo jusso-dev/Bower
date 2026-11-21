@@ -16,8 +16,8 @@ import time
 import uuid
 
 REPO = Path(__file__).resolve().parents[3]
-SUB = '945092a0-2500-4b25-85a4-99f1c3135906'
-TENANT = 'f4f33fb1-b681-40d1-a854-6f888d45b891'
+SUB = '00000000-0000-0000-0000-000000000000'
+TENANT = '11111111-1111-1111-1111-111111111111'
 API = 'https://management.azure.com'
 
 

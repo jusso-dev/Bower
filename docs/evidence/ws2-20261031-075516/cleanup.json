@@ -2,7 +2,7 @@
  "schemaVersion": 1,
  "runId": "bower-ws2-20261031-075516",
  "checkedAt": "2026-11-02T01:23:41.104134+00:00",
- "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "azureSubscription": "00000000-0000-0000-0000-000000000000",
  "awsResourcesUsed": false,
  "checks": [
   {
@@ -31,12 +31,12 @@
    "absent": true
   },
   {
-   "check": "ingest deleted-items objectId e7a32c0e-a483-4d50-9f1b-a3c359b6757e",
+   "check": "ingest deleted-items objectId 44444444-4444-4444-4444-444444444407",
    "absent": true,
    "errorCode": "Request_ResourceNotFound"
   },
   {
-   "check": "ingest deleted-items principalId cb1a4873-f569-489a-aba9-f200f5cbe995",
+   "check": "ingest deleted-items principalId 55555555-5555-5555-5555-555555555507",
    "absent": true,
    "errorCode": "Request_ResourceNotFound"
   },

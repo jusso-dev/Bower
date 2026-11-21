@@ -57,7 +57,7 @@ function Assert-WecManifest($Manifest, [string]$RunId) {
 
 function Read-WecDestination($Settings) {
     if ((@($Settings.PSObject.Properties.Name | Sort-Object) -join ',') -cne 'client,dce,dcr,tenant') { throw 'destination-fields' }
-    if ($Settings.tenant -cne 'f4f33fb1-b681-40d1-a854-6f888d45b891' -or
+    if ($Settings.tenant -cne '11111111-1111-1111-1111-111111111111' -or
         $Settings.client -notmatch '^[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}$' -or
         $Settings.dcr -cnotmatch '^dcr-[a-f0-9]{32}$' -or
         $Settings.dce -cnotmatch '^https://[a-z0-9.-]+\.ingest\.monitor\.azure\.com/?$') { throw 'destination-values' }

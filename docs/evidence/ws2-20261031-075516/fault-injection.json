@@ -28,7 +28,7 @@
    "event": "response-dropped",
    "mode": "drop-next",
    "requestBytes": 3379,
-   "host": "bowerws2-dce-aet2.australiaeast-1.ingest.monitor.azure.com"
+   "host": "bowerws2-dce-0000.australiaeast-1.ingest.monitor.azure.com"
   },
   {
    "at": "2026-10-31T08:15:15.426461+00:00",
@@ -47,7 +47,7 @@
    "event": "response-dropped",
    "mode": "drop-next",
    "requestBytes": 4413,
-   "host": "bowerws2-dce-aet2.australiaeast-1.ingest.monitor.azure.com"
+   "host": "bowerws2-dce-0000.australiaeast-1.ingest.monitor.azure.com"
   },
   {
    "at": "2026-10-31T08:17:46.618424+00:00",
@@ -66,7 +66,7 @@
    "event": "response-dropped",
    "mode": "drop-next-then-outage",
    "requestBytes": 4418,
-   "host": "bowerws2-dce-aet2.australiaeast-1.ingest.monitor.azure.com"
+   "host": "bowerws2-dce-0000.australiaeast-1.ingest.monitor.azure.com"
   },
   {
    "at": "2026-10-31T08:19:19.315057+00:00",

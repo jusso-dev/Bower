@@ -44,8 +44,8 @@
   "destinationQueryVerified": true,
   "queryRole": "verifier",
   "scope": "identity reconciliation only; fault and topology evidence assessed separately",
-  "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
-  "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+  "workspaceId": "22222222-2222-2222-2222-222222222201",
+  "verifierClientId": "33333333-3333-3333-3333-333333333301",
   "queueEvidenceSha256": "bf901988d324e18d426a67bd646fd521847c463a9ef8656aa5be18b4f4e040da",
   "nativeEvidenceSha256": [
     "34374f5a0e05b7c65988c1fe8cab06417de4763b434146090ef16e7618a3a3df"

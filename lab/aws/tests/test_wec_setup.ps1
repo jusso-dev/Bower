@@ -65,8 +65,8 @@ foreach ($change in 'role', 'extra', 'hash', 'large', 'fraction', 'unknown') {
     }
     Test-WecRejected { Assert-WecManifest $manifest $run }
 }
-$settings = [pscustomobject]@{ client = '11111111-1111-1111-1111-111111111111';
-    tenant = 'f4f33fb1-b681-40d1-a854-6f888d45b891'; dcr = 'dcr-' + ('a' * 32);
+$settings = [pscustomobject]@{ client = '33333333-3333-3333-3333-333333333333';
+    tenant = '11111111-1111-1111-1111-111111111111'; dcr = 'dcr-' + ('a' * 32);
     dce = 'https://synthetic.australiaeast-1.ingest.monitor.azure.com' }
 if ((Read-WecDestination $settings).Count -ne 8) { throw 'destination refused' }; $tests++
 foreach ($endpoint in 'http://synthetic.ingest.monitor.azure.com', 'https://user:password@synthetic.ingest.monitor.azure.com',

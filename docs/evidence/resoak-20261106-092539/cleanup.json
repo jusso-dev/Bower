@@ -4,7 +4,7 @@
  "checkedAt": "2026-11-10T11:49:31.449888+00:00",
  "accountId": "959038055523",
  "region": "ap-southeast-2",
- "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "azureSubscription": "00000000-0000-0000-0000-000000000000",
  "checks": [
   {
    "check": "cloudformation stack bower-resoak-20261106-092539",
@@ -145,12 +145,12 @@
    "absent": true
   },
   {
-   "check": "deleted-items application 58c8d385-024a-491a-9f88-444d2af58360",
+   "check": "deleted-items application 44444444-4444-4444-4444-444444444408",
    "absent": true,
    "errorCode": "Request_ResourceNotFound"
   },
   {
-   "check": "deleted-items service principal 02a1a3df-142c-421a-8ac0-cce3d3005463",
+   "check": "deleted-items service principal 55555555-5555-5555-5555-555555555508",
    "absent": true,
    "errorCode": "Request_ResourceNotFound"
   },
@@ -167,12 +167,12 @@
    "absent": true
   },
   {
-   "check": "deleted-items application 6db0b1c1-b01c-4693-bac0-a608a5e8f60e",
+   "check": "deleted-items application 44444444-4444-4444-4444-444444444409",
    "absent": true,
    "errorCode": "Request_ResourceNotFound"
   },
   {
-   "check": "deleted-items service principal c5996704-bd1c-419a-86b8-a332f7177723",
+   "check": "deleted-items service principal 55555555-5555-5555-5555-555555555509",
    "absent": true,
    "errorCode": "Request_ResourceNotFound"
   },

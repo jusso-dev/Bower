@@ -30,10 +30,10 @@ Syslog still has no application-level durable acknowledgement.
   existing VPC and used an existing NAT gateway. Neither shared resource was deleted.
   CloudFormation validation passed; cfn-lint reported only the deliberately fixed
   NAT-matching availability-zone warning W3010.
-- Azure: subscription `945092a0-2500-4b25-85a4-99f1c3135906`, tenant
-  `f4f33fb1-b681-40d1-a854-6f888d45b891`, `australiaeast`, resource group
+- Azure: subscription `00000000-0000-0000-0000-000000000000`, tenant
+  `11111111-1111-1111-1111-111111111111`, `australiaeast`, resource group
   `rg-bower-val-20261030-065244`. Workspace customer ID:
-  `c609a7de-e838-4563-8d45-57800ca2a9a7`. Microsoft Sentinel onboarding succeeded.
+  `22222222-2222-2222-2222-222222222204`. Microsoft Sentinel onboarding succeeded.
 - Installed MSI/RPM version `0.1.0-dev.264`, running as `NT SERVICE\Bower` and
   `bower`, respectively. Windows delayed automatic start was disabled. Packages
   were CI development artifacts, not trusted signed production releases.

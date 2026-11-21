@@ -77,12 +77,12 @@ The Azure run name differs from the AWS run name: use its recorded `azure-state.
 not a group inferred from the AWS name.
 
 1. Verify the operator's current Azure tenant and target subscription are
-   `f4f33fb1-b681-40d1-a854-6f888d45b891` and
-   `945092a0-2500-4b25-85a4-99f1c3135906`. The helper checks both the selected
+   `11111111-1111-1111-1111-111111111111` and
+   `00000000-0000-0000-0000-000000000000`. The helper checks both the selected
    target and active tenant before Graph/ARM operations. Do not use the
    limited ingestion/verifier principal to administer cleanup.
 2. Inspect the exact recorded RG and resources with `az group show` and
-   `az resource list`, passing `--subscription 945092a0-2500-4b25-85a4-99f1c3135906`
+   `az resource list`, passing `--subscription 00000000-0000-0000-0000-000000000000`
    and its exact name. Confirm `Project=bower-lab`, the recorded Azure `RunId`
    and that all children are disposable. Stop on an ownership mismatch.
 3. Run the reviewed cleanup:
@@ -158,8 +158,8 @@ if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
 aws = json.loads((root / 'state.json').read_text())
 azure = json.loads((root / 'azure-state.json').read_text())
 if (aws.get('account') != '959038055523'
-        or azure.get('subscription') != '945092a0-2500-4b25-85a4-99f1c3135906'
-        or azure.get('tenant') != 'f4f33fb1-b681-40d1-a854-6f888d45b891'
+        or azure.get('subscription') != '00000000-0000-0000-0000-000000000000'
+        or azure.get('tenant') != '11111111-1111-1111-1111-111111111111'
         or not azure.get('cleanupCheckedAt') or azure.get('cleanupErrors') != []):
     raise SystemExit('Campaign markers or completed Azure cleanup are missing')
 shutil.rmtree(root)

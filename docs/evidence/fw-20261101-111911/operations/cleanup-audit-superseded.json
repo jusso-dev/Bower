@@ -4,7 +4,7 @@
  "checkedAt": "2026-11-01T22:39:24.489602+00:00",
  "accountId": "959038055523",
  "region": "ap-southeast-2",
- "azureSubscription": "945092a0-2500-4b25-85a4-99f1c3135906",
+ "azureSubscription": "00000000-0000-0000-0000-000000000000",
  "checks": [
   {
    "check": "cloudformation stack bower-fw-20261101-111911",
@@ -126,11 +126,11 @@
    "absent": true
   },
   {
-   "check": "deleted-items application 5dabe50e-3b31-4e7b-b88c-1afd702718a1",
+   "check": "deleted-items application 44444444-4444-4444-4444-444444444401",
    "absent": true
   },
   {
-   "check": "deleted-items service principal 08028ec0-fc0d-4f93-a2a9-9d2af95773cd",
+   "check": "deleted-items service principal 55555555-5555-5555-5555-555555555501",
    "absent": true
   },
   {
@@ -146,11 +146,11 @@
    "absent": true
   },
   {
-   "check": "deleted-items application e5226f47-5a8a-4a74-9e23-d6c94b85f614",
+   "check": "deleted-items application 44444444-4444-4444-4444-444444444402",
    "absent": true
   },
   {
-   "check": "deleted-items service principal f8af2643-d102-49c9-8033-5201b23b6379",
+   "check": "deleted-items service principal 55555555-5555-5555-5555-555555555502",
    "absent": true
   },
   {

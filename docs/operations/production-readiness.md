@@ -21,8 +21,8 @@ for allow-listed WEF → WEC events, and a Linux collector receiving signed-pack
 firewall syslog over mutual TLS. Delivery uses Azure Monitor Logs Ingestion into a
 tenant-owned Microsoft Sentinel / Log Analytics workspace, with independent query
 verification. The deployment owner has selected this path for the first production
-rollout. The owner confirmed subscription `945092a0-2500-4b25-85a4-99f1c3135906`
-in tenant `f4f33fb1-b681-40d1-a854-6f888d45b891` for isolated validation.
+rollout. The owner confirmed subscription `00000000-0000-0000-0000-000000000000`
+in tenant `11111111-1111-1111-1111-111111111111` for isolated validation.
 The selected pilot envelope is **10 events/sec per collector, 100/sec bursts of
 60 seconds, and a real one-hour destination outage**. The
 [native pilot report](../evidence/pilot-native-20261030/README.md) measures this

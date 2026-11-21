@@ -23,8 +23,8 @@ class ProbeTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name).resolve()
         self.run = 'bower-val-261101030000-1234abcd'
-        self.sub = '945092a0-2500-4b25-85a4-99f1c3135906'
-        self.tenant = 'f4f33fb1-b681-40d1-a854-6f888d45b891'
+        self.sub = '00000000-0000-0000-0000-000000000000'
+        self.tenant = '11111111-1111-1111-1111-111111111111'
         self.app = '11111111-1111-4111-8111-111111111111'
         self.obj = '22222222-2222-4222-8222-222222222222'
         self.sp = '33333333-3333-4333-8333-333333333333'
