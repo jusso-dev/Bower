@@ -17,7 +17,7 @@
       "bower.sdk": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[1.0.0, )",
           "Microsoft.Extensions.DependencyInjection.Abstractions": "[11.0.0, )"
         }
       },
@@ -41,7 +41,7 @@
       "bower.sdk": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[0.1.1-dev.0, )"
+          "Bower.Contracts": "[1.0.0, )"
         }
       }
     }

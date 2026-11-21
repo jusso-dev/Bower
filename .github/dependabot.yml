@@ -5,35 +5,93 @@ updates:
     schedule:
       interval: weekly
     groups:
-      dotnet-runtime:
-        patterns: ["Microsoft.*", "System.*"]
-      hangfire:
-        patterns: ["Hangfire.*"]
       test:
+        applies-to: version-updates
         patterns: ["xunit*", "Microsoft.NET.Test.Sdk", "Microsoft.AspNetCore.TestHost"]
+        update-types: ["minor", "patch"]
+      dotnet-runtime:
+        applies-to: version-updates
+        patterns: ["Microsoft.*", "System.*"]
+        exclude-patterns: ["Microsoft.NET.Test.Sdk", "Microsoft.AspNetCore.TestHost"]
+        update-types: ["minor", "patch"]
+      aws-sdk:
+        applies-to: version-updates
+        patterns: ["AWSSDK.*"]
+        update-types: ["minor", "patch"]
+      hangfire:
+        applies-to: version-updates
+        patterns: ["Hangfire.*"]
+        update-types: ["minor", "patch"]
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: npm
     directory: /ui/Bower.Management.Web
     schedule:
       interval: weekly
     groups:
       react:
+        applies-to: version-updates
         patterns: ["react", "react-dom", "@types/react*", "react-router*"]
+        update-types: ["minor", "patch"]
       msal:
+        applies-to: version-updates
         patterns: ["@azure/msal-*"]
+        update-types: ["minor", "patch"]
       tooling:
+        applies-to: version-updates
+        dependency-type: development
         patterns: ["vite", "vitest", "@vitejs/*", "typescript", "@playwright/test", "jsdom", "@testing-library/*", "@types/node"]
+        update-types: ["minor", "patch"]
+      dev-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      minor-and-patch:
+        applies-to: version-updates
+        dependency-type: production
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: npm
     directory: /website
     schedule:
       interval: weekly
     groups:
       docusaurus:
+        applies-to: version-updates
         patterns: ["@docusaurus/*", "react", "react-dom", "@mdx-js/*", "prism-react-renderer", "typescript"]
+        update-types: ["minor", "patch"]
+      dev-minor-and-patch:
+        applies-to: version-updates
+        dependency-type: development
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      minor-and-patch:
+        applies-to: version-updates
+        dependency-type: production
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    ignore:
+      # @docusaurus/tsconfig 3.10.2 declares baseUrl, which TypeScript 7 removed (TS5102, #263).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: docker
     directory: /deploy/docker
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    groups:
+      minor-and-patch:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

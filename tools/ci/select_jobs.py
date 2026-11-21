@@ -51,6 +51,7 @@ DOC_CONTRACT_FILES = {"README.md", "PRODUCT.md", "SECURITY.md"}
 SEPARATE_WORKFLOWS = {
     ".github/workflows/docs.yml", ".github/workflows/images.yml",
     ".github/workflows/asvs-examples.yml", ".github/workflows/sentinel-solution.yml",
+    ".github/workflows/dependabot-auto-merge.yml",
 }
 
 
