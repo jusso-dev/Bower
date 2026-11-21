@@ -36,6 +36,9 @@ GUIDES = {
     "top": ("Tap and top", "../operations/tap-and-top.md"),
     "version": ("Release versioning", "../operations/release-versioning.md"),
     "wec": ("Windows Event Forwarding", "../deployment/windows-event-forwarding.md"),
+    "export": ("Air-gapped bundles", "../deployment/air-gapped.md"),
+    "verify": ("Air-gapped bundles", "../deployment/air-gapped.md"),
+    "import": ("Air-gapped bundles", "../deployment/air-gapped.md"),
 }
 
 

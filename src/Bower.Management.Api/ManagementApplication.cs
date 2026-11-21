@@ -139,6 +139,8 @@ public static class ManagementApplication
         // Optional: without a key approved source setups cannot be downloaded signed (503).
         builder.Services.AddSingleton(SourceSetupSigner.FromFile(
             builder.Configuration[SourceSetupSigner.KeyFileSetting]));
+        // Optional: without trusted keys offline site bundle imports are refused (503).
+        builder.Services.AddSingleton(OfflineSiteTrustKeys.FromConfiguration(builder.Configuration));
 
         string[] allowedOrigins = builder.Configuration
             .GetSection("Bower:AllowedOrigins")
@@ -341,6 +343,8 @@ public static class ManagementApplication
                         ? Results.Ok(collector)
                         : Results.NotFound())
             .RequireAuthorization("View");
+
+        OfflineSiteEndpoints.Map(api);
 
         api.MapGet(
                 "/collectors",

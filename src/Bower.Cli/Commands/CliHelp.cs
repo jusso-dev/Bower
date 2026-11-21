@@ -54,6 +54,13 @@ internal static class CliHelp
           bower archive verify --archive DIR [--anchor SEQUENCE:HASH]
           bower archive replay --archive DIR --collector-url URL [--from ISO] [--to ISO]
                                [--event-type TYPE]... [--collector-id ID] [--dry-run]
+          bower export bundle --database FILE --out FILE --signing-key PRIVATE.pem
+                              [--collector-id ID] [--environment ENV] [--policy-hash HASH]
+                              [--privacy-profile-hash HASH] [--encrypt-key-file FILE] [--max-events N]
+          bower verify bundle --bundle FILE --trusted-key PUBLIC.pem
+                              [--expect-sequence N] [--expect-previous-hash HASH] [--decrypt-key-file FILE]
+          bower import bundle --bundle FILE --trusted-key PUBLIC.pem
+                              [--collector-url URL] [--management-url URL] [--decrypt-key-file FILE] [--dry-run]
           bower sources check --expectations FILE [--database FILE]
           bower wec subscription generate --config FILE --subscription ID [--mode MinLatency|Normal|MinBandwidth|Custom]
                 [--max-items N --max-latency-seconds N] [--heartbeat-seconds N] [--read-existing] [--subscription-id NAME]
