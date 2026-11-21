@@ -1,0 +1,414 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/0.1.2-preview/CreateUIDefinition.MultiVm.json#",
+  "handler": "Microsoft.Azure.CreateUIDef",
+  "version": "0.1.2-preview",
+  "parameters": {
+    "config": {
+      "isWizard": false,
+      "basics": {
+        "description": "<img src=\"https://raw.githubusercontent.com/jusso-dev/Bower/main/docs/images/bower-readme-hero.png\" width=\"75px\" height=\"75px\">\n\n**Note:** Review the [Release Notes](https://github.com/jusso-dev/Bower/blob/main/Solutions/Bower/ReleaseNotes.md) before installing.\n\nThe [Bower](https://github.com/jusso-dev/Bower) solution for Microsoft Sentinel packages replay-safe KQL parsers (`BowerSecurityEvents` and `BowerSecurityEventsOfType`), scheduled analytics rules (Windows Event Collector brute force, firewall denial bursts, beyond-tolerance late-arrival monitoring, OWASP ASVS application security detections, and collector/source health), threat-hunting and reconciliation queries, and an operations workbook for `BowerSecurity_CL`.\n\nAll analytics rules are installed as templates and start disabled so operators can validate them against live workspace telemetry before enabling.\n\n**Data Connectors:** 1, **Parsers:** 2, **Workbooks:** 1, **Analytic Rules:** 10, **Hunting Queries:** 6",
+        "subscription": {
+          "resourceProviders": [
+            "Microsoft.OperationsManagement/solutions",
+            "Microsoft.OperationalInsights/workspaces/providers/alertRules",
+            "Microsoft.Insights/workbooks"
+          ]
+        },
+        "location": {
+          "metadata": {
+            "hidden": "Location is derived from the selected Log Analytics workspace."
+          },
+          "visible": false
+        },
+        "resourceGroup": {
+          "allowExisting": true
+        }
+      }
+    },
+    "basics": [
+      {
+        "name": "getLAWorkspace",
+        "type": "Microsoft.Solutions.ArmApiControl",
+        "toolTip": "Filters by Log Analytics workspaces that exist in the selected resource group.",
+        "condition": "[greater(length(resourceGroup().name),0)]",
+        "request": {
+          "method": "GET",
+          "path": "[concat(subscription().id,'/providers/Microsoft.OperationalInsights/workspaces?api-version=2020-08-01')]"
+        }
+      },
+      {
+        "name": "workspace",
+        "type": "Microsoft.Common.DropDown",
+        "label": "Workspace",
+        "placeholder": "Select a workspace",
+        "toolTip": "Select an existing Log Analytics workspace in this resource group with Microsoft Sentinel enabled.",
+        "constraints": {
+          "allowedValues": "[map(filter(basics('getLAWorkspace').value, (filter) => contains(toLower(filter.id), toLower(resourceGroup().name))), (item) => parse(concat('{\"label\":\"', item.name, '\",\"value\":\"', item.name, '\"}')))]",
+          "required": true
+        },
+        "visible": true
+      }
+    ],
+    "steps": [
+      {
+        "name": "dataconnectors",
+        "label": "Data Connectors",
+        "bladeTitle": "Data Connectors",
+        "elements": [
+          {
+            "name": "dataconnectors1-text",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "text": "This solution installs the Bower Security Telemetry Bridge data connector guidance for BowerSecurity_CL. Deploy deploy/bicep/main.bicep or deploy/sentinel/azuredeploy.json to provision the table, DCE and DCR."
+            }
+          },
+          {
+            "name": "dataconnectors-link1",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "link": {
+                "label": "Bower Logs Ingestion API guide",
+                "uri": "https://github.com/jusso-dev/Bower/blob/main/docs/deployment/logs-ingestion-api.md"
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "parsers",
+        "label": "Parsers",
+        "bladeTitle": "Parsers",
+        "elements": [
+          {
+            "name": "parsers-text",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "text": "This solution installs the replay-safe KQL workspace functions BowerSecurityEvents and BowerSecurityEventsOfType."
+            }
+          },
+          {
+            "name": "parser1",
+            "type": "Microsoft.Common.Section",
+            "label": "BowerSecurityEvents",
+            "elements": [
+              {
+                "name": "parser1-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "BowerSecurityEvents - Replay-collapsed Bower security events"
+                }
+              }
+            ]
+          },
+          {
+            "name": "parser2",
+            "type": "Microsoft.Common.Section",
+            "label": "BowerSecurityEventsOfType",
+            "elements": [
+              {
+                "name": "parser2-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "BowerSecurityEventsOfType - Replay-collapsed Bower events filtered by event types"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "workbooks",
+        "label": "Workbooks",
+        "subLabel": {
+          "preValidation": "Configure the workbooks",
+          "postValidation": "Done"
+        },
+        "bladeTitle": "Workbooks",
+        "elements": [
+          {
+            "name": "workbooks-text",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "text": "This Microsoft Sentinel solution installs the Bower Security Operations and Pipeline Health workbook."
+            }
+          },
+          {
+            "name": "workbook1",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower Security Operations and Pipeline Health",
+            "elements": [
+              {
+                "name": "workbook1-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Monitors collector health, delivery delay, queue backlogs, replay ratios, security event volume, Privacy & Secret Protection Engine alerts, and Sentinel rule health."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "analytics",
+        "label": "Analytics",
+        "subLabel": {
+          "preValidation": "Review the analytics templates",
+          "postValidation": "Done"
+        },
+        "bladeTitle": "Analytics",
+        "elements": [
+          {
+            "name": "analytics-text",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "text": "This solution installs the following scheduled analytic rule templates (disabled by default). Validate against live BowerSecurity_CL telemetry before enabling."
+            }
+          },
+          {
+            "name": "analytic1",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower: Windows failed network logons from one address (replay-safe)",
+            "elements": [
+              {
+                "name": "analytic1-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "At least 10 distinct Windows 4625 network logon failures from one source address in a\n10-minute event-time bucket. Replayed Bower rows are collapsed by BowerSecurityEventsOfType\nand late events are evaluated once, at first ingestion, up to 360 minutes late."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic2",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower: repeated firewall denials from one address (replay-safe)",
+            "elements": [
+              {
+                "name": "analytic2-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "At least 20 distinct firewall denials from one source address in a 10-minute event-time\nbucket. Replayed Bower rows are collapsed by BowerSecurityEventsOfType and late events\nare evaluated once, at first ingestion, up to 360 minutes late."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic3",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower: events arrived later than the replay-safe rules evaluate",
+            "elements": [
+              {
+                "name": "analytic3-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Bower events first ingested more than 360 minutes after their event time, or whose\nTimeGenerated Azure Monitor rewrote. The replay-safe rules did not evaluate them;\ninvestigate the outage and hunt manually."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic4",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower ASVS: password spraying or credential stuffing from one address",
+            "elements": [
+              {
+                "name": "analytic4-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "At least 10 distinct accounts failed application sign-in from one source address in a\n10-minute bucket. SuccessesAfterFailures shows sign-ins that worked from the same address.\nSupports OWASP ASVS 5.0 V16.3.1 and V6.3.1."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic5",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower ASVS: privilege, role or permission change",
+            "elements": [
+              {
+                "name": "analytic5-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "A role membership, permission or privileged grant changed in an application.\nSupports OWASP ASVS 5.0 V16.3.3, V8.3.2 and ASD ISM-1650."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic6",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower ASVS: administrative action outside business hours",
+            "elements": [
+              {
+                "name": "analytic6-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "A privileged or configuration action outside 07:00-19:00 on a weekday, or on a weekend,\nin Australia/Sydney. Supports OWASP ASVS 5.0 V16.3.3."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic7",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower ASVS: mass export or bulk sensitive reads by one user",
+            "elements": [
+              {
+                "name": "analytic7-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "One user exported or read at least 10,000 sensitive records, or ran at least 5 exports,\nin one hour. Supports OWASP ASVS 5.0 V16.3.2 and V2.4.1."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic8",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower ASVS: application stopped sending security events",
+            "elements": [
+              {
+                "name": "analytic8-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "An application that sent security events in the last 7 days has sent none for 60 minutes.\nSupports OWASP ASVS 5.0 V16.4.3 and ASD ISM-1405, ISM-1906."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic9",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower collector health record missing",
+            "elements": [
+              {
+                "name": "analytic9-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "A Bower collector stopped sending collector_health records: collector or host down, or\ndelivery to Microsoft Sentinel failing. Security events from it are not arriving either.\nRequires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy."
+                }
+              }
+            ]
+          },
+          {
+            "name": "analytic10",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower source silent at the destination",
+            "elements": [
+              {
+                "name": "analytic10-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "A collector and application/environment that sent security events recently has sent none\nfor longer than its 60-minute allowance (firewall or WEC stopped sending, or its path to\nBower failed)."
+                }
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "huntingqueries",
+        "label": "Hunting Queries",
+        "bladeTitle": "Hunting Queries",
+        "elements": [
+          {
+            "name": "huntingqueries-text",
+            "type": "Microsoft.Common.TextBlock",
+            "options": {
+              "text": "This solution installs threat-hunting, delivery reconciliation and sequence-gap queries for BowerSecurity_CL."
+            }
+          },
+          {
+            "name": "hunting1",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower - Late events beyond detection tolerance (14-day hunt)",
+            "elements": [
+              {
+                "name": "hunting1-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Lists every Bower security event in the last 14 days that first arrived more than 360 minutes\nafter its event time or whose TimeGenerated Azure Monitor rewrote. Compare each hourly slot\nagainst the beyond-tolerance analytics rule alerts to detect skipped monitoring runs and\nevents that require manual hunting after an outage."
+                }
+              }
+            ]
+          },
+          {
+            "name": "hunting2",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower - Delivery reconciliation (queued vs arrived events)",
+            "elements": [
+              {
+                "name": "hunting2-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Compares events queued by each Bower collector (sum of pipeline.eventsQueued from\ncollector_health records) against distinct EventId values ingested into BowerSecurity_CL.\nDesigned for outputs that cannot confirm destination arrival, such as BOWER_OUTPUT=ama-syslog."
+                }
+              }
+            ]
+          },
+          {
+            "name": "hunting3",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower - Collector health sequence gaps (post-delivery loss detection)",
+            "elements": [
+              {
+                "name": "hunting3-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Detects missing collector_health sequence numbers within each collector run (collectorStartedAt).\nA gap indicates that a health record queued by Bower never reached BowerSecurity_CL, signalling\npotential event loss in unacknowledged paths such as BOWER_OUTPUT=ama-syslog."
+                }
+              }
+            ]
+          },
+          {
+            "name": "hunting4",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower - Replay and duplicate delivery summary",
+            "elements": [
+              {
+                "name": "hunting4-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Counts exact distinct Bower security events against raw rows in BowerSecurity_CL per collector,\nhighlighting at-least-once delivery replays and extra rows collapsed by BowerSecurityEvents."
+                }
+              }
+            ]
+          },
+          {
+            "name": "hunting5",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower - High-risk sensitive data and secret redaction findings",
+            "elements": [
+              {
+                "name": "hunting5-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Hunts for sensitive_data_detected events emitted by Bower's Privacy & Secret Protection Engine\nwhen regulated Australian identifiers (TFN, Medicare, IHI, ABN/ACN), payment cards, credentials\nor cryptographic material are detected and redacted before persistence. Only metadata is\nrecorded; original sensitive values are never stored or forwarded."
+                }
+              }
+            ]
+          },
+          {
+            "name": "hunting6",
+            "type": "Microsoft.Common.Section",
+            "label": "Bower - Sentinel rule health and alert visibility latency",
+            "elements": [
+              {
+                "name": "hunting6-text",
+                "type": "Microsoft.Common.TextBlock",
+                "options": {
+                  "text": "Checks failed Bower analytics rule executions in SentinelHealth and measures SecurityAlert\nqueryability lag against the alert-visibility budget assumed by replay-safe catch-up slots.\nRequires Sentinel auditing and health monitoring to be enabled on the workspace."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "outputs": {
+      "workspace-location": "[first(map(filter(basics('getLAWorkspace').value, (filter) => and(contains(toLower(filter.id), toLower(resourceGroup().name)),equals(filter.name,basics('workspace')))), (item) => item.location))]",
+      "location": "[location()]",
+      "workspace": "[basics('workspace')]"
+    }
+  }
+}

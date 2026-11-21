@@ -1,0 +1,32 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a3004
+name: Bower - Replay and duplicate delivery summary
+description: |
+  Counts exact distinct Bower security events against raw rows in BowerSecurity_CL per collector,
+  highlighting at-least-once delivery replays and extra rows collapsed by BowerSecurityEvents.
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Exact event count versus raw row count per collector (avoids dcount() estimation error).
+  BowerSecurityEvents
+  | where BowerEventTime > ago(7d)
+  | summarize
+      Events = count(),
+      Rows = sum(BowerCopies),
+      ReplayedEvents = countif(BowerCopies > 1),
+      ExtraRows = sum(BowerCopies - 1),
+      MaxCopies = max(BowerCopies),
+      RewrittenTimes = countif(BowerTimeRewritten)
+      by CollectorId
+  | order by ExtraRows desc, CollectorId asc
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+version: 1.0.0

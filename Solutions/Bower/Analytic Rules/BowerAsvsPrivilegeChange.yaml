@@ -1,0 +1,64 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a2005
+name: 'Bower ASVS: privilege, role or permission change'
+description: |
+  A role membership, permission or privileged grant changed in an application.
+  Supports OWASP ASVS 5.0 V16.3.3, V8.3.2 and ASD ISM-1650.
+severity: Low
+status: Available
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+queryFrequency: 5m
+queryPeriod: 500m
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - PrivilegeEscalation
+  - Persistence
+relevantTechniques:
+  - T1098
+query: |
+  // Bower ASVS pack: privilege, role or permission change.
+  // One alert per change: role_membership_changed (BWR-POL-ROLE-MEMBERSHIP), and
+  // permission_changed or admin_action with action admin.grant (BWR-PACK-ASVS-ADMIN).
+  // ASVS 5.0 V16.3.3, V8.3.2; ISM-1650. Replay-safe: alerts once per (CollectorId, EventId).
+  let settleDelay = 5m;
+  let frequency = 5m;
+  let catchUp = 60m;
+  let maxDelay = 360m;
+  let ruleKey = "bower-asvs-privilege-change:default";
+  let windowEnd = bin(now() - settleDelay, frequency);
+  let catchUpStart = windowEnd - catchUp;
+  let alerted = SecurityAlert
+      | where ProviderName == "ASI Scheduled Alerts"
+      | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
+      | where BowerDetectionKey startswith strcat(ruleKey, "|")
+      | distinct BowerDetectionKey;
+  BowerSecurityEventsOfType(dynamic(["role_membership_changed", "permission_changed", "admin_action"]))
+  | where EventResult == "success"
+  | where EventType != "admin_action" or EventAction == "admin.grant"
+  | where BowerFirstIngested >= catchUpStart and BowerFirstIngested < windowEnd
+  | where BowerFirstIngested - BowerEventTime <= maxDelay
+  | extend BowerDetectionKey = strcat(ruleKey, "|", CollectorId, "|", EventId)
+  | where BowerDetectionKey !in (alerted)
+  | project BowerDetectionKey, BowerEventTime, ApplicationName, ApplicationEnvironment, EventType, EventAction,
+      ActorUserId, SourceIpAddress, CorrelationId, CollectorId, EventId, EvaluatedAt = now()
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: ActorUserId
+customDetails:
+  BowerDetectionKey: BowerDetectionKey
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: 5h
+    matchingMethod: AllEntities
+version: 1.0.0
+kind: Scheduled

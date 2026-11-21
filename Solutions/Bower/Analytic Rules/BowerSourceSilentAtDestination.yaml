@@ -1,0 +1,67 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a2010
+name: Bower source silent at the destination
+description: |
+  A collector and application/environment that sent security events recently has sent none
+  for longer than its 60-minute allowance (firewall or WEC stopped sending, or its path to
+  Bower failed).
+severity: Medium
+status: Available
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+queryFrequency: 5m
+queryPeriod: 1d
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Bower: source silent at the destination. Independent of collector logic and health records:
+  // one row per collector and application/environment whose newest security event (not a health
+  // record or canary) was ingested more than its allowance ago, while it sent within the window.
+  let defaultMinutes = 60;
+  let overrides = print Rule = dynamic([])
+      | mv-expand Rule
+      | where isnotempty(Rule)
+      | project ApplicationName = tostring(Rule.application), ApplicationEnvironment = tostring(Rule.environment),
+          AllowedMinutes = toint(Rule.maximumSilenceMinutes);
+  BowerSecurity_CL
+  | where EventType !in ("collector_health", "collector_canary")
+  | where isnotempty(CollectorId) and isnotempty(ApplicationName)
+  | where isempty(tostring(Labels.bowerReplay))
+  | summarize LastIngested = max(ingestion_time()), LastEventAt = max(TimeGenerated) by CollectorId, ApplicationName, ApplicationEnvironment
+  | join kind=leftouter overrides on ApplicationName, ApplicationEnvironment
+  | extend AllowedMinutes = coalesce(AllowedMinutes, defaultMinutes)
+  | extend SilentMinutes = round(datetime_diff('second', now(), LastIngested) / 60.0, 1)
+  | where SilentMinutes > AllowedMinutes
+  | project CollectorId, Source = strcat(ApplicationName, "/", ApplicationEnvironment), LastIngested, LastEventAt, SilentMinutes, AllowedMinutes
+  | extend LastIngestedText = tostring(LastIngested), MinutesText = tostring(SilentMinutes)
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+customDetails:
+  CollectorId: CollectorId
+  Source: Source
+  LastIngested: LastIngestedText
+  MinutesSilent: MinutesText
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Bower source {{Source}} on {{CollectorId}} is silent'
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: 6h
+    matchingMethod: Selected
+    groupByCustomDetails:
+      - CollectorId
+      - Source
+version: 1.0.0
+kind: Scheduled

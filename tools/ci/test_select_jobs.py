@@ -37,7 +37,7 @@ class SelectionTests(unittest.TestCase):
     def test_separate_workflows_do_not_run_ci_jobs(self):
         # workflow-lint (always required) still lints them.
         for path in (".github/workflows/docs.yml", ".github/workflows/images.yml",
-                     ".github/workflows/asvs-examples.yml"):
+                     ".github/workflows/asvs-examples.yml", ".github/workflows/sentinel-solution.yml"):
             with self.subTest(path=path):
                 self.assertEqual(set(), self.enabled([path]))
 
@@ -154,6 +154,8 @@ class SelectionTests(unittest.TestCase):
     def test_azure_templates_keep_contract_checks(self):
         self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/bicep/main.bicep"]))
         self.assertEqual({"dotnet", "infrastructure"}, self.enabled(["deploy/sentinel/analytics/rules/firewall-deny.kql"]))
+        self.assertEqual({"infrastructure"}, self.enabled(["Solutions/Bower/Data/Solution_Bower.json"]))
+        self.assertEqual({"infrastructure"}, self.enabled(["tools/sentinel/validate_sentinel.py"]))
 
     def test_unknown_and_workflow_inputs_fail_safe(self):
         for path in ("global.json", "Directory.Build.props", "Directory.Solution.targets",

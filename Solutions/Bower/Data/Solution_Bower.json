@@ -1,0 +1,41 @@
+{
+  "Name": "Bower",
+  "Author": "Bower Contributors - https://github.com/jusso-dev/Bower",
+  "Logo": "<img src=\"https://raw.githubusercontent.com/jusso-dev/Bower/main/docs/images/bower-readme-hero.png\" width=\"75px\" height=\"75px\">",
+  "Description": "The [Bower](https://github.com/jusso-dev/Bower) solution for Microsoft Sentinel packages replay-safe KQL parsers (`BowerSecurityEvents` and `BowerSecurityEventsOfType`), scheduled analytics rules (Windows Event Collector brute force, firewall denial bursts, beyond-tolerance late-arrival monitoring, OWASP ASVS application security detections, and collector/source health), threat-hunting and reconciliation queries, and an operations workbook for `BowerSecurity_CL`.\n\nAll analytics rules are installed as templates and start disabled so operators can validate them against live workspace telemetry before enabling.",
+  "Data Connectors": [
+    "Data Connectors/Bower_LogsIngestion.json"
+  ],
+  "Parsers": [
+    "Parsers/BowerSecurityEvents.yaml",
+    "Parsers/BowerSecurityEventsOfType.yaml"
+  ],
+  "Workbooks": [
+    "Workbooks/BowerSecurityOperations.json"
+  ],
+  "Analytic Rules": [
+    "Analytic Rules/BowerWecBruteForce.yaml",
+    "Analytic Rules/BowerFirewallDeny.yaml",
+    "Analytic Rules/BowerEventsBeyondTolerance.yaml",
+    "Analytic Rules/BowerAsvsPasswordSpray.yaml",
+    "Analytic Rules/BowerAsvsPrivilegeChange.yaml",
+    "Analytic Rules/BowerAsvsAdminAfterHours.yaml",
+    "Analytic Rules/BowerAsvsMassExport.yaml",
+    "Analytic Rules/BowerAsvsLogSilence.yaml",
+    "Analytic Rules/BowerCollectorHealthMissing.yaml",
+    "Analytic Rules/BowerSourceSilentAtDestination.yaml"
+  ],
+  "Hunting Queries": [
+    "Hunting Queries/BowerLateEventsBeyondTolerance.yaml",
+    "Hunting Queries/BowerDeliveryReconciliation.yaml",
+    "Hunting Queries/BowerDeliverySequenceGaps.yaml",
+    "Hunting Queries/BowerReplaySummary.yaml",
+    "Hunting Queries/BowerSensitiveDataDetected.yaml",
+    "Hunting Queries/BowerRuleHealthAndAlertLatency.yaml"
+  ],
+  "BasePath": "Solutions/Bower",
+  "Version": "3.0.0",
+  "Metadata": "SolutionMetadata.json",
+  "TemplateSpec": true,
+  "Is1PConnector": false
+}

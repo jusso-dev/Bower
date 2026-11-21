@@ -1,0 +1,40 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a3003
+name: Bower - Collector health sequence gaps (post-delivery loss detection)
+description: |
+  Detects missing collector_health sequence numbers within each collector run (collectorStartedAt).
+  A gap indicates that a health record queued by Bower never reached BowerSecurity_CL, signalling
+  potential event loss in unacknowledged paths such as BOWER_OUTPUT=ama-syslog.
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Bower: collector_health records lost after the collector sent them, per CollectorId and run.
+  // Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy.
+  let lookback = 24h;
+  let lag = 30m;
+  let windowEnd = now() - lag;
+  let windowStart = windowEnd - lookback;
+  BowerSecurity_CL
+  | where EventType == "collector_health" and isnotempty(CollectorId)
+  | where TimeGenerated between (windowStart .. windowEnd)
+  | extend Started = tostring(Attributes.collectorStartedAt), Sequence = tolong(Attributes.sequence)
+  | where isnotnull(Sequence)
+  | summarize Records = count_distinct(Sequence), FirstSequence = min(Sequence), LastSequence = max(Sequence),
+      Output = take_any(tostring(Attributes.delivery.output)), LastSeen = max(TimeGenerated)
+      by CollectorId, Started
+  | extend MissingRecords = LastSequence - FirstSequence + 1 - Records
+  | where MissingRecords > 0
+  | project CollectorId, Output, CollectorStartedAt = Started, FirstSequence, LastSequence, Records,
+      MissingRecords, LastSeen
+  | order by MissingRecords desc
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+version: 1.0.0

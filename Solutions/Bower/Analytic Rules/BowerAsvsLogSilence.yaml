@@ -1,0 +1,61 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a2008
+name: 'Bower ASVS: application stopped sending security events'
+description: |
+  An application that sent security events in the last 7 days has sent none for 60 minutes.
+  Supports OWASP ASVS 5.0 V16.4.3 and ASD ISM-1405, ISM-1906.
+severity: Medium
+status: Available
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+queryFrequency: 15m
+queryPeriod: 7d
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Bower ASVS pack: an application stopped sending security events.
+  // Applications that sent security events in the 7-day baseline and none in the last 60m.
+  // ASVS 5.0 V16.4.3; ISM-1405, ISM-1906. One alert per application, environment and silence start.
+  let silence = 60m;
+  let baseline = 7d;
+  let minimumBaselineEvents = 20;
+  let ruleKey = "bower-asvs-log-silence:default";
+  let alerted = SecurityAlert
+      | where ProviderName == "ASI Scheduled Alerts"
+      | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
+      | where BowerDetectionKey startswith strcat(ruleKey, "|")
+      | distinct BowerDetectionKey;
+  BowerSecurity_CL
+  | where TimeGenerated > ago(baseline)
+  | where EventType !in ("collector_health", "collector_canary", "telemetry_aggregation_summary")
+  | summarize LastSeen = max(TimeGenerated), BaselineEvents = count(), Collectors = make_set(CollectorId, 10)
+      by ApplicationName, ApplicationEnvironment
+  | where BaselineEvents >= minimumBaselineEvents
+  | where LastSeen < ago(silence)
+  | extend BowerDetectionKey = strcat(ruleKey, "|", ApplicationName, "|", ApplicationEnvironment, "|", tostring(LastSeen))
+  | where BowerDetectionKey !in (alerted)
+  | project BowerDetectionKey, ApplicationName, ApplicationEnvironment, LastSeen,
+      SilentMinutes = datetime_diff("minute", now(), LastSeen), BaselineEvents, Collectors, EvaluatedAt = now()
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: CloudApplication
+    fieldMappings:
+      - identifier: Name
+        columnName: ApplicationName
+customDetails:
+  BowerDetectionKey: BowerDetectionKey
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: 5h
+    matchingMethod: AllEntities
+version: 1.0.0
+kind: Scheduled

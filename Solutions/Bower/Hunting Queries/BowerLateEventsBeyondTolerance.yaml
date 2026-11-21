@@ -1,0 +1,36 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a3001
+name: Bower - Late events beyond detection tolerance (14-day hunt)
+description: |
+  Lists every Bower security event in the last 14 days that first arrived more than 360 minutes
+  after its event time or whose TimeGenerated Azure Monitor rewrote. Compare each hourly slot
+  against the beyond-tolerance analytics rule alerts to detect skipped monitoring runs and
+  events that require manual hunting after an outage.
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Hunting: every event the beyond-tolerance monitor should have reported in the last 14 days.
+  // Align maxDelay with maxIngestionDelayMinutes from deploy/sentinel/analytics/main.bicep.
+  let maxDelay = 360m;
+  BowerSecurityEvents
+  | where BowerFirstIngested > ago(14d)
+  | where BowerFirstIngested - BowerEventTime > maxDelay or BowerTimeRewritten
+  | summarize
+      LateEvents = count(),
+      RewrittenTimes = countif(BowerTimeRewritten),
+      OldestEvent = min(BowerEventTime),
+      MaxDeliveryDelay = max(BowerFirstIngested - BowerEventTime),
+      EventTypes = make_set(EventType, 20)
+      by CollectorId, Slot = bin(BowerFirstIngested, 1h)
+  | order by Slot asc, CollectorId asc
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+version: 1.0.0

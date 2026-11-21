@@ -1,0 +1,62 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a2009
+name: Bower collector health record missing
+description: |
+  A Bower collector stopped sending collector_health records: collector or host down, or
+  delivery to Microsoft Sentinel failing. Security events from it are not arriving either.
+  Requires BOWER_HEALTH_RECORD_INTERVAL_SECONDS and the BWR-POL-COLLECTOR-HEALTH policy.
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+queryFrequency: 5m
+queryPeriod: 1d
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - DefenseEvasion
+relevantTechniques:
+  - T1562
+query: |
+  // Bower: collector health record missing (collector down, host down, or delivery to Sentinel failing).
+  // One row per collector whose newest collector_health record was ingested more than
+  // 15 minutes ago, or (when listed in the expected set) never arrived in the window.
+  let missingAfter = 15m;
+  let expected = print CollectorId = dynamic([])
+      | mv-expand CollectorId to typeof(string)
+      | where isnotempty(CollectorId);
+  let seen = BowerSecurity_CL
+      | where EventType == "collector_health" and isnotempty(CollectorId)
+      | summarize LastIngested = max(ingestion_time()), LastRecordAt = max(TimeGenerated) by CollectorId;
+  union
+      (expected | join kind=leftanti seen on CollectorId | extend LastIngested = datetime(null), LastRecordAt = datetime(null)),
+      seen
+  | where isnull(LastIngested) or LastIngested < ago(missingAfter)
+  | extend MinutesSinceLastRecord = iff(isnull(LastIngested), real(null), round(datetime_diff('second', now(), LastIngested) / 60.0, 1))
+  | project CollectorId, LastIngested, LastRecordAt, MinutesSinceLastRecord
+  | extend LastIngestedText = tostring(LastIngested), MinutesText = tostring(MinutesSinceLastRecord)
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Host
+    fieldMappings:
+      - identifier: HostName
+        columnName: CollectorId
+customDetails:
+  CollectorId: CollectorId
+  LastIngested: LastIngestedText
+  MinutesSilent: MinutesText
+alertDetailsOverride:
+  alertDisplayNameFormat: 'Bower collector {{CollectorId}} stopped reporting'
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: 6h
+    matchingMethod: Selected
+    groupByCustomDetails:
+      - CollectorId
+version: 1.0.0
+kind: Scheduled

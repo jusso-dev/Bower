@@ -1,0 +1,85 @@
+{
+  "id": "BowerLogsIngestion",
+  "title": "Bower Security Telemetry Bridge",
+  "publisher": "Bower",
+  "descriptionMarkdown": "The [Bower](https://github.com/jusso-dev/Bower) data connector ingests validated, redacted semantic security events from self-hosted Bower collectors into the `BowerSecurity_CL` custom table via the Azure Monitor Logs Ingestion API (`Custom-BowerSecurity` DCR) or the Azure Monitor Agent Linux syslog path (`ama-syslog`).\n\nAll regulated Australian identifiers (TFN, Medicare, IHI, ABN/ACN), payment cards and credentials are redacted by Bower's deterministic Privacy & Secret Protection Engine before events leave the host.",
+  "graphQueries": [
+    {
+      "metricName": "Total data received",
+      "legend": "BowerSecurity_CL",
+      "baseQuery": "BowerSecurity_CL"
+    }
+  ],
+  "sampleQueries": [
+    {
+      "description": "Distinct security events (replay-collapsed)",
+      "query": "BowerSecurityEvents\n| summarize Events = count() by EventCategory, EventType\n| order by Events desc"
+    },
+    {
+      "description": "Latest collector health status",
+      "query": "BowerSecurity_CL\n| where EventType == \"collector_health\"\n| summarize arg_max(TimeGenerated, Attributes) by CollectorId\n| project CollectorId, TimeGenerated, Status = tostring(Attributes.status), Delivery = tostring(Attributes.delivery.status)"
+    },
+    {
+      "description": "Privacy and Secret Protection Engine alerts (metadata only)",
+      "query": "BowerSecurityEvents\n| where EventType == \"sensitive_data_detected\"\n| project BowerEventTime, ApplicationName, EventSeverity, CollectorId, PrivacyDetected\n| take 50"
+    }
+  ],
+  "dataTypes": [
+    {
+      "name": "BowerSecurity_CL",
+      "lastDataReceivedQuery": "BowerSecurity_CL\n| summarize Time = max(TimeGenerated)\n| where isnotempty(Time)"
+    }
+  ],
+  "connectivityCriterias": [
+    {
+      "type": "IsConnectedQuery",
+      "value": [
+        "BowerSecurity_CL\n| summarize LastLogReceived = max(TimeGenerated)\n| project IsConnected = LastLogReceived > ago(7d)"
+      ]
+    }
+  ],
+  "availability": {
+    "status": 1,
+    "isPreview": false
+  },
+  "permissions": {
+    "resourceProvider": [
+      {
+        "provider": "Microsoft.OperationalInsights/workspaces",
+        "permissionsDisplayText": "read and write permissions on the Log Analytics workspace.",
+        "providerDisplayName": "Workspace",
+        "scope": "Workspace",
+        "requiredPermissions": {
+          "write": true,
+          "read": true,
+          "delete": false
+        }
+      },
+      {
+        "provider": "Microsoft.Insights/dataCollectionRules",
+        "permissionsDisplayText": "Monitoring Metrics Publisher role on the Bower Data Collection Rule for each collector identity.",
+        "providerDisplayName": "Data Collection Rule",
+        "scope": "ResourceGroup",
+        "requiredPermissions": {
+          "write": true,
+          "read": true,
+          "delete": false
+        }
+      }
+    ]
+  },
+  "instructionSteps": [
+    {
+      "title": "1. Provision the BowerSecurity_CL table, DCE and DCR",
+      "description": "Deploy `deploy/bicep/main.bicep` (or the one-click template `deploy/sentinel/azuredeploy.json`) into the resource group that holds your Microsoft Sentinel workspace. Grant the collector's managed identity or service principal the **Monitoring Metrics Publisher** role on the Data Collection Rule only."
+    },
+    {
+      "title": "2. Configure the Bower collector output",
+      "description": "Set `BOWER_OUTPUT=azure-logs-ingestion`, `BOWER_DCE_ENDPOINT`, `BOWER_DCR_ID`, `BOWER_STREAM_NAME=Custom-BowerSecurity` and `BOWER_AZURE_CREDENTIAL=managed-identity` (or use `BOWER_OUTPUT=ama-syslog` with `deploy/bicep/ama-syslog-dcr.bicep` on Linux hosts running Azure Monitor Agent)."
+    },
+    {
+      "title": "3. Verify ingestion with destination-query evidence",
+      "description": "Run `bower evidence run --collector-url <url> --workspace-id <workspace-id> --signing-key <key>` or query `BowerSecurityEvents | take 10` in Logs before enabling scheduled analytics rules."
+    }
+  ]
+}

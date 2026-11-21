@@ -1,0 +1,79 @@
+id: 7a3f62c1-4c95-5e6e-8b91-5c4d2f8a2007
+name: 'Bower ASVS: mass export or bulk sensitive reads by one user'
+description: |
+  One user exported or read at least 10,000 sensitive records, or ran at least 5 exports,
+  in one hour. Supports OWASP ASVS 5.0 V16.3.2 and V2.4.1.
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: BowerLogsIngestion
+    dataTypes:
+      - BowerSecurity_CL
+queryFrequency: 5m
+queryPeriod: 500m
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - Exfiltration
+  - Collection
+relevantTechniques:
+  - T1567
+  - T1530
+query: |
+  // Bower ASVS pack: mass export or bulk sensitive reads by one user.
+  // sensitive_data_exported (BWR-POL-SENSITIVE-EXPORT) and sensitive_data_accessed
+  // (BWR-PACK-ASVS-SENSITIVE-DATA) records summed per user and application in one event-time
+  // bucket. ASVS 5.0 V16.3.2, V2.4.1. Replay-safe: once per (user, app, bucket).
+  let recordThreshold = 10000;
+  let exportThreshold = 5;
+  let bucketSize = 60m;
+  let settleDelay = 5m;
+  let frequency = 5m;
+  let catchUp = 60m;
+  let maxDelay = 360m;
+  let ruleKey = "bower-asvs-mass-export:default";
+  let windowEnd = bin(now() - settleDelay, frequency);
+  let catchUpStart = windowEnd - catchUp;
+  let horizon = bin(catchUpStart - maxDelay, bucketSize);
+  let alerted = SecurityAlert
+      | where ProviderName == "ASI Scheduled Alerts"
+      | extend BowerDetectionKey = tostring(todynamic(tostring(todynamic(ExtendedProperties)["Custom Details"])).BowerDetectionKey[0])
+      | where BowerDetectionKey startswith strcat(ruleKey, "|")
+      | distinct BowerDetectionKey;
+  let counts = BowerSecurity_CL
+      | where EventType in ("sensitive_data_exported", "sensitive_data_accessed")
+      | summarize RecordCount = take_any(tolong(Attributes.recordCount)) by CollectorId, EventId;
+  BowerSecurityEventsOfType(dynamic(["sensitive_data_exported", "sensitive_data_accessed"]))
+  | where EventResult == "success" and isnotempty(ActorUserId)
+  | where BowerEventTime >= horizon and BowerFirstIngested < windowEnd
+  | where BowerFirstIngested - BowerEventTime <= maxDelay
+  | join kind=leftouter counts on CollectorId, EventId
+  | extend BucketStart = bin(BowerEventTime, bucketSize)
+  | summarize Records = sum(coalesce(RecordCount, 1)), Exports = countif(EventType == "sensitive_data_exported"),
+      Events = count(), LastIngested = max(BowerFirstIngested), FirstEvent = min(BowerEventTime), LastEvent = max(BowerEventTime),
+      Collectors = make_set(CollectorId, 10)
+      by ActorUserId, ApplicationName, BucketStart
+  | where Records >= recordThreshold or Exports >= exportThreshold
+  | where LastIngested >= catchUpStart
+  | extend BowerDetectionKey = strcat(ruleKey, "|", ApplicationName, "|", ActorUserId, "|", tostring(BucketStart))
+  | where BowerDetectionKey !in (alerted)
+  | project BowerDetectionKey, ActorUserId, ApplicationName, BucketStart, Records, Exports, Events, Collectors,
+      FirstEvent, LastEvent, EvaluatedAt = now()
+eventGroupingSettings:
+  aggregationKind: AlertPerResult
+entityMappings:
+  - entityType: Account
+    fieldMappings:
+      - identifier: Name
+        columnName: ActorUserId
+customDetails:
+  BowerDetectionKey: BowerDetectionKey
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: 5h
+    matchingMethod: AllEntities
+version: 1.0.0
+kind: Scheduled

@@ -50,7 +50,7 @@ DOC_CONTRACT_FILES = {"README.md", "PRODUCT.md", "SECURITY.md"}
 # Workflows the CI jobs never run: each is linted by workflow-lint and runs on its own.
 SEPARATE_WORKFLOWS = {
     ".github/workflows/docs.yml", ".github/workflows/images.yml",
-    ".github/workflows/asvs-examples.yml",
+    ".github/workflows/asvs-examples.yml", ".github/workflows/sentinel-solution.yml",
 }
 
 
@@ -106,6 +106,8 @@ def select(paths, full=False):
         elif path.startswith(("deploy/bicep/", "deploy/azure-function/", "deploy/sentinel/")):
             # C# contract tests check deployed Sentinel schemas, analytics content and function config.
             selected.update(("infrastructure", "dotnet"))
+        elif path.startswith(("Solutions/", "tools/sentinel/")):
+            selected.add("infrastructure")
         elif path.startswith("deploy/"):
             selected.add("infrastructure")
             if path.startswith(AWS_EMULATOR_INPUTS):

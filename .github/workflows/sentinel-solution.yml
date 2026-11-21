@@ -1,0 +1,43 @@
+name: Sentinel solution validation
+
+on:
+  pull_request:
+    paths:
+      - 'Solutions/**'
+      - 'deploy/bicep/**'
+      - 'deploy/sentinel/**'
+      - 'tools/sentinel/**'
+      - '.github/workflows/sentinel-solution.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'Solutions/**'
+      - 'deploy/bicep/**'
+      - 'deploy/sentinel/**'
+      - 'tools/sentinel/**'
+      - '.github/workflows/sentinel-solution.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel-solution-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate-sentinel:
+    name: Validate Sentinel solution, ARM/Bicep templates and KQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Ensure Azure CLI Bicep is installed
+        run: az bicep version || az bicep install
+      - name: Validate Bicep, ARM templates, Content Hub V3 package, YAML rules and KQL
+        run: uv run --with pyyaml==6.0.2 python3 tools/sentinel/validate_sentinel.py --require-bicep
+      - name: Run Sentinel packaging unit tests
+        run: uv run --with pyyaml==6.0.2 python3 -m unittest discover -s tools/sentinel -p 'test_*.py' -v
