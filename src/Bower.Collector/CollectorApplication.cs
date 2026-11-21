@@ -97,6 +97,28 @@ public static partial class CollectorApplication
             settings.StorageWatermarks,
             services.GetService<IDiskSpaceProbe>(),
             services.GetRequiredService<TimeProvider>()));
+        builder.Services.AddSingleton(services =>
+        {
+            IDiskSpaceProbe? probe = services.GetService<IDiskSpaceProbe>();
+            TimeProvider clock = services.GetRequiredService<TimeProvider>();
+            List<(string Name, StorageGuard Guard)> extra = [];
+            if (string.Equals(settings.OutputType, "ama-spool", StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(settings.AmaSpoolPath))
+            {
+                extra.Add(("spool", new StorageGuard(Path.Combine(settings.AmaSpoolPath, ".volume"), settings.StorageWatermarks, probe, clock)));
+            }
+
+            if (!string.IsNullOrWhiteSpace(settings.ArchivePath))
+            {
+                extra.Add(("archive", new StorageGuard(Path.Combine(settings.ArchivePath, ".volume"), settings.StorageWatermarks, probe, clock)));
+            }
+
+            return new MonitoredVolumes(extra);
+        });
+        builder.Services.AddSingleton(_ => SystemdWatchdogOptions.FromEnvironment());
+        builder.Services.AddSingleton<ISystemdNotifier>(services =>
+            new UnixSystemdNotifier(services.GetRequiredService<SystemdWatchdogOptions>().NotifySocket));
+        builder.Services.AddHostedService<SystemdWatchdogService>();
         builder.Services.AddSingleton<QueueStoragePressure>();
         builder.Services.AddSingleton<IDurableEventStore>(services =>
             new SqliteEventStore(
@@ -573,12 +595,12 @@ public static partial class CollectorApplication
         // Readiness and status for probes: status only, no queue metadata without a token.
         app.MapGet(
             "/health",
-            async (IDurableEventStore eventQueue, SourceHealth sources, StorageGuard storage, HttpContext context, CancellationToken cancellationToken) =>
+            async (IDurableEventStore eventQueue, SourceHealth sources, StorageGuard storage, MonitoredVolumes volumes, HttpContext context, CancellationToken cancellationToken) =>
             {
                 QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
                 bool wecSilent = context.RequestServices.GetService<WindowsEventLogSource>()?.HasSilentSubscriptions() == true;
                 return Results.Json(
-                    new HealthResponse(Status(snapshot, sources.Evaluate(), storage.Evaluate().State, wecSilent)),
+                    new HealthResponse(Status(snapshot, sources.Evaluate(), storage.Evaluate().State, wecSilent, volumes.AnyCritical())),
                     CollectorJsonContext.Default.HealthResponse);
             });
 
@@ -594,6 +616,7 @@ public static partial class CollectorApplication
                     PipelineTelemetry telemetry,
                     SourceHealth sourceHealth,
                     StorageGuard storage,
+                    MonitoredVolumes volumes,
                     QueueStoragePressure pressure,
                     TimeProvider clock,
                     HttpContext context,
@@ -609,7 +632,7 @@ public static partial class CollectorApplication
                     WindowsEventLogSource? windowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>();
                     IReadOnlyList<WecSubscriptionRuntimeStatus>? wecRuntime = context.RequestServices.GetService<WecRuntimeStatusTracker>()?.Snapshot();
                     StatusResponse status = new(
-                        Status(snapshot, sources, storage.Evaluate().State, windowsEventLog?.HasSilentSubscriptions() == true),
+                        Status(snapshot, sources, storage.Evaluate().State, windowsEventLog?.HasSilentSubscriptions() == true, volumes.AnyCritical()),
                         settings.Version,
                         new StatusPolicyResponse(
                             bundle.Hash,
@@ -658,7 +681,8 @@ public static partial class CollectorApplication
                             activity.LastSuccessfulDeliveryAt, lastFailure?.Code, lastFailure?.At),
                         Storage = await QueueStorageStatus.TryCaptureAsync(
                             eventQueue, snapshot, pressure, telemetry, clock.GetUtcNow(), pages, cancellationToken),
-                        Recovery = context.RequestServices.GetRequiredService<CrashRecoveryState>().Last
+                        Recovery = context.RequestServices.GetRequiredService<CrashRecoveryState>().Last,
+                        Volumes = volumes.HasVolumes ? volumes.Evaluate() : null
                     };
                     return Results.Json(status, CollectorJsonContext.Default.StatusResponse);
                 })
@@ -711,8 +735,17 @@ public static partial class CollectorApplication
         }
     }
 
-    private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources, StorageState storage, bool subscriptionSilent = false) =>
-        snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) || storage == StorageState.Critical || subscriptionSilent
+    private static string Status(
+        QueueSnapshot snapshot,
+        IReadOnlyList<SourceSilenceStatus> sources,
+        StorageState storage,
+        bool subscriptionSilent = false,
+        bool auxiliaryVolumeCritical = false) =>
+        snapshot.DeadLettered > 0
+            || sources.Any(source => source.IsOverdue)
+            || storage == StorageState.Critical
+            || subscriptionSilent
+            || auxiliaryVolumeCritical
             ? "degraded"
             : "healthy";
 

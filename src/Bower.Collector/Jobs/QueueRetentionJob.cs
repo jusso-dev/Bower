@@ -65,6 +65,9 @@ public sealed partial class QueueRetentionJob(
 
         if (queue is SqliteEventStore store)
         {
+            // Opt-in dead-letter retention: warn before expiry and write a ledger evidence record before purge.
+            await HandleDeadLetterRetentionAsync(store, now, cancellationToken);
+
             // Unverified archive coverage purges nothing, but pages already free still go back.
             if (total >= 0)
             {
@@ -72,6 +75,37 @@ public sealed partial class QueueRetentionJob(
             }
 
             await ReleaseFreePagesAsync(store, cancellationToken);
+        }
+    }
+
+    private async Task HandleDeadLetterRetentionAsync(SqliteEventStore store, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (settings.DeadLetterRetention is not { } retention)
+        {
+            return;
+        }
+
+        DeadLetterHealth health = await store.GetDeadLetterHealthAsync(cancellationToken);
+        if (health.Count == 0 || health.OldestReceivedAt is null)
+        {
+            return;
+        }
+
+        TimeSpan lead = TimeSpan.FromHours(Math.Min(24, Math.Max(1, retention.TotalHours * 0.25)));
+        DateTimeOffset expiresAt = health.OldestReceivedAt.Value + retention;
+        if (expiresAt > now && expiresAt - now <= lead)
+        {
+            LogDeadLettersApproachingExpiry(logger, health.Count, (long)Math.Max(0, (expiresAt - now).TotalMinutes));
+        }
+
+        DeadLetterPurgeEvidence? evidence = await store.PurgeExpiredDeadLettersAsync(
+            now - retention,
+            BatchSize,
+            now,
+            cancellationToken);
+        if (evidence is not null)
+        {
+            LogDeadLettersPurged(logger, evidence.PurgedCount, evidence.LedgerSequence);
         }
     }
 
@@ -290,4 +324,16 @@ public sealed partial class QueueRetentionJob(
         Level = LogLevel.Warning,
         Message = "Queue retention stopped before purging: archive coverage is not verified ({Reason}; first {FirstSequence}, through {ThroughSequence}).")]
     private static partial void LogCoverageRefused(ILogger logger, string? reason, long firstSequence, long throughSequence);
+
+    [LoggerMessage(
+        EventId = 1510,
+        Level = LogLevel.Warning,
+        Message = "Dead-lettered events ({Count}) are approaching retention expiry; oldest expires in {RemainingMinutes} minute(s). Inspect with 'bower queue dead-letters' or replay before expiry.")]
+    private static partial void LogDeadLettersApproachingExpiry(ILogger logger, long count, long remainingMinutes);
+
+    [LoggerMessage(
+        EventId = 1511,
+        Level = LogLevel.Warning,
+        Message = "Opt-in dead-letter retention purged {Count} expired dead-lettered event(s); evidence recorded at queue ledger sequence {LedgerSequence}.")]
+    private static partial void LogDeadLettersPurged(ILogger logger, int count, long ledgerSequence);
 }

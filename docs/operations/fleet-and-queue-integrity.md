@@ -241,7 +241,10 @@ bower queue replay --database /var/lib/bower/queue.db --code preflight-   # or -
 ```
 
 Replay resets the attempt count and returns events to the queue. Heartbeats report
-the dead-letter count, which the console shows per collector and fleet-wide.
+the dead-letter count, `oldestDeadLetterAgeSeconds` and `recovery` state, which the
+console shows per collector and fleet-wide. Automatic dead-letter expiry is disabled by
+default; when `BOWER_DEAD_LETTER_RETENTION_DAYS` is opted into, every purge writes a
+hash-chained evidence entry in `queue_dead_letter_purges` before removing expired rows.
 
 ## Tamper-evident queue ledger
 
