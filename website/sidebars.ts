@@ -185,6 +185,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           "type": "doc",
+          "id": "deployment/syslog-vendors",
+          "label": "Syslog vendor guides"
+        },
+        {
+          "type": "doc",
           "id": "deployment/windows-event-log-source",
           "label": "Windows Event Log"
         },
@@ -351,6 +356,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       "type": "doc",
+      "id": "operations/alert-runbooks",
+      "label": "Alert runbooks"
+    },
+    {
+      "type": "doc",
       "id": "operations/tap-and-top",
       "label": "Live pipeline inspection"
     },
@@ -487,6 +497,16 @@ const sidebars: SidebarsConfig = {
       "type": "doc",
       "id": "reference/cli",
       "label": "bower CLI"
+    },
+    {
+      "type": "doc",
+      "id": "reference/configuration",
+      "label": "Configuration and schemas"
+    },
+    {
+      "type": "doc",
+      "id": "reference/api",
+      "label": "HTTP API reference"
     },
     {
       "type": "doc",
