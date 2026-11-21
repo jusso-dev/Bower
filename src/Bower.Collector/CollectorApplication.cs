@@ -176,6 +176,20 @@ public static partial class CollectorApplication
                 IsTransientStorageFailure = QueueStorageErrors.IsBusy
             });
             builder.Services.AddHostedService<WindowsEventLogIntakeService>();
+            string[] wecSubscriptions = sources.WindowsEventLog.Subscriptions
+                .Select(item => item.WecSubscriptionName)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Cast<string>()
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (wecSubscriptions.Length > 0)
+            {
+                builder.Services.AddSingleton(services => new WecRuntimeStatusTracker(
+                    wecSubscriptions,
+                    services.GetService<IWecRuntimeReader>()
+                        ?? new WindowsWecRuntimeReader(services.GetRequiredService<TimeProvider>())));
+                builder.Services.AddTransient<WecRuntimeStatusJob>();
+            }
         }
         if (sources.FileTail is { } fileTail)
         {
@@ -395,6 +409,14 @@ public static partial class CollectorApplication
             TemporaryFileSweepJob.Id,
             (job, token) => job.RunAsync(token),
             Cron.Hourly());
+        if (app.Services.GetService<WecRuntimeStatusTracker>() is { HasSubscriptions: true })
+        {
+            jobs.AddOrUpdate<WecRuntimeStatusJob>(
+                WecRuntimeStatusJob.Id,
+                (job, token) => job.RunAsync(token),
+                Cron.Minutely());
+            jobs.Trigger(WecRuntimeStatusJob.Id);
+        }
         if (settings.ManagementEndpoint is not null)
         {
             // Parses the trusted command keys now, so an invalid key is reported at start-up.
@@ -551,11 +573,12 @@ public static partial class CollectorApplication
         // Readiness and status for probes: status only, no queue metadata without a token.
         app.MapGet(
             "/health",
-            async (IDurableEventStore eventQueue, SourceHealth sources, StorageGuard storage, CancellationToken cancellationToken) =>
+            async (IDurableEventStore eventQueue, SourceHealth sources, StorageGuard storage, HttpContext context, CancellationToken cancellationToken) =>
             {
                 QueueSnapshot snapshot = await eventQueue.GetSnapshotAsync(cancellationToken);
+                bool wecSilent = context.RequestServices.GetService<WindowsEventLogSource>()?.HasSilentSubscriptions() == true;
                 return Results.Json(
-                    new HealthResponse(Status(snapshot, sources.Evaluate(), storage.Evaluate().State)),
+                    new HealthResponse(Status(snapshot, sources.Evaluate(), storage.Evaluate().State, wecSilent)),
                     CollectorJsonContext.Default.HealthResponse);
             });
 
@@ -583,8 +606,10 @@ public static partial class CollectorApplication
                     DeliveryFailureActivity? lastFailure = activity.LastFailure;
                     // Read once: queuePages and the storage block report the same page use.
                     QueuePageUsage? pages = await QueueStorageStatus.TryReadPagesAsync(eventQueue, cancellationToken);
+                    WindowsEventLogSource? windowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>();
+                    IReadOnlyList<WecSubscriptionRuntimeStatus>? wecRuntime = context.RequestServices.GetService<WecRuntimeStatusTracker>()?.Snapshot();
                     StatusResponse status = new(
-                        Status(snapshot, sources, storage.Evaluate().State),
+                        Status(snapshot, sources, storage.Evaluate().State, windowsEventLog?.HasSilentSubscriptions() == true),
                         settings.Version,
                         new StatusPolicyResponse(
                             bundle.Hash,
@@ -624,7 +649,8 @@ public static partial class CollectorApplication
                         Relay = context.RequestServices.GetService<RelayTelemetry>()?.Snapshot(),
                         Activity = telemetry.BusiestSources(),
                         Tap = context.RequestServices.GetRequiredService<EventTap>().Snapshot(),
-                        WindowsEventLog = context.RequestServices.GetService<WindowsEventLogSource>()?.Snapshot(),
+                        WindowsEventLog = windowsEventLog?.Snapshot(),
+                        WecRuntime = wecRuntime is { Count: > 0 } ? wecRuntime : null,
                         FileTail = context.RequestServices.GetService<FileTailSource>()?.Snapshot(),
                         QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
                         Output = context.RequestServices.GetService<IOutputAdapter>()?.Id,
@@ -685,8 +711,8 @@ public static partial class CollectorApplication
         }
     }
 
-    private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources, StorageState storage) =>
-        snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) || storage == StorageState.Critical
+    private static string Status(QueueSnapshot snapshot, IReadOnlyList<SourceSilenceStatus> sources, StorageState storage, bool subscriptionSilent = false) =>
+        snapshot.DeadLettered > 0 || sources.Any(source => source.IsOverdue) || storage == StorageState.Critical || subscriptionSilent
             ? "degraded"
             : "healthy";
 

@@ -71,6 +71,7 @@ bower doctor \
 | collector | Reachability, dead letters, running policy bundle hash |
 | ledger | Queue tamper-evidence chain |
 | dcr, table | Live drift against Bower's schema |
+| wec | WEC host readiness (`--wec-subscription NAME`, `--wec-channel ForwardedEvents`): `Wecsvc` running, subscriptions present and enabled, `wecutil gr` active clients, channel size/fill, WinRM HTTPS 5986 listener and certificate expiry |
 
 Every check is read-only. Exit code 1 when any check fails. `--json` for automation.
 An unreachable collector, including one that does not answer within 10 seconds, is a

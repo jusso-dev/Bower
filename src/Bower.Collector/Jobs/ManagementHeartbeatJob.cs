@@ -6,6 +6,7 @@ using Bower.Abstractions;
 using Bower.Core;
 using Bower.Jobs;
 using Bower.Packs;
+using Bower.Source.WindowsEventLog;
 
 namespace Bower.Collector.Jobs;
 
@@ -27,7 +28,9 @@ public sealed partial class ManagementHeartbeatJob(
     TimeSpan? exchangeTimeout = null,
     ManagementEnrolment? enrolment = null,
     PipelineTelemetry? telemetry = null,
-    QueueStoragePressure? storagePressure = null)
+    QueueStoragePressure? storagePressure = null,
+    WindowsEventLogSource? windowsEventLog = null,
+    WecRuntimeStatusTracker? wecRuntime = null)
 {
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
@@ -90,7 +93,8 @@ public sealed partial class ManagementHeartbeatJob(
             settings.MaximumQueueBytes, now, storage?.IntakePaused ?? false, pages?.UsedPercent);
         // Finished command results stay pending until management acknowledges them.
         IReadOnlyList<CommandResultReport> results = commands?.Ledger.PendingResults() ?? [];
-        // Expected applications report as sources so silent ones show in the console.
+        // Expected applications and Windows Event Log/WEC subscriptions report as sources so silent or failing ones show in the console.
+        IReadOnlyList<WecSubscriptionRuntimeStatus> wecSnapshots = wecRuntime?.Snapshot() ?? [];
         SourceReport[] sources =
         [
             new SourceReport("local-http", "local-http", "healthy", null, null),
@@ -99,7 +103,23 @@ public sealed partial class ManagementHeartbeatJob(
                 "application",
                 item.IsActive ? "healthy" : item.State,
                 item.SilentSeconds,
-                item.LastSeenAt))
+                item.LastSeenAt)),
+            .. (windowsEventLog?.Snapshot() ?? []).Select(item => new SourceReport(
+                $"windows-eventlog:{item.Id}",
+                "windows-eventlog",
+                item.IsSilent
+                    ? "silent"
+                    : item.State is "running" or "starting" ? "healthy" : item.State,
+                item.SilentSeconds,
+                item.LastEventAt)),
+            .. wecSnapshots.Select(item => new SourceReport(
+                $"wec:{item.SubscriptionId}",
+                "windows-wec",
+                item.ErrorCode is not null || (item.ErrorClients > 0 && item.ActiveClients == 0)
+                    ? "error"
+                    : item.ActiveClients == 0 || item.ErrorClients > 0 ? "degraded" : "healthy",
+                null,
+                item.Sources.Select(source => source.LastHeartbeatAt).Where(time => time is not null).Max()))
         ];
         OutputReport[] outputs =
         [
@@ -157,7 +177,8 @@ public sealed partial class ManagementHeartbeatJob(
                     CommandCapabilities = commands?.Capabilities ?? [],
                     CommandResults = results,
                     Redactions = telemetry?.RedactionSnapshot(),
-                    Storage = storage
+                    Storage = storage,
+                    WecRuntime = wecSnapshots.Count > 0 ? wecSnapshots : null
                 },
                 CollectorJsonContext.Default.CollectorHeartbeat));
         // One budget for the whole exchange, body included: a stalled body cannot hold the

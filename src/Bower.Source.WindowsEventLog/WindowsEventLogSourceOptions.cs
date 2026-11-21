@@ -21,6 +21,8 @@ public sealed record WindowsEventLogSourceConfiguration(
 /// <param name="IncludeMessage">Render the publisher message string into the record's <c>message</c> field.</param>
 /// <param name="PollIntervalSeconds">Wait between reads once the subscription has caught up.</param>
 /// <param name="BatchSize">Events read per query; the bookmark is committed after each batch.</param>
+/// <param name="WecSubscriptionName">Optional Windows Event Collector subscription name (for example <c>bower-security-logon</c>) polled via <c>wecutil gr</c> for <c>/v1/status</c> and heartbeats.</param>
+/// <param name="MaxSilentSeconds">Optional per-subscription source-silence threshold (60–86400 s). Exceeding it degrades <c>/health</c> and reports <c>silent</c> in heartbeats.</param>
 public sealed record WindowsEventSubscriptionOptions(
     string Id,
     string Channel,
@@ -31,7 +33,9 @@ public sealed record WindowsEventSubscriptionOptions(
     bool ReadExisting = false,
     bool IncludeMessage = false,
     int PollIntervalSeconds = 2,
-    int BatchSize = 64)
+    int BatchSize = 64,
+    string? WecSubscriptionName = null,
+    int? MaxSilentSeconds = null)
 {
     /// <summary>Durable bookmark key in the queue database's source cursor table.</summary>
     [JsonIgnore]
@@ -167,6 +171,16 @@ public static class WindowsEventLogSourceConfigurationLoader
             throw Invalid(id, "batchSize must be between 1 and 256.");
         }
 
+        if (subscription.WecSubscriptionName is not null && !WecRuntimeStatusParser.IsValidSubscriptionName(subscription.WecSubscriptionName))
+        {
+            throw Invalid(id, "wecSubscriptionName must be 1–128 letters, digits, '-', '_' or '.'.");
+        }
+
+        if (subscription.MaxSilentSeconds is not null && subscription.MaxSilentSeconds is < 60 or > 86_400)
+        {
+            throw Invalid(id, "maxSilentSeconds must be between 60 and 86400.");
+        }
+
         return subscription with
         {
             EventIds = [.. subscription.EventIds.Order()],
@@ -205,4 +219,5 @@ public static class WindowsEventLogSourceConfigurationLoader
 [JsonSerializable(typeof(WindowsEventLogSourceConfiguration))]
 [JsonSerializable(typeof(WindowsEventBookmark))]
 [JsonSerializable(typeof(IReadOnlyList<WindowsEventSubscriptionStatus>))]
+[JsonSerializable(typeof(IReadOnlyList<WecSubscriptionRuntimeStatus>))]
 internal sealed partial class WindowsEventLogJsonContext : JsonSerializerContext;

@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json.Serialization;
 using Bower.Abstractions;
 
 namespace Bower.Source.WindowsEventLog;
@@ -145,7 +146,9 @@ public sealed record WindowsEventSubscriptionStatus(
     long Resets,
     long CursorConflicts,
     DateTimeOffset? LastEventAt,
-    DateTimeOffset? LastPollAt);
+    DateTimeOffset? LastPollAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool IsSilent = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] long? SilentSeconds = null);
 
 /// <param name="Read">Events the channel returned for the query.</param>
 /// <param name="Backpressure">The queue could not take an event; it is retried next time.</param>
@@ -173,6 +176,7 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
     private readonly ISourceCursorStore cursors;
     private readonly IWindowsEventChannelFactory channels;
     private readonly TimeProvider clock;
+    private readonly DateTimeOffset startedAt;
     private readonly Dictionary<string, Subscription> subscriptions;
     private readonly CancellationTokenSource stopping = new();
     private readonly List<Task> running = [];
@@ -194,6 +198,7 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
         this.cursors = cursors;
         this.channels = channels;
         this.clock = clock ?? TimeProvider.System;
+        startedAt = this.clock.GetUtcNow();
         subscriptions = configuration.Subscriptions.ToDictionary(
             options => options.Id,
             options => new Subscription(options),
@@ -232,8 +237,17 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    public IReadOnlyList<WindowsEventSubscriptionStatus> Snapshot() =>
-        [.. subscriptions.Values.Select(subscription => subscription.Snapshot())];
+    public IReadOnlyList<WindowsEventSubscriptionStatus> Snapshot()
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        return [.. subscriptions.Values.Select(subscription => subscription.Snapshot(now, startedAt))];
+    }
+
+    public bool HasSilentSubscriptions()
+    {
+        DateTimeOffset now = clock.GetUtcNow();
+        return subscriptions.Values.Any(subscription => subscription.IsSilentAt(now, startedAt));
+    }
 
     /// <summary>
     /// One read of one subscription: resume from the bookmark, hand each event to the sink
@@ -756,11 +770,33 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
 
         public void SetBookmark(long recordId) => Interlocked.Exchange(ref bookmarkRecordId, recordId);
 
-        public WindowsEventSubscriptionStatus Snapshot()
+        public bool IsSilentAt(DateTimeOffset now, DateTimeOffset sourceStartedAt)
+        {
+            if (Options.MaxSilentSeconds is not { } limit)
+            {
+                return false;
+            }
+
+            long lastEvent = Interlocked.Read(ref LastEventTicks);
+            DateTimeOffset reference = lastEvent == 0 ? sourceStartedAt : new DateTimeOffset(lastEvent, TimeSpan.Zero);
+            return (now - reference).TotalSeconds > limit;
+        }
+
+        public WindowsEventSubscriptionStatus Snapshot(DateTimeOffset now, DateTimeOffset sourceStartedAt)
         {
             long bookmark = Interlocked.Read(ref bookmarkRecordId);
             long lastEvent = Interlocked.Read(ref LastEventTicks);
             long lastPoll = Interlocked.Read(ref LastPollTicks);
+            DateTimeOffset? lastEventAt = lastEvent == 0 ? null : new DateTimeOffset(lastEvent, TimeSpan.Zero);
+            long? silentSeconds = null;
+            bool isSilent = false;
+            if (Options.MaxSilentSeconds is { } limit)
+            {
+                DateTimeOffset reference = lastEventAt ?? sourceStartedAt;
+                silentSeconds = Math.Max(0, (long)(now - reference).TotalSeconds);
+                isSilent = silentSeconds > limit;
+            }
+
             return new WindowsEventSubscriptionStatus(
                 Options.Id,
                 Options.Channel,
@@ -782,8 +818,10 @@ public sealed class WindowsEventLogSource : IAsyncDisposable
                 Interlocked.Read(ref Counters.Gaps),
                 Interlocked.Read(ref Counters.Resets),
                 Interlocked.Read(ref Counters.CursorConflicts),
-                lastEvent == 0 ? null : new DateTimeOffset(lastEvent, TimeSpan.Zero),
-                lastPoll == 0 ? null : new DateTimeOffset(lastPoll, TimeSpan.Zero));
+                lastEventAt,
+                lastPoll == 0 ? null : new DateTimeOffset(lastPoll, TimeSpan.Zero),
+                isSilent,
+                silentSeconds);
         }
     }
 

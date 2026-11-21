@@ -115,6 +115,20 @@ access string through Group Policy to include `(A;;0x1;;;S-1-5-20)`.
 
 ## 5. Check it
 
+Run `bower doctor` on the WEC host to verify the service, subscription state, active
+clients, `ForwardedEvents` sizing and fill, and the WinRM HTTPS 5986 listener and
+certificate expiry in one pass:
+
+```powershell
+bower doctor --wec-subscription bower-security-logon --wec-channel ForwardedEvents
+```
+
+Add `"wecSubscriptionName": "bower-security-logon"` and `"maxSilentSeconds": 900` to the
+subscription in `BOWER_WINDOWS_EVENTLOG_CONFIG` so the collector polls `wecutil gr` on a
+1-minute schedule, reports per-client runtime counts in `/v1/status` (`wecRuntime`) and
+the management heartbeat, and degrades `/health` if the subscription goes silent past the
+threshold.
+
 | Check | How |
 |---|---|
 | Subscription present and enabled | `wecutil gs bower-security-logon` |

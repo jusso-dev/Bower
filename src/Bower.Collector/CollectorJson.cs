@@ -71,6 +71,10 @@ internal sealed record StatusResponse(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.WindowsEventLog.WindowsEventSubscriptionStatus>? WindowsEventLog { get; init; }
 
+    /// <summary>WEC runtime client counts from <c>wecutil gr</c>; omitted when no WEC subscriptions are configured. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.WindowsEventLog.WecSubscriptionRuntimeStatus>? WecRuntime { get; init; }
+
     /// <summary>File tail input counters; omitted when BOWER_FILE_CONFIG is not set. Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.File.FileTailInputStatus>? FileTail { get; init; }
@@ -223,6 +227,10 @@ internal sealed record CollectorHeartbeat(
     /// <summary>Queue volume watermarks and queue use (additive; older management ignores it). Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public QueueStorageStatus? Storage { get; init; }
+
+    /// <summary>WEC runtime status per configured WEC subscription (additive). Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.WindowsEventLog.WecSubscriptionRuntimeStatus>? WecRuntime { get; init; }
 }
 
 /// <summary>
