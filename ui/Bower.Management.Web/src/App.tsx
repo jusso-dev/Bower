@@ -12,6 +12,7 @@ import {
   Plug,
   Moon,
   ScrollText,
+  ShieldCheck,
   Sun,
   Ticket,
   Timer,
@@ -34,6 +35,7 @@ import { AccessPage } from "./pages/AccessPage";
 import { AuditPage } from "./pages/AuditPage";
 import { JobsPage } from "./pages/JobsPage";
 import { PrivacyProfilesPage } from "./pages/PrivacyProfilesPage";
+import { PoliciesPage } from "./pages/PoliciesPage";
 import { SetupPage } from "./pages/SetupPage";
 import { EnrolmentPage } from "./pages/EnrolmentPage";
 import { SourcesPage } from "./pages/SourcesPage";
@@ -50,6 +52,7 @@ const navItems = [
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { to: "/enrolment", label: "Enrolment", icon: Ticket },
+  { to: "/policies", label: "Policies", icon: ShieldCheck },
   { to: "/privacy-profiles", label: "Privacy profiles", icon: FileLock },
   { to: "/jobs", label: "Jobs", icon: Timer },
   { to: "/access", label: "Access", icon: KeyRound },
@@ -184,6 +187,7 @@ export function App() {
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
           <Route path="/enrolment" element={<EnrolmentPage />} />
+          <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/privacy-profiles" element={<PrivacyProfilesPage />} />
           <Route path="/jobs" element={<JobsPage />} />
           <Route path="/access" element={<AccessPage />} />

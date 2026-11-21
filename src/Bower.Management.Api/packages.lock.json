@@ -326,6 +326,13 @@
           "YamlDotNet": "[18.1.0, )"
         }
       },
+      "bower.policyengine": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )",
+          "YamlDotNet": "[18.1.0, )"
+        }
+      },
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
