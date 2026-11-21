@@ -70,6 +70,16 @@ public static class PackRuntime
             return valid ? text : throw new InvalidDataException("pack-field-type-invalid");
         }
 
+        string? ReadOptional(string name)
+        {
+            if (!root.TryGetProperty(name, out JsonElement value) || value.ValueKind == JsonValueKind.Null)
+            {
+                return null;
+            }
+
+            return Read(name);
+        }
+
         foreach ((string field, string expected) in mapping.Match)
         {
             if (!string.Equals(Read(field), expected, StringComparison.Ordinal))
@@ -79,6 +89,7 @@ public static class PackRuntime
         }
 
         string? Mapped(string target) => mapping.Fields.TryGetValue(target, out string? source) ? Read(source) : null;
+        string? MappedOptional(string target) => mapping.Fields.TryGetValue(target, out string? source) ? ReadOptional(source) : null;
         string id = Mapped("eventId")!;
         string timestamp = Mapped("timeGenerated")!;
         if (id.Length > 128 || !TryTimestamp(timestamp, out DateTimeOffset generated))
@@ -86,12 +97,44 @@ public static class PackRuntime
             throw new InvalidDataException("pack-identity-or-time-invalid");
         }
 
+        string category = Mapped("eventCategory") ?? mapping.EventCategory;
+        string action = Mapped("eventAction") ?? mapping.EventAction;
+        string resultText = Mapped("eventResult") ?? mapping.EventResult;
+        if (category.Length > 128 || action.Length > 128
+            || resultText is not ("success" or "failure" or "denied" or "unknown"))
+        {
+            throw new InvalidDataException("pack-field-invalid");
+        }
+
         string? username = Mapped("actor.username");
         string? userId = Mapped("actor.userId");
-        string? ip = Mapped("source.ipAddress");
+        string? ip = MappedOptional("source.ipAddress");
         if (ip is not null && !IsAddress(ip))
         {
             throw new InvalidDataException("pack-source-invalid");
+        }
+
+        string? targetType = Mapped("target.type");
+        string? targetId = MappedOptional("target.id");
+        string? targetName = MappedOptional("target.name");
+        if (targetType is null && (targetId is not null || targetName is not null))
+        {
+            throw new InvalidDataException("pack-field-invalid");
+        }
+
+        Dictionary<string, string>? labels = null;
+        foreach ((string target, string source) in mapping.Fields)
+        {
+            if (!target.StartsWith("labels.", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (ReadOptional(source) is { } labelValue)
+            {
+                labels ??= new Dictionary<string, string>(StringComparer.Ordinal);
+                labels[target[7..]] = labelValue;
+            }
         }
 
         string? correlation = Mapped("request.correlationId");
@@ -101,15 +144,17 @@ public static class PackRuntime
             EventId = id,
             EventOriginalId = id,
             TimeGenerated = generated,
-            EventCategory = mapping.EventCategory,
+            EventCategory = category,
             EventType = mapping.EventType,
-            EventAction = mapping.EventAction,
-            EventResult = Enum.Parse<EventResult>(mapping.EventResult, ignoreCase: true),
-            EventOutcomeReason = Mapped("eventOutcomeReason"),
+            EventAction = action,
+            EventResult = Enum.Parse<EventResult>(resultText, ignoreCase: true),
+            EventOutcomeReason = MappedOptional("eventOutcomeReason"),
             Application = new ApplicationContext { Name = mapping.ApplicationName, Environment = mapping.Environment },
             Actor = username is null && userId is null ? null : new ActorContext { Username = username, UserId = userId },
+            Target = targetType is null ? null : new TargetContext { Type = targetType, Id = targetId, Name = targetName },
             Source = ip is null ? null : new SourceContext { IpAddress = ip },
-            Request = correlation is null ? null : new RequestContext { CorrelationId = correlation }
+            Request = correlation is null ? null : new RequestContext { CorrelationId = correlation },
+            Labels = labels
         };
     }
 

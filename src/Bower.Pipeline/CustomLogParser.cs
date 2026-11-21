@@ -428,20 +428,34 @@ public static partial class CustomLogParser
         {
             string[] metadata = [runtime.ApplicationName, runtime.Environment, runtime.EventCategory,
                 runtime.EventType, runtime.EventAction];
-            string[] targets = ["eventId", "timeGenerated", "actor.username", "actor.userId",
+            string[] targets = ["eventId", "timeGenerated", "eventCategory", "eventAction", "eventResult",
+                "actor.username", "actor.userId", "target.type", "target.id", "target.name",
                 "source.ipAddress", "request.correlationId", "eventOutcomeReason"];
+            static bool IsValidRuntimeTarget(string target, string[] allowedTargets) =>
+                allowedTargets.Contains(target, StringComparer.Ordinal)
+                || (target.StartsWith("labels.", StringComparison.Ordinal)
+                    && target.Length is > 7 and <= 71
+                    && IsValidLabelKey(target[7..]));
+
             if (configuration.Format != CustomLogFormat.Json
                 || metadata.Any(value => string.IsNullOrWhiteSpace(value) || value.Length > 128)
                 || runtime.EventResult is not ("success" or "failure" or "denied" or "unknown")
                 || runtime.Match is null || runtime.Match.Count is < 1 or > 16
-                || runtime.Fields is null || runtime.Fields.Count is < 2 or > 7
+                || runtime.Fields is null || runtime.Fields.Count is < 2 or > 16
                 || !runtime.Fields.ContainsKey("eventId") || !runtime.Fields.ContainsKey("timeGenerated")
-                || runtime.Fields.Keys.Any(target => !targets.Contains(target, StringComparer.Ordinal))
+                || runtime.Fields.Keys.Any(target => !IsValidRuntimeTarget(target, targets))
+                || runtime.Fields.Keys.Count(target => target.StartsWith("labels.", StringComparison.Ordinal)) > 8
                 || runtime.Fields.Values.Any(source => !names.Contains(source))
                 || runtime.Match.Any(pair => !names.Contains(pair.Key) || string.IsNullOrEmpty(pair.Value) || pair.Value.Length > 2048))
             {
                 issues.Add("Invalid runtime semantic mapping; only bounded, filtered JSON mappings are supported.");
             }
+
+            static bool IsValidLabelKey(string key) =>
+                !string.IsNullOrWhiteSpace(key)
+                && char.IsAsciiLetter(key[0])
+                && key.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '_' or '.' or '-')
+                && !IsProhibited(key);
 
             if (runtime.ToTransformDefinition(configuration.Fields) is { } transforms)
             {

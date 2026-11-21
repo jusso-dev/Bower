@@ -17,6 +17,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton(options);
         services.AddSingleton<BufferedBowerClient>();
         services.AddSingleton<IBowerTelemetry>(provider => provider.GetRequiredService<BufferedBowerClient>());
+        services.AddSingleton<IAsvsTelemetry>(provider => provider.GetRequiredService<BufferedBowerClient>());
         services.AddSingleton<IBowerTelemetryDiagnostics>(provider => provider.GetRequiredService<BufferedBowerClient>());
         return services;
     }

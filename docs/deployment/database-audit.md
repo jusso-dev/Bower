@@ -16,11 +16,19 @@ Use the database's native audit facility first. Then pick one of two paths into 
    [ASVS pack](../security/asvs-logging-pack.md) policy `BWR-PACK-ASVS-DB-AUDIT` selects them,
    and they land in `BowerSecurity_CL` beside the application events.
 
-Bower doesn't ship a parser for any of these formats yet. The
-[file tail](file-tail-source.md) and [syslog](syslog-source.md) sources plus a
-[custom parser](../developer-integration/custom-log-parser.md) are the building blocks;
-each format still needs its own signed parser, privacy fixtures and samples before it counts
-as supported.
+Bower ships four signed parsers in `packs/owasp-asvs-app-logging/parsers/` for self-managed
+database audit streams:
+
+- `pgaudit-jsonlog.json` — PostgreSQL 15+ `jsonlog` `AUDIT:` and password-failure records
+- `mysql-audit-json.json` — MySQL Enterprise Audit and Percona `audit_log_filter` JSON records
+- `mongodb-audit-json.json` — MongoDB Enterprise / Atlas JSON audit records
+- `sqlserver-audit-33205.json` — SQL Server Audit Windows Event ID `33205` via the Windows Event Log source
+
+Pair them with the [file tail](file-tail-source.md), [syslog](syslog-source.md) or
+[Windows Event Log](windows-event-log-source.md) source. Every parser maps only allow-listed
+security metadata (`actor.username`, `source.ipAddress`, `target.name`, `labels.dbEngine`,
+`labels.dbStatementClass`) and drops raw SQL or command statements before redaction and
+persistence. Cosmos DB continues to use Azure native diagnostic settings (path 1).
 
 ## The `database_audit` event
 
