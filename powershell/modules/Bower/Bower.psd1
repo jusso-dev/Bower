@@ -1,5 +1,5 @@
 @{
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '1.0.0'
     GUID                 = 'ce1b7b59-0929-4ca2-9ed4-02cc201ebe55'
     Author               = 'Bower contributors'
     CompanyName          = 'Bower'

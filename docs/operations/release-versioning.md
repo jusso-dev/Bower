@@ -298,7 +298,7 @@ dpkg/rpm, `100` for apt, `1603` for msiexec), and the installed version, service
   (`UnsupportedQueueSchemaException`) only if it includes the queue schema pre-check (#163 and
   later); an older image without it can write tables into a newer queue before failing. Never
   start an older image on a volume a newer release has opened.
-- **PowerShell modules** keep their own module versions (`0.1.0`); they are not Bower release
+- **PowerShell modules** keep their own module versions (`1.0.0`); they are not Bower release
   artefacts.
 - **Upgrade-test fixtures** carry this build's binaries under an older package version, so after
   installing one the collector still reports this build's version.

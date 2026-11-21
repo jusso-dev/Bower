@@ -1,6 +1,6 @@
 @{
     RootModule           = 'Bower.Privacy.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '1.0.0'
     GUID                 = '3f51454e-18fd-4e0d-b8fa-b0b385deaecb'
     Author               = 'Bower contributors'
     CompanyName          = 'Bower'

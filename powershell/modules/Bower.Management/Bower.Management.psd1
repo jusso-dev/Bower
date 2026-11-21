@@ -1,6 +1,6 @@
 @{
     RootModule           = 'Bower.Management.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '1.0.0'
     GUID                 = 'da1d7005-5888-4701-b616-4040b1ac96df'
     Author               = 'Bower contributors'
     CompanyName          = 'Bower'
