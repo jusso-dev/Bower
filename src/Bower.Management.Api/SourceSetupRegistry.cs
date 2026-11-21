@@ -89,6 +89,8 @@ internal static partial class SourceSetupRegistry
         new WindowsEventLogSourceSetup(),
         new FileTailSourceSetup(),
         new SqlServerSourceSetup(),
+        new JournaldSourceSetup(),
+        new KubernetesSourceSetup(),
         new DockerSourceSetup(),
         new AwsSourceSetup(),
         new GcpSourceSetup(),

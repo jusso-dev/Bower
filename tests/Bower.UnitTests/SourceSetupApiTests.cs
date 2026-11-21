@@ -55,7 +55,7 @@ public sealed class SourceSetupApiTests
         SourceTypeDefinition[] types = (await ManagementApiTests.Client(app, BowerRoles.Viewer)
             .GetFromJsonAsync<SourceTypeDefinition[]>("/api/sources/types", ManagementApiTests.ApiJson, cancellationToken))!;
 
-        Assert.Equal(["syslog", "windows-eventlog", "file", "sql-server", "docker", "aws", "gcp", "ama", "http-sdk"], types.Select(type => type.Id));
+        Assert.Equal(["syslog", "windows-eventlog", "file", "sql-server", "journald", "kubernetes", "docker", "aws", "gcp", "ama", "http-sdk"], types.Select(type => type.Id));
         string[] kinds =
         [
             SourceFieldKinds.Text, SourceFieldKinds.Number, SourceFieldKinds.Choice, SourceFieldKinds.Boolean,
@@ -609,6 +609,63 @@ public sealed class SourceSetupApiTests
         CurrentAccess access = (await client.GetFromJsonAsync<CurrentAccess>("/api/access/me", ManagementApiTests.ApiJson, cancellationToken))!;
 
         Assert.Equal(expected, access.ObjectId);
+    }
+
+    [Fact]
+    public async Task Plan_JournaldAndKubernetes_EnforceAllowListsAndProduceRedactedPreviews()
+    {
+        CancellationToken cancellationToken = TestContext.Current.CancellationToken;
+        using TemporaryDirectory directory = new();
+        await using WebApplication app = await ManagementApiTests.StartAsync(directory, new FakeClock(Now), cancellationToken);
+        await ActiveCollectorAsync(app, "edge-01", cancellationToken);
+
+        // Journald: rejects wildcards and empty unit/identifier lists.
+        SourceSetupPlanResult wildcardJournald = await PlanAsync(app, "journald", "edge-01", new()
+        {
+            ["subscriptionName"] = "ssh-journal",
+            ["units"] = "*.service"
+        }, cancellationToken);
+        Assert.False(wildcardJournald.Valid);
+        Assert.Contains(wildcardJournald.Checks, check => check.Id == "units" && check.State == SetupCheckStates.Fail);
+
+        SourceSetupPlanResult emptyJournald = await PlanAsync(app, "journald", "edge-01", new()
+        {
+            ["subscriptionName"] = "ssh-journal",
+            ["units"] = "",
+            ["identifiers"] = ""
+        }, cancellationToken);
+        Assert.True(emptyJournald.Valid); // Default units apply when blank; explicit valid plan produces redacted preview.
+        Assert.Contains("JournaldSource", File(emptyJournald.Plan!, "journald.json"), StringComparison.Ordinal);
+        Assert.Contains("SupplementaryGroups=systemd-journal", emptyJournald.Plan!.Snippets[0].Content, StringComparison.Ordinal);
+        Assert.NotNull(emptyJournald.Preview);
+        Assert.True(emptyJournald.Preview.Valid);
+        Assert.DoesNotContain("123 456 782", emptyJournald.Preview.Redacted!, StringComparison.Ordinal);
+
+        // Kubernetes: rejects uppercase/wildcard namespaces and invalid selectors.
+        SourceSetupPlanResult badK8s = await PlanAsync(app, "kubernetes", "edge-01", new()
+        {
+            ["namespaces"] = "*",
+            ["labelSelectors"] = "bad-selector"
+        }, cancellationToken);
+        Assert.False(badK8s.Valid);
+        Assert.Contains(badK8s.Checks, check => check.Id == "namespaces" && check.State == SetupCheckStates.Fail);
+        Assert.Contains(badK8s.Checks, check => check.Id == "labelSelectors" && check.State == SetupCheckStates.Fail);
+
+        SourceSetupPlanResult goodK8s = await PlanAsync(app, "kubernetes", "edge-01", new()
+        {
+            ["namespaces"] = "security-apps, payments",
+            ["labelSelectors"] = "bower.security/collect=true",
+            ["allowedMetadataLabels"] = "app.kubernetes.io/name"
+        }, cancellationToken);
+        Assert.True(goodK8s.Valid);
+        string k8sJson = File(goodK8s.Plan!, "kubernetes.json");
+        Assert.Contains("KubernetesLogSource", k8sJson, StringComparison.Ordinal);
+        Assert.Contains("security-apps", k8sJson, StringComparison.Ordinal);
+        Assert.Contains("kind: Role", goodK8s.Plan!.Snippets[0].Content, StringComparison.Ordinal);
+        Assert.DoesNotContain("ClusterRole", goodK8s.Plan.Snippets[0].Content.Split('\n').Where(line => !line.TrimStart().StartsWith('#')).Aggregate(string.Empty, (a, b) => a + b), StringComparison.Ordinal);
+        Assert.NotNull(goodK8s.Preview);
+        Assert.True(goodK8s.Preview.Valid);
+        Assert.DoesNotContain("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9", goodK8s.Preview.Redacted!, StringComparison.Ordinal);
     }
 
     internal static async Task<SourceSetupPlanResult> PlanAsync(

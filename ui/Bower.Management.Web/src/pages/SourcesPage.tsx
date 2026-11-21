@@ -1,4 +1,4 @@
-import { Download, KeyRound, Plug, RefreshCw, Send } from "lucide-react";
+import { Download, Eye, KeyRound, Plug, RefreshCw, Send } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { ApiError, useApi, useApiDownload } from "../api";
@@ -12,6 +12,7 @@ import type {
   Access,
   Collector,
   GuidedState,
+  PipelineTapResponse,
   SourceSetupPlanResult,
   SourceSetupRequestDetail,
   SourceSetupRequestSummary,
@@ -469,6 +470,7 @@ const requestTitles: Record<RequestStep, string> = {
 };
 
 function SourceRequestView({ id, canOperate }: { id: string; canOperate: boolean }) {
+  const api = useApi();
   const request = useResource<SourceSetupRequestDetail>(`/api/sources/requests/${encodeURIComponent(id)}`);
   const { revalidate } = request;
   const download = useApiDownload();
@@ -476,10 +478,32 @@ function SourceRequestView({ id, canOperate }: { id: string; canOperate: boolean
   const [polls, setPolls] = useState(0);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
+  const [tapBusy, setTapBusy] = useState(false);
+  const [tapError, setTapError] = useState<string | null>(null);
+  const [tapResult, setTapResult] = useState<PipelineTapResponse | null>(null);
   const data = request.data;
   const waiting =
     data !== null &&
     (data.status === "pending-review" || (data.status === "approved" && data.check.state !== "complete"));
+
+  async function sampleLiveEvent(collectorId: string) {
+    setTapBusy(true);
+    setTapError(null);
+    try {
+      const response = await api<PipelineTapResponse>(
+        `/api/pipelines/collectors/${encodeURIComponent(collectorId)}/tap`,
+        {
+          method: "POST",
+          body: JSON.stringify({ limit: 5 })
+        }
+      );
+      setTapResult(response);
+    } catch (error) {
+      setTapError(error instanceof Error ? error.message : "Could not load a live redacted sample.");
+    } finally {
+      setTapBusy(false);
+    }
+  }
 
   // The server re-evaluates the collector's heartbeat on every read.
   useEffect(() => {
@@ -657,7 +681,47 @@ function SourceRequestView({ id, canOperate }: { id: string; canOperate: boolean
                           <RefreshCw aria-hidden="true" />
                           {checking ? "Checking…" : "Check now"}
                         </button>
+                        {approved && canOperate && (
+                          <button
+                            className="button button--secondary"
+                            type="button"
+                            disabled={tapBusy}
+                            onClick={() => void sampleLiveEvent(detail.collectorId)}
+                          >
+                            <Eye aria-hidden="true" />
+                            {tapBusy ? "Sampling…" : "Preview first live redacted event"}
+                          </button>
+                        )}
                       </div>
+                      {approved && canOperate && (
+                        <div className="setup-subsection">
+                          <h3>First live redacted event</h3>
+                          <p className="form-help">
+                            Requests a bounded post-redaction sample from the collector&apos;s tap endpoint. Every tap
+                            request is written to the audit log; raw source values are never returned.
+                          </p>
+                          {tapError && (
+                            <div className="alert alert--danger" role="alert">
+                              {tapError}
+                            </div>
+                          )}
+                          {tapResult && (
+                            <div className="source-plan__item" aria-label="Live redacted event preview">
+                              <p className="form-help">{tapResult.note}</p>
+                              {tapResult.frames.length > 0 ? (
+                                <pre className="code-block" tabIndex={0} aria-label="First live redacted event">
+                                  {tapResult.frames[0]?.redactedPayload ??
+                                    JSON.stringify(tapResult.frames[0], null, 2)}
+                                </pre>
+                              ) : (
+                                <pre className="code-block" tabIndex={0} aria-label="Live tap CLI command">
+                                  {tapResult.command}
+                                </pre>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </>
                   )}
                 </GuidedStep>
