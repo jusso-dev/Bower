@@ -173,5 +173,7 @@
     <ProjectReference Include="..\..\src\Bower.Source.Ama\Bower.Source.Ama.csproj" />
     <ProjectReference Include="..\..\src\Bower.Dcr\Bower.Dcr.csproj" />
     <ProjectReference Include="..\..\src\Bower.Agent.Aws\Bower.Agent.Aws.csproj" />
+    <ProjectReference Include="..\..\src\Bower.Source.Journald\Bower.Source.Journald.csproj" />
+    <ProjectReference Include="..\..\src\Bower.Source.Kubernetes\Bower.Source.Kubernetes.csproj" />
   </ItemGroup>
 </Project>
