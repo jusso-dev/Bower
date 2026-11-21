@@ -1,12 +1,13 @@
-import { CheckCircle2, CircleDashed, Clock3, ShieldCheck, TriangleAlert } from "lucide-react";
-import { useEffect } from "react";
+import { BellOff, CheckCircle2, CircleDashed, Clock3, ShieldCheck, TriangleAlert } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { useApi } from "../api";
 import { GlossaryText } from "../components/glossary";
 import { TrafficLight } from "../components/guided";
 import { EmptyState, Page, ResourceState } from "../components/ui";
 import { useResource } from "../hooks/useResource";
 import { formatDate } from "../lib/format";
-import type { Home, HomeFix, HomeSentinelProof } from "../types";
+import type { Access, Home, HomeAttention, HomeFix, HomeSentinelProof } from "../types";
 
 /** The home view refreshes in place, like the setup wizard's progress. */
 const refreshMilliseconds = 60_000;
@@ -25,12 +26,71 @@ const pageNames: Record<string, string> = {
  * attention. Every state and sentence is computed by the API from real management state.
  */
 export function HomePage({ view = "home" }: { view?: "home" | "alerts" | "reports" }) {
+  const api = useApi();
   const { data, loading, error, refreshError, revalidate } = useResource<Home>("/api/home");
+  const access = useResource<Access>("/api/access/me");
+  const [mutingId, setMutingId] = useState<string | null>(null);
+  const [muteDuration, setMuteDuration] = useState(240);
+  const [muteReason, setMuteReason] = useState("");
+  const [muteBusy, setMuteBusy] = useState(false);
+  const [muteError, setMuteError] = useState<string | null>(null);
+
+  const canOperate =
+    access.data?.roles.some(
+      (role) =>
+        role === "Bower.Operator" ||
+        role === "Bower.Approver" ||
+        role === "Bower.Administrator"
+    ) ?? false;
 
   useEffect(() => {
     const timer = window.setInterval(() => void revalidate(), refreshMilliseconds);
     return () => window.clearInterval(timer);
   }, [revalidate]);
+
+  async function submitMute(conditionId: string) {
+    if (!muteReason.trim()) {
+      setMuteError("Enter a reason before muting this alert.");
+      return;
+    }
+    setMuteBusy(true);
+    setMuteError(null);
+    try {
+      await api("/api/alerts/mute", {
+        method: "POST",
+        body: JSON.stringify({
+          conditionId,
+          durationMinutes: muteDuration,
+          reason: muteReason.trim()
+        })
+      });
+      setMutingId(null);
+      setMuteReason("");
+      await revalidate();
+    } catch (err) {
+      setMuteError(err instanceof Error ? err.message : "Could not mute alert.");
+    } finally {
+      setMuteBusy(false);
+    }
+  }
+
+  async function unmute(item: HomeAttention) {
+    if (!item.muteId) {
+      return;
+    }
+    setMuteBusy(true);
+    setMuteError(null);
+    try {
+      await api(`/api/alerts/mutes/${encodeURIComponent(item.muteId)}/unmute`, {
+        method: "POST"
+      });
+      await revalidate();
+    } catch (err) {
+      setMuteError(err instanceof Error ? err.message : "Could not unmute alert.");
+    } finally {
+      setMuteBusy(false);
+    }
+  }
 
   return (
     <Page
@@ -98,6 +158,11 @@ export function HomePage({ view = "home" }: { view?: "home" | "alerts" | "report
                 <h2 id="home-attention">What needs my attention?</h2>
                 <TrafficLight state={home.state} />
               </header>
+              {muteError && (
+                <div className="alert alert--danger" role="alert">
+                  {muteError}
+                </div>
+              )}
               {home.attention.length ? (
                 <ul className="attention-list">
                   {home.attention.map((item) => (
@@ -106,8 +171,89 @@ export function HomePage({ view = "home" }: { view?: "home" | "alerts" | "report
                       <div>
                         <p>
                           <GlossaryText text={item.message} />
+                          {item.muted && (
+                            <>
+                              {" "}
+                              <span className="badge badge--pending">
+                                <BellOff aria-hidden="true" /> Muted
+                                {item.mutedUntil ? ` until ${formatDate(item.mutedUntil)}` : ""}
+                              </span>
+                            </>
+                          )}
                         </p>
+                        {item.muted && item.muteReason && (
+                          <p className="home-card__note">Mute reason: {item.muteReason}</p>
+                        )}
                         <FixLine fix={item.fix} context={item.message} />
+                        {view === "alerts" && canOperate && (
+                          <div className="button-row">
+                            {item.muted && item.muteId ? (
+                              <button
+                                className="button button--secondary"
+                                type="button"
+                                disabled={muteBusy}
+                                onClick={() => void unmute(item)}
+                              >
+                                Unmute notifications
+                              </button>
+                            ) : mutingId === item.id ? (
+                              <form
+                                className="approval-form"
+                                onSubmit={(event) => {
+                                  event.preventDefault();
+                                  void submitMute(item.id);
+                                }}
+                              >
+                                <label htmlFor={`mute-duration-${item.id}`}>Mute duration</label>
+                                <select
+                                  id={`mute-duration-${item.id}`}
+                                  value={muteDuration}
+                                  onChange={(event) => setMuteDuration(Number(event.target.value))}
+                                >
+                                  <option value={60}>1 hour</option>
+                                  <option value={240}>4 hours</option>
+                                  <option value={1440}>24 hours</option>
+                                  <option value={10080}>7 days</option>
+                                </select>
+                                <label htmlFor={`mute-reason-${item.id}`}>Reason for muting (audited)</label>
+                                <input
+                                  id={`mute-reason-${item.id}`}
+                                  type="text"
+                                  maxLength={500}
+                                  required
+                                  value={muteReason}
+                                  placeholder="Example: scheduled maintenance window CHG-412"
+                                  onChange={(event) => setMuteReason(event.target.value)}
+                                />
+                                <div className="button-row">
+                                  <button className="button button--primary" type="submit" disabled={muteBusy}>
+                                    {muteBusy ? "Muting…" : "Confirm mute"}
+                                  </button>
+                                  <button
+                                    className="button button--secondary"
+                                    type="button"
+                                    disabled={muteBusy}
+                                    onClick={() => setMutingId(null)}
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </form>
+                            ) : (
+                              <button
+                                className="button button--secondary"
+                                type="button"
+                                onClick={() => {
+                                  setMutingId(item.id);
+                                  setMuteReason("");
+                                  setMuteError(null);
+                                }}
+                              >
+                                Mute alert
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}

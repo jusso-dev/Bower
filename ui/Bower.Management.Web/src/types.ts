@@ -442,6 +442,10 @@ export interface HomeAttention {
   message: string;
   fix: HomeFix;
   count: number;
+  muted?: boolean;
+  muteId?: string | null;
+  mutedUntil?: string | null;
+  muteReason?: string | null;
 }
 
 /** One collector group (environment); the worst condition gives the state and the reason. */
