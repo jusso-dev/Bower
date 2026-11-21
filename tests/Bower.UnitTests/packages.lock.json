@@ -10,12 +10,12 @@
       },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
-        "requested": "[18.11.0, )",
-        "resolved": "18.11.0",
-        "contentHash": "xf/bR0LNkhK0SnadDRlZIQmC4sac5Wk0e1WAdiQjRN3MSo6gQ9M2c4c1XRNnVGjfOvckh704W5CJ19AL0/Xsdg==",
+        "requested": "[18.12.0, )",
+        "resolved": "18.12.0",
+        "contentHash": "MdVkskM2ZCKSlNts5DIbz9MZidX7SwcXKBoBqY4XT91b30hAwC8PkjWbdGKRak6BKAD1BQqaZnh/SD0AJGoDCQ==",
         "dependencies": {
-          "Microsoft.CodeCoverage": "18.11.0",
-          "Microsoft.TestPlatform.TestHost": "18.11.0"
+          "Microsoft.CodeCoverage": "18.12.0",
+          "Microsoft.TestPlatform.TestHost": "18.12.0"
         }
       },
       "xunit.runner.visualstudio": {
@@ -67,26 +67,26 @@
       },
       "Microsoft.CodeCoverage": {
         "type": "Transitive",
-        "resolved": "18.11.0",
-        "contentHash": "MhN9wpvL1Es4hfIYslrsVgIsUdDFxuOBTbAl9mGIMvFo8PP5CLf4DrGdNrfwWSyn0lqi6sssm+I/qkkLL3MU+g=="
+        "resolved": "18.12.0",
+        "contentHash": "OhOPSaCAQhBJgXF1OrX0uK3eTkwZ1XnM44iGLZplYgKrmgKzQUdv9xtGGaE568RuQ738TlrTJ3pm9aWL5FH7iw=="
       },
       "Microsoft.Data.SqlClient.Extensions.Abstractions": {
         "type": "Transitive",
-        "resolved": "7.1.1",
-        "contentHash": "qP/zUOCJwfKqWNC9o+TWqltfNbLnZi1APNpJZgj0yeEJhoI+h+eoQLX+331yZHNOlDxdafZLP5arW/yrS1jAAw==",
+        "resolved": "7.1.2",
+        "contentHash": "UaHg/zJIaJRF+Qu6ywK9s66CL3digE+X640sfjUsF8TCY5gGapNXgHgm+HJ5VWnKgQF1ksHygRRKc8aV6orlJQ==",
         "dependencies": {
-          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.1, 8.0.0)"
+          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.2, 8.0.0)"
         }
       },
       "Microsoft.Data.SqlClient.Internal.Logging": {
         "type": "Transitive",
-        "resolved": "7.1.1",
-        "contentHash": "bVqbATLnHQngue7U9K7GRnzvfdDa7IyiBU2vijfU2vBMBSZrAnQp/wXqNSfaVonckSaMXUk07wfujTqy9IVMdw=="
+        "resolved": "7.1.2",
+        "contentHash": "Ed+xxBVIUJPJNQGg6EnmIOsULBMl/xBXFouVGzc23/PpJx2EGuZtVu00pTOoaPXJB/J9pNnVOshpjKn63Xnvgw=="
       },
       "Microsoft.Data.SqlClient.SNI.runtime": {
         "type": "Transitive",
-        "resolved": "7.1.0",
-        "contentHash": "rWunOb6Dby0lcI82PohARcRbF+4x4wNKxnKRSHXhuwZMu8/cCS68DCfhceq4bv1gUEfoL5dWXHYnfxVvLQUN+Q=="
+        "resolved": "7.1.2",
+        "contentHash": "t5AECn7LT/VuS56mCQ+ps9LQy9ZJ23nIGoOfBpXfC35E4/sM4D9fbE0KnCqqKHemtwuFhe/QuTnneGChs5ez4Q=="
       },
       "Microsoft.Data.Sqlite.Core": {
         "type": "Transitive",
@@ -127,10 +127,36 @@
           "Microsoft.Extensions.Logging": "11.0.0"
         }
       },
+      "Microsoft.Extensions.AmbientMetadata.Application": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "U01aZIXzeGwE6oRBxULi/IX+RSeoVUwQ3sZ6wF73Lggo50wVjr7Z8CBsfYXkUAAxawdCty7rdqW2xATXK8zdJw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration": "11.0.0",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "11.0.0"
+        }
+      },
       "Microsoft.Extensions.Caching.Memory": {
         "type": "Transitive",
         "resolved": "11.0.0",
         "contentHash": "w0nn5qRLxZC2T3sSmXj5PhrBFpGFCSFxg7E/zBi4lne0wZcZPY8of3qQDowqGobMZ3PW5qJnM1Q8fmGjL2B6Iw=="
+      },
+      "Microsoft.Extensions.Compliance.Abstractions": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "OqyhzoT0jh9q7O9wpzQqqWn9BL/9UZvYuBFfNxOR5Bg45ZVIKnqXxJ9lvOcoBZIyDiBBPbH0gVoI7IuZcmCftw==",
+        "dependencies": {
+          "Microsoft.Extensions.ObjectPool": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Compliance.Redaction": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "fTUiMsZAlnLus8p0ZDxhu4pVbACI9pcCS/1kHFp19/+1mjaqjedBP5ljYjh+7cbHcrHneaTg/mRb804RgPJXPA==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "11.0.0",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "11.0.0"
+        }
       },
       "Microsoft.Extensions.Configuration": {
         "type": "Transitive",
@@ -193,6 +219,11 @@
         "resolved": "11.0.0",
         "contentHash": "KygQMITBDDPXw7+AAgdwQvVAaTXuDsc1iCAuvhO73ERxKX+d92cdbgZmpoYF7DIUq2hfs/yO2KD87uIreRy3MA=="
       },
+      "Microsoft.Extensions.DependencyInjection.AutoActivation": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "ugy3NqXfjxD3KFoVX27oRxdLeCnhGE1kMkdowetalYaqBqiokPgJ/POODN+9fy33eLVd3qtAfLIDAXE3dmGspw=="
+      },
       "Microsoft.Extensions.Diagnostics": {
         "type": "Transitive",
         "resolved": "11.0.0",
@@ -201,6 +232,16 @@
           "Microsoft.Extensions.Configuration": "11.0.0",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "11.0.0"
         }
+      },
+      "Microsoft.Extensions.Diagnostics.ExceptionSummarization": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "lKslmWuyCeGNtY6Cdj/7xfkqJpZJZqTSNR4HY2Da4hPGjWDlPorWXsRF2T2kKHOoUfdGu+47rIM0xnxNSY1XBw=="
+      },
+      "Microsoft.Extensions.Features": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "gODUqX2PfYnTqu7uJW7/uuInBzrh+hewBkHO4aifVxiNmnvg/4bLPTYEz1FYvAJJr3UJFz6Kyyo3Nk7SEYfNZA=="
       },
       "Microsoft.Extensions.FileProviders.Physical": {
         "type": "Transitive",
@@ -236,6 +277,25 @@
           "Microsoft.Extensions.Logging.Debug": "11.0.0",
           "Microsoft.Extensions.Logging.EventLog": "11.0.0",
           "Microsoft.Extensions.Logging.EventSource": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Http": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "Pa5xJYtE5weFzv8sRwei1yvqCc05PareJABDtUSigzyj0xmrnG7ZU5VBy0hf5tgh7HN3/psGiOQouw5PLaQD8w==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics": "11.0.0",
+          "Microsoft.Extensions.Logging": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Http.Diagnostics": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "267v3xskdHtMaBVhGfz0uUFgPnR+Y8L9oy7nN8JV5ilo2C9yDeE5vXKctQKT3b2q1QkTti85bGMPEDpupErYhQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Redaction": "11.0.0",
+          "Microsoft.Extensions.Http": "11.0.0",
+          "Microsoft.Extensions.Telemetry": "11.0.0"
         }
       },
       "Microsoft.Extensions.Logging": {
@@ -292,12 +352,60 @@
           "Microsoft.Extensions.Logging": "11.0.0"
         }
       },
+      "Microsoft.Extensions.ObjectPool": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "RdBrj+XP4290tK/fegTdMQQkHLflX6ir2NagnjOGbi8T4QF+Vsz8To11xp2zy6sjp7eQVv/XXYGH2hZ43FED/w=="
+      },
       "Microsoft.Extensions.Options.ConfigurationExtensions": {
         "type": "Transitive",
         "resolved": "11.0.0",
         "contentHash": "s4JrxDPwxk8pE6LFVj+M5TrDHxOVIoCnQBy5lexs5uAYeggPYwAc/pSDNgVuZN14pCmZGCInygI/2ylCdLYShw==",
         "dependencies": {
           "Microsoft.Extensions.Configuration.Binder": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Resilience": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "iUNq3gks/YCF+uv9HpO3nlHAFoocXo7CqlIJ27qUBUXgW9miVPn3LhWOv9LTHZLPKepVvO4UFdvBW2oXO2orMQ==",
+        "dependencies": {
+          "Microsoft.Extensions.Diagnostics": "11.0.0",
+          "Microsoft.Extensions.Diagnostics.ExceptionSummarization": "11.0.0",
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "11.0.0",
+          "Microsoft.Extensions.Telemetry.Abstractions": "11.0.0",
+          "Polly.Extensions": "8.4.2",
+          "Polly.RateLimiting": "8.4.2"
+        }
+      },
+      "Microsoft.Extensions.ServiceDiscovery.Abstractions": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "qTG6O/Pg0d1IV0wgpTDSkUwhiNQtM5swEfBC5SjnYyjA/qiTLD4lIN2gIwpzz3+iB5g4jsA82V0q86md4MyxZw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.Binder": "11.0.0",
+          "Microsoft.Extensions.Features": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Telemetry": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "i5oxkPJ8+9uMRMAc80oLpkaytGXteBQKm65TM8voDX6Qr9cpwGtNQvey8WbL+TmObtXP+1kivotgvDMLeEFA4Q==",
+        "dependencies": {
+          "Microsoft.Extensions.AmbientMetadata.Application": "11.0.0",
+          "Microsoft.Extensions.DependencyInjection.AutoActivation": "11.0.0",
+          "Microsoft.Extensions.Logging.Configuration": "11.0.0",
+          "Microsoft.Extensions.ObjectPool": "11.0.0",
+          "Microsoft.Extensions.Telemetry.Abstractions": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.Telemetry.Abstractions": {
+        "type": "Transitive",
+        "resolved": "11.0.0",
+        "contentHash": "IGZLLuDI9qD7DhySbPtudJAUQ4dot6tsTcBgb0StZY5HtXC+jyk3eflHK6znDQ5ffXyb1lpdAA4XlIpk1fiC+Q==",
+        "dependencies": {
+          "Microsoft.Extensions.Compliance.Abstractions": "11.0.0",
+          "Microsoft.Extensions.ObjectPool": "11.0.0"
         }
       },
       "Microsoft.Identity.Client": {
@@ -384,21 +492,66 @@
       },
       "Microsoft.TestPlatform.ObjectModel": {
         "type": "Transitive",
-        "resolved": "18.11.0",
-        "contentHash": "BXBHYnwSOljKute8UYCMXOLAdB7awxEMppPSpqOF1ZxLD/W/OH+vTBgFaXA7q0aditJTVXSMVenel+wOkEIyNg=="
+        "resolved": "18.12.0",
+        "contentHash": "ilT2o4v/c1joLgsfzS4dYQ71bWAy/RsA6fBY7f5OEUpUsUhwIzoliGeXdS3yctWuy4NZyuSVlO7dPX4ed7R06A=="
       },
       "Microsoft.TestPlatform.TestHost": {
         "type": "Transitive",
-        "resolved": "18.11.0",
-        "contentHash": "AKjwKpyRBwoQFQmpcchtoYlfJEBlaY/40uxBRi+qXP4NR7xT8t+XTJtOyEyumfvfJcH5pASs75LwNdXYRr4XNA==",
+        "resolved": "18.12.0",
+        "contentHash": "WTT912JUqmFa2BkCeXPkMCUpbYOqsbeRfRJdhaIQROx49iokgnGPAlKvXmHWKC9nJwWrHwSQfR+k+Qn7NCxfzw==",
         "dependencies": {
-          "Microsoft.TestPlatform.ObjectModel": "18.11.0"
+          "Microsoft.TestPlatform.ObjectModel": "18.12.0"
         }
       },
       "Microsoft.Win32.Registry": {
         "type": "Transitive",
         "resolved": "5.0.0",
         "contentHash": "dDoKi0PnDz31yAyETfRntsLArTlVAVzUzCIvvEDsDsucrl33Dl8pIJG06ePTJTI3tGpeyHS9Cq7Foc/s4EeKcg=="
+      },
+      "OpenTelemetry": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "ynAzNO/ebDTPxARbz4z/HgL8azMk/iDk4GXFuIRQ6krr1+a5QMC4eoiXRl+e7COd+3RLyL/yTuE6bevwqbv4Bw==",
+        "dependencies": {
+          "Microsoft.Extensions.Configuration.EnvironmentVariables": "11.0.0",
+          "Microsoft.Extensions.Logging.Configuration": "11.0.0",
+          "OpenTelemetry.Api.ProviderBuilderExtensions": "1.21.0"
+        }
+      },
+      "OpenTelemetry.Api": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "KptD6ThegQORUzwot75zW2AUH6IDyKXH1R2yhovJPYfrzqSgHQidMfVfKLjaYEnJa5ySQgQm0RjuM6X+TCJ9yw=="
+      },
+      "OpenTelemetry.Api.ProviderBuilderExtensions": {
+        "type": "Transitive",
+        "resolved": "1.21.0",
+        "contentHash": "ZcBCBTGbzjj8Y+9UnZKbSjnRyKc2ub2IvvU68fFHKmyKzTS4hU+4/f0PO1GoIf7FTYLKTyw+l/EwLL/PPIDkxg==",
+        "dependencies": {
+          "OpenTelemetry.Api": "1.21.0"
+        }
+      },
+      "Polly.Core": {
+        "type": "Transitive",
+        "resolved": "8.4.2",
+        "contentHash": "BpE2I6HBYYA5tF0Vn4eoQOGYTYIK1BlF5EXVgkWGn3mqUUjbXAr13J6fZVbp7Q3epRR8yshacBMlsHMhpOiV3g=="
+      },
+      "Polly.Extensions": {
+        "type": "Transitive",
+        "resolved": "8.4.2",
+        "contentHash": "GZ9vRVmR0jV2JtZavt+pGUsQ1O1cuRKG7R7VOZI6ZDy9y6RNPvRvXK1tuS4ffUrv8L0FTea59oEuQzgS0R7zSA==",
+        "dependencies": {
+          "Polly.Core": "8.4.2"
+        }
+      },
+      "Polly.RateLimiting": {
+        "type": "Transitive",
+        "resolved": "8.4.2",
+        "contentHash": "ehTImQ/eUyO07VYW2WvwSmU9rRH200SKJ/3jku9rOkyWE0A2JxNFmAVms8dSn49QLSjmjFRRSgfNyOgr/2PSmA==",
+        "dependencies": {
+          "Polly.Core": "8.4.2",
+          "System.Threading.RateLimiting": "8.0.0"
+        }
       },
       "SQLite": {
         "type": "Transitive",
@@ -436,11 +589,11 @@
       },
       "System.Configuration.ConfigurationManager": {
         "type": "Transitive",
-        "resolved": "9.0.18",
-        "contentHash": "/1q0MHB2xKyTFRC5tk+oL3Ahi+QK0UPI6Qk6Xc5z5BW6otR2T9wwWmEW/LZX98cq7UOmu+7sZ5HNwuq61zrNtg==",
+        "resolved": "9.0.21",
+        "contentHash": "q9yXPb2WrT/TtIXdIjM2OBCQIQO2lc1NmgWKdRlZZGHYNED5GKkk3UlGbcYFaqLRGw8Y2glC0A3//hvvnAE1ag==",
         "dependencies": {
-          "System.Diagnostics.EventLog": "9.0.18",
-          "System.Security.Cryptography.ProtectedData": "9.0.18"
+          "System.Diagnostics.EventLog": "9.0.21",
+          "System.Security.Cryptography.ProtectedData": "9.0.21"
         }
       },
       "System.Diagnostics.EventLog": {
@@ -469,8 +622,8 @@
       },
       "System.Security.Cryptography.ProtectedData": {
         "type": "Transitive",
-        "resolved": "9.0.18",
-        "contentHash": "1/iz9Eex1TBMYdAk+m3igaMvL+nk+rY1EqL6u93an/j1ghxmB24vGOKXkVFy3NSPA39s1H/+SNoK257tHoXoLA=="
+        "resolved": "9.0.21",
+        "contentHash": "zyXIA630BG8DQnWzzS6WATjnnzXdelvJaW9U/qajt+09JV7Xvu8YuvQdwLldmPF4W5jYS76811eGcDdXxGYmfw=="
       },
       "System.ServiceProcess.ServiceController": {
         "type": "Transitive",
@@ -482,8 +635,8 @@
       },
       "System.Threading.RateLimiting": {
         "type": "Transitive",
-        "resolved": "9.0.18",
-        "contentHash": "pxuHw/tQXaHMRXEaKzzgpoGO8VeTPIzHbnp0KclXp6js5wPHn7VaqSCa8yRTAsZDcZ2XuIEnXGM2MbRDJFLBog=="
+        "resolved": "9.0.21",
+        "contentHash": "tvq1DkIPvMiZeuS0LX31wuqdQc34oB1xnT9teTAV7puRGbljJpu1kSUe+GK/QkNOmrtQo+h0hZms4hh5jerhbQ=="
       },
       "xunit.analyzers": {
         "type": "Transitive",
@@ -556,30 +709,30 @@
       "bower": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Core": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Evidence": "[1.0.0, )",
-          "Bower.Output.AmaSyslog": "[1.0.0, )",
-          "Bower.Packs": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Source.WindowsEventLog": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Core": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Evidence": "[0.1.1-dev.0, )",
+          "Bower.Output.AmaSyslog": "[0.1.1-dev.0, )",
+          "Bower.Packs": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Source.WindowsEventLog": "[0.1.1-dev.0, )"
         }
       },
       "bower.abstractions": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.agent.aws": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
-          "Bower.Source.Aws": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
+          "Bower.Source.Aws": "[0.1.1-dev.0, )"
         }
       },
       "bower.agent.cloud": {
@@ -588,40 +741,41 @@
           "AWSSDK.S3": "[4.0.104.7, )",
           "AWSSDK.SQS": "[4.0.100.21, )",
           "AWSSDK.SecurityToken": "[4.0.101.7, )",
-          "Bower.Forwarding": "[1.0.0, )",
-          "Bower.Source.Aws": "[1.0.0, )",
-          "Bower.Source.Gcp": "[1.0.0, )"
+          "Bower.Forwarding": "[0.1.1-dev.0, )",
+          "Bower.Source.Aws": "[0.1.1-dev.0, )",
+          "Bower.Source.Gcp": "[0.1.1-dev.0, )"
         }
       },
       "bower.agent.docker": {
         "type": "Project",
         "dependencies": {
-          "Bower.Forwarding": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.Source.Docker": "[1.0.0, )"
+          "Bower.Forwarding": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.Source.Docker": "[0.1.1-dev.0, )"
         }
       },
       "bower.analytics": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.collector": {
         "type": "Project",
         "dependencies": {
-          "Bower.Core": "[1.0.0, )",
-          "Bower.Forwarding": "[1.0.0, )",
-          "Bower.Jobs": "[1.0.0, )",
-          "Bower.Output.AmaSpool": "[1.0.0, )",
-          "Bower.Output.AmaSyslog": "[1.0.0, )",
-          "Bower.Output.AzureLogsIngestion": "[1.0.0, )",
-          "Bower.Output.Http": "[1.0.0, )",
-          "Bower.Output.S3": "[1.0.0, )",
-          "Bower.Packs": "[1.0.0, )",
-          "Bower.Source.File": "[1.0.0, )",
-          "Bower.Source.Syslog": "[1.0.0, )",
-          "Bower.Source.WindowsEventLog": "[1.0.0, )",
+          "Bower.Core": "[0.1.1-dev.0, )",
+          "Bower.Forwarding": "[0.1.1-dev.0, )",
+          "Bower.Jobs": "[0.1.1-dev.0, )",
+          "Bower.Output.AmaSpool": "[0.1.1-dev.0, )",
+          "Bower.Output.AmaSyslog": "[0.1.1-dev.0, )",
+          "Bower.Output.AzureLogsIngestion": "[0.1.1-dev.0, )",
+          "Bower.Output.Http": "[0.1.1-dev.0, )",
+          "Bower.Output.S3": "[0.1.1-dev.0, )",
+          "Bower.Packs": "[0.1.1-dev.0, )",
+          "Bower.ServiceDefaults": "[0.1.1-dev.0, )",
+          "Bower.Source.File": "[0.1.1-dev.0, )",
+          "Bower.Source.Syslog": "[0.1.1-dev.0, )",
+          "Bower.Source.WindowsEventLog": "[0.1.1-dev.0, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[11.0.0, )"
         }
       },
@@ -631,10 +785,10 @@
       "bower.core": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Persistence": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Persistence": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )"
         }
       },
       "bower.dcr": {
@@ -643,22 +797,28 @@
       "bower.detection": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
+        }
+      },
+      "bower.devsinks": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.ServiceDefaults": "[0.1.1-dev.0, )"
         }
       },
       "bower.evidence": {
         "type": "Project",
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )"
         }
       },
       "bower.forwarding": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.integrity": {
@@ -670,12 +830,13 @@
       "bower.management.api": {
         "type": "Project",
         "dependencies": {
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Evidence": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )",
-          "Bower.Jobs": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Evidence": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )",
+          "Bower.Jobs": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
+          "Bower.ServiceDefaults": "[0.1.1-dev.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[11.0.0, )",
           "Microsoft.Data.Sqlite": "[11.0.0, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )",
@@ -685,20 +846,20 @@
       "bower.ocsf": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.amaspool": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.amasyslog": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.azurelogsingestion": {
@@ -706,14 +867,14 @@
         "dependencies": {
           "Azure.Identity": "[1.21.0, )",
           "Azure.Monitor.Ingestion": "[1.2.0, )",
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Dcr": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.http": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.output.s3": {
@@ -721,25 +882,25 @@
         "dependencies": {
           "AWSSDK.S3": "[4.0.104.7, )",
           "AWSSDK.SecurityToken": "[4.0.101.7, )",
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.packs": {
         "type": "Project",
         "dependencies": {
-          "Bower.Dcr": "[1.0.0, )",
-          "Bower.Detection": "[1.0.0, )",
-          "Bower.Integrity": "[1.0.0, )",
-          "Bower.Pipeline": "[1.0.0, )",
-          "Bower.PolicyEngine": "[1.0.0, )",
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Dcr": "[0.1.1-dev.0, )",
+          "Bower.Detection": "[0.1.1-dev.0, )",
+          "Bower.Integrity": "[0.1.1-dev.0, )",
+          "Bower.Pipeline": "[0.1.1-dev.0, )",
+          "Bower.PolicyEngine": "[0.1.1-dev.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.persistence": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "Microsoft.Data.Sqlite": "[11.0.0, )",
           "SQLitePCLRaw.bundle_e_sqlite3": "[3.0.5, )"
         }
@@ -747,76 +908,85 @@
       "bower.pipeline": {
         "type": "Project",
         "dependencies": {
-          "Bower.Redaction": "[1.0.0, )",
+          "Bower.Redaction": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.policyengine": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.queuemigrationcheck": {
         "type": "Project",
         "dependencies": {
-          "Bower.Persistence": "[1.0.0, )"
+          "Bower.Persistence": "[0.1.1-dev.0, )"
         }
       },
       "bower.redaction": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
           "YamlDotNet": "[18.1.0, )"
         }
       },
       "bower.sdk": {
         "type": "Project",
         "dependencies": {
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Contracts": "[0.1.1-dev.0, )"
+        }
+      },
+      "bower.servicedefaults": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Extensions.Http.Resilience": "[11.0.0, )",
+          "Microsoft.Extensions.ServiceDiscovery": "[11.0.0, )",
+          "OpenTelemetry.Exporter.OpenTelemetryProtocol": "[1.21.0, )",
+          "OpenTelemetry.Extensions.Hosting": "[1.21.0, )"
         }
       },
       "bower.source.ama": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.aws": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.docker": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )",
-          "Bower.Source.File": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )",
+          "Bower.Source.File": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.file": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.gcp": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Bower.Contracts": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Bower.Contracts": "[0.1.1-dev.0, )"
         }
       },
       "bower.source.sqlserver": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[7.1.1, )",
+          "Bower.Abstractions": "[0.1.1-dev.0, )",
+          "Microsoft.Data.SqlClient": "[7.1.2, )",
           "Microsoft.EntityFrameworkCore.SqlServer": "[11.0.0, )"
         }
       },
@@ -826,7 +996,7 @@
       "bower.source.windowseventlog": {
         "type": "Project",
         "dependencies": {
-          "Bower.Abstractions": "[1.0.0, )"
+          "Bower.Abstractions": "[0.1.1-dev.0, )"
         }
       },
       "AWSSDK.S3": {
@@ -885,21 +1055,21 @@
       },
       "Microsoft.Data.SqlClient": {
         "type": "CentralTransitive",
-        "requested": "[7.1.1, )",
-        "resolved": "7.1.1",
-        "contentHash": "Moz4+bba/OdEM9I4jXWggduJ4sqoNcgVAQyXG/dNnGGvnS/YDr2fTjP83fg5YX3drgRki6fRAhR94P8dAZgZtQ==",
+        "requested": "[7.1.2, )",
+        "resolved": "7.1.2",
+        "contentHash": "guqzpThPuZhyrNAKLyNRB0NtuR87gw5iZbF5QniyKZXtESAP3kcPEN9bwJ0ZVYXjfXbSCIv15S0kRh9YTrz0sQ==",
         "dependencies": {
-          "Microsoft.Bcl.Cryptography": "9.0.18",
-          "Microsoft.Data.SqlClient.Extensions.Abstractions": "[7.1.1, 8.0.0)",
-          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.1, 8.0.0)",
-          "Microsoft.Data.SqlClient.SNI.runtime": "[7.1.0, 8.0.0)",
-          "Microsoft.Extensions.Caching.Memory": "9.0.18",
+          "Microsoft.Bcl.Cryptography": "9.0.21",
+          "Microsoft.Data.SqlClient.Extensions.Abstractions": "[7.1.2, 8.0.0)",
+          "Microsoft.Data.SqlClient.Internal.Logging": "[7.1.2, 8.0.0)",
+          "Microsoft.Data.SqlClient.SNI.runtime": "[7.1.2, 8.0.0)",
+          "Microsoft.Extensions.Caching.Memory": "9.0.21",
           "Microsoft.IdentityModel.JsonWebTokens": "8.16.0",
           "Microsoft.IdentityModel.Protocols.OpenIdConnect": "8.16.0",
           "Microsoft.SqlServer.Server": "[1.0.0, 2.0.0)",
-          "System.Configuration.ConfigurationManager": "9.0.18",
-          "System.Security.Cryptography.Pkcs": "9.0.18",
-          "System.Threading.RateLimiting": "9.0.18"
+          "System.Configuration.ConfigurationManager": "9.0.21",
+          "System.Security.Cryptography.Pkcs": "9.0.21",
+          "System.Threading.RateLimiting": "9.0.21"
         }
       },
       "Microsoft.Data.Sqlite": {
@@ -937,6 +1107,27 @@
           "System.ServiceProcess.ServiceController": "11.0.0"
         }
       },
+      "Microsoft.Extensions.Http.Resilience": {
+        "type": "CentralTransitive",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "lzkKZCLq+fvTFpngomZepn5qPcFc+zhdb1l1lvJfWXZPinGxJlwYvtImldxvxugzEGpzknnp5gFUCMKIHQ7xPA==",
+        "dependencies": {
+          "Microsoft.Extensions.Http.Diagnostics": "11.0.0",
+          "Microsoft.Extensions.ObjectPool": "11.0.0",
+          "Microsoft.Extensions.Resilience": "11.0.0"
+        }
+      },
+      "Microsoft.Extensions.ServiceDiscovery": {
+        "type": "CentralTransitive",
+        "requested": "[11.0.0, )",
+        "resolved": "11.0.0",
+        "contentHash": "uZIeLScWGKu/k7YOeTOeZupF9Ydov+kBn6sRWNaXRGEQKhrEdlHdxkjvLUxDPnK5/at6DrEjr15CdSg3whYu/A==",
+        "dependencies": {
+          "Microsoft.Extensions.Http": "11.0.0",
+          "Microsoft.Extensions.ServiceDiscovery.Abstractions": "11.0.0"
+        }
+      },
       "Microsoft.IdentityModel.JsonWebTokens": {
         "type": "CentralTransitive",
         "requested": "[8.23.0, )",
@@ -954,6 +1145,24 @@
         "dependencies": {
           "Microsoft.IdentityModel.Protocols": "8.23.0",
           "System.IdentityModel.Tokens.Jwt": "8.23.0"
+        }
+      },
+      "OpenTelemetry.Exporter.OpenTelemetryProtocol": {
+        "type": "CentralTransitive",
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "Xo/3lqiZhv+an00t5N9Jxt3U2vIOcY6/bu0wo5LiQrrRIwd/8dv9FdlIVB3k3ypiyG1VkbCXhWH1tiC48HQS4w==",
+        "dependencies": {
+          "OpenTelemetry": "1.21.0"
+        }
+      },
+      "OpenTelemetry.Extensions.Hosting": {
+        "type": "CentralTransitive",
+        "requested": "[1.21.0, )",
+        "resolved": "1.21.0",
+        "contentHash": "+cOZFDBLktHT8V/aUb2SXQVFNP5JrcX/F24TgHcbD2kd4SFcKlBMChYeU/K+Tg3nuL+4HAS7dcR7Y2+tcSnFbQ==",
+        "dependencies": {
+          "OpenTelemetry": "1.21.0"
         }
       },
       "SQLitePCLRaw.bundle_e_sqlite3": {

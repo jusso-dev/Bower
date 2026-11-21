@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using Bower.Jobs;
 using Bower.Management.Api.Jobs;
 using Bower.Pipeline;
+using Bower.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
@@ -47,6 +48,9 @@ public static class ManagementApplication
             Environment.GetEnvironmentVariable("BOWER_MANAGEMENT_LISTEN_URL")
             ?? "http://127.0.0.1:4320");
         builder.WebHost.ConfigureKestrel(options => options.AddServerHeader = false);
+        // OpenTelemetry export for the Aspire local harness; a no-op unless
+        // OTEL_EXPORTER_OTLP_ENDPOINT is set (no shipped deployment sets it).
+        builder.AddBowerServiceDefaults();
 
         bool developmentAuthentication = string.Equals(
             builder.Configuration["BOWER_AUTH_MODE"],

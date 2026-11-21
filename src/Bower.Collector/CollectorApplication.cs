@@ -18,6 +18,7 @@ using Bower.Packs;
 using Bower.Persistence;
 using Bower.PolicyEngine;
 using Bower.Redaction;
+using Bower.ServiceDefaults;
 using Bower.Source.File;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
@@ -58,6 +59,9 @@ public static partial class CollectorApplication
         });
         // Per-request framework logs add volume without security value.
         builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+        // OpenTelemetry export for the Aspire local harness; a no-op unless
+        // OTEL_EXPORTER_OTLP_ENDPOINT is set (no shipped deployment sets it).
+        builder.AddBowerServiceDefaults();
         // Under the Windows service control manager (the MSI install) report start and stop
         // to it and write warnings and errors to the Application event log (source
         // Bower.Collector, registered by the MSI). A no-op everywhere else.

@@ -35,6 +35,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       "type": "doc",
+      "id": "getting-started/aspire",
+      "label": "Local development with Aspire"
+    },
+    {
+      "type": "doc",
       "id": "getting-started/faq",
       "label": "FAQ"
     }

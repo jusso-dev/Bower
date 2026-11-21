@@ -337,7 +337,33 @@ For production, run the console as its own container configured at start-up —
 `deploy/docker/compose.console.yaml` pairs it with the management API. See
 [standalone console image](docs/deployment/console-image.md).
 
-### 6. Collect security events from an existing Docker stack
+### 6. Run the local pipeline with Aspire
+
+For development and testing, `src/Bower.AppHost` starts collectors for the S3, HTTP and
+syslog outputs, the management API and the Azure Functions collector, with local stand-ins
+for each destination (an S3 emulator container, an NDJSON endpoint and a syslog socket) and
+the Aspire dashboard for logs, traces and metrics. It is not a deployment path: Compose,
+Bicep and the native packages stay the production paths. Azure Logs Ingestion cannot be
+emulated, so nothing here proves Sentinel delivery.
+
+```bash
+export DOCKER_CONTEXT=orbstack          # name your container runtime context
+aspire run --apphost src/Bower.AppHost -lp http
+# or: dotnet run --project src/Bower.AppHost --launch-profile http
+
+aspire resource collector-s3 send-canary   # one synthetic event per collector
+aspire resource devsinks read-s3
+```
+
+Needs a container runtime and Azure Functions Core Tools (`func`). The opt-in integration
+test boots the same AppHost: `BOWER_ASPIRE_TESTS=1 dotnet test --project tests/Bower.AppHost.Tests`.
+See [local development with Aspire](docs/getting-started/aspire.md).
+
+![Aspire dashboard with the Bower collectors, management API, Functions collector and local stand-ins](docs/images/aspire-resources.png)
+
+![Aspire traces: canary ingest on each collector and the S3 read](docs/images/aspire-traces.png)
+
+### 7. Collect security events from an existing Docker stack
 
 Add the sidecar to any Compose stack and label the containers it may read. The
 compose file uses the published `ghcr.io/jusso-dev/bower-sidecar` image:
@@ -359,7 +385,7 @@ sign-in failures and lockouts, and drops everything else. Try the full flow with
 `docker compose -f deploy/docker/compose.sidecar-demo.yaml up --build`. Details:
 [Docker sidecar](docs/deployment/docker-sidecar.md).
 
-### 7. Forward AWS and Google Cloud security signal
+### 8. Forward AWS and Google Cloud security signal
 
 Deploy the queue side in each cloud, then run one agent for both:
 
