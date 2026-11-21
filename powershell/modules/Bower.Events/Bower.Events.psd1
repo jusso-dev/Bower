@@ -1,6 +1,6 @@
 @{
     RootModule           = 'Bower.Events.psm1'
-    ModuleVersion        = '0.1.0'
+    ModuleVersion        = '1.0.0'
     GUID                 = 'cc45d0e2-2366-4e8f-bea0-07f39946dd57'
     Author               = 'Bower contributors'
     CompanyName          = 'Bower'

@@ -28,8 +28,8 @@ Describe 'Module manifest <Name>' -ForEach $script:ModuleCases {
         { Test-ModuleManifest -Path $script:ManifestPath -ErrorAction Stop } | Should -Not -Throw
     }
 
-    It 'targets PowerShell 7.4+ Core at version 0.1.0' {
-        $script:Manifest.ModuleVersion | Should -Be '0.1.0'
+    It 'targets PowerShell 7.4+ Core at version 1.0.0' {
+        $script:Manifest.ModuleVersion | Should -Be '1.0.0'
         $script:Manifest.PowerShellVersion | Should -Be '7.4'
         $script:Manifest.CompatiblePSEditions | Should -Be @('Core')
     }
