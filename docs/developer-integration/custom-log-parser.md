@@ -89,6 +89,16 @@ IDs, severities, HTTP methods and status codes under the known names still
 preview. Preview issues and errors are Bower-authored and never echo sample
 values.
 
+### Multi-line merge
+
+Parsers for plain-text logs with stack traces (such as Java or .NET exceptions) can add
+a `multiline` object (`mode`: `Start` or `Continuation`, non-backtracking `pattern`,
+`maxLines` 2–256, `maxBytes` 256–30720, `flushTimeoutMilliseconds` 100–60000,
+`joinSeparator` up to 8 characters). Lines are merged **before** regex capture,
+transforms and privacy redaction, so secrets split across lines are still detected and
+redacted as one value. In preview mode, regex parsers with `multiline` enable single-line
+(`.`) matching across newlines while keeping the same preview privacy floor.
+
 ### Transforms
 
 A configuration can carry a signed transform program in `runtime.transforms` (see the

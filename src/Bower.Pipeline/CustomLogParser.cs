@@ -43,7 +43,8 @@ public sealed record CustomLogParserConfiguration(
     string? Delimiter = null,
     string? KeyValueSeparator = null,
     string? Pattern = null,
-    CustomLogRuntimeMapping? Runtime = null);
+    CustomLogRuntimeMapping? Runtime = null,
+    CustomLogMultilineRule? Multiline = null);
 
 /// <summary>
 /// Explicit signed semantic mapping; absent means preview-only, never active ingest.
@@ -277,7 +278,8 @@ public static partial class CustomLogParser
                     "Configuration supplied by operator.",
                     configuration.Delimiter,
                     configuration.KeyValueSeparator,
-                    configuration.Pattern),
+                    configuration.Pattern,
+                    configuration.Multiline),
                 out _);
         }
         catch (Exception exception) when (
@@ -447,6 +449,11 @@ public static partial class CustomLogParser
             }
         }
 
+        if (configuration.Multiline is { } multiline)
+        {
+            CustomLogMultilineRule.Validate(multiline, issues);
+        }
+
         return issues;
     }
 
@@ -458,21 +465,53 @@ public static partial class CustomLogParser
         ValidateSample(sample);
         string normalized = sample.Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
-        string[] lines = normalized
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Take(MaximumLines + 1)
-            .ToArray();
-        if (lines.Length > MaximumLines)
+        string[] lines;
+        int[] lineNumbers;
+        if (requested?.Multiline is { } multiline)
         {
-            throw new InvalidDataException($"Sample cannot exceed {MaximumLines} non-empty lines.");
-        }
-        foreach (string line in lines)
-        {
-            if (Encoding.UTF8.GetByteCount(line) > MaximumLineBytes)
+            string[] rawLines = normalized
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries)
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Take(MaximumLines + 1)
+                .ToArray();
+            if (rawLines.Length > MaximumLines)
             {
-                throw new InvalidDataException(
-                    $"A sample line exceeds {MaximumLineBytes} bytes.");
+                throw new InvalidDataException($"Sample cannot exceed {MaximumLines} non-empty lines.");
             }
+            foreach (string line in rawLines)
+            {
+                if (Encoding.UTF8.GetByteCount(line) > MaximumLineBytes)
+                {
+                    throw new InvalidDataException(
+                        $"A sample line exceeds {MaximumLineBytes} bytes.");
+                }
+            }
+
+            IReadOnlyList<MergedLineRecord> merged = MultilineLineMerger.MergeAll(multiline, rawLines);
+            lines = merged.Select(record => record.Text).ToArray();
+            lineNumbers = merged.Select(record => record.FirstLineNumber).ToArray();
+            normalized = string.Join('\n', lines);
+        }
+        else
+        {
+            lines = normalized
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Take(MaximumLines + 1)
+                .ToArray();
+            if (lines.Length > MaximumLines)
+            {
+                throw new InvalidDataException($"Sample cannot exceed {MaximumLines} non-empty lines.");
+            }
+            foreach (string line in lines)
+            {
+                if (Encoding.UTF8.GetByteCount(line) > MaximumLineBytes)
+                {
+                    throw new InvalidDataException(
+                        $"A sample line exceeds {MaximumLineBytes} bytes.");
+                }
+            }
+
+            lineNumbers = Enumerable.Range(1, lines.Length).ToArray();
         }
 
         detection = requested ?? Detect(normalized, lines);
@@ -481,9 +520,15 @@ public static partial class CustomLogParser
             CustomLogFormat.Json => ParseJson(normalized, lines),
             CustomLogFormat.Csv => ParseCsv(lines, detection.Delimiter!),
             CustomLogFormat.KeyValue => ParseKeyValue(lines, detection.KeyValueSeparator!),
-            CustomLogFormat.Regex => ParseRegex(lines, detection.Pattern!),
+            CustomLogFormat.Regex => ParseRegex(lines, detection.Pattern!, detection.Multiline is not null, lineNumbers),
             _ => throw new InvalidDataException("Unsupported custom log format.")
         };
+        if (requested?.Multiline is not null && detection.Format != CustomLogFormat.Regex && records.Count == lineNumbers.Length)
+        {
+            records = records
+                .Select((record, index) => record with { SourceLine = lineNumbers[index] })
+                .ToArray();
+        }
         return AliasValueLikeNames(records);
     }
 
@@ -892,12 +937,14 @@ public static partial class CustomLogParser
 
     private static List<SourceRecord> ParseRegex(
         string[] lines,
-        string pattern)
+        string pattern,
+        bool multiline = false,
+        int[]? lineNumbers = null)
     {
         Regex regex;
         try
         {
-            regex = CreateSafeRegex(pattern);
+            regex = multiline ? CreateSafeSinglelineRegex(pattern) : CreateSafeRegex(pattern);
         }
         catch (Exception exception) when (
             exception is ArgumentException or NotSupportedException)
@@ -928,7 +975,8 @@ public static partial class CustomLogParser
                     spans[group] = (match.Groups[group].Index, match.Groups[group].Length);
                 }
             }
-            parsed.Add(new SourceRecord(index + 1, values, spans, lines[index]));
+            int sourceLine = lineNumbers is not null && index < lineNumbers.Length ? lineNumbers[index] : index + 1;
+            parsed.Add(new SourceRecord(sourceLine, values, spans, lines[index]));
         }
         return parsed;
     }
@@ -945,6 +993,12 @@ public static partial class CustomLogParser
         new(
             pattern,
             RegexOptions.CultureInvariant | RegexOptions.NonBacktracking,
+            Regex.InfiniteMatchTimeout);
+
+    private static Regex CreateSafeSinglelineRegex(string pattern) =>
+        new(
+            pattern,
+            RegexOptions.CultureInvariant | RegexOptions.NonBacktracking | RegexOptions.Singleline,
             Regex.InfiniteMatchTimeout);
 
     private static void ValidateRegex(
@@ -1350,5 +1404,6 @@ public static partial class CustomLogParser
         string Rationale,
         string? Delimiter = null,
         string? KeyValueSeparator = null,
-        string? Pattern = null);
+        string? Pattern = null,
+        CustomLogMultilineRule? Multiline = null);
 }

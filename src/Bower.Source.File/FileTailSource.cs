@@ -148,7 +148,8 @@ public sealed class FileTailSource : IAsyncDisposable
         FileTailSourceConfiguration configuration,
         IFileTailSink sink,
         ISourceCursorStore cursors,
-        TimeProvider? clock = null)
+        TimeProvider? clock = null,
+        Func<FileTailInputOptions, FileTailMultilineOptions?>? multilineResolver = null)
     {
         ArgumentNullException.ThrowIfNull(configuration);
         ArgumentNullException.ThrowIfNull(sink);
@@ -157,7 +158,14 @@ public sealed class FileTailSource : IAsyncDisposable
         this.sink = sink;
         this.cursors = cursors;
         this.clock = clock ?? TimeProvider.System;
-        inputs = configuration.Inputs.ToDictionary(options => options.Id, options => new Input(options), StringComparer.Ordinal);
+        inputs = configuration.Inputs.ToDictionary(
+            options => options.Id,
+            options => new Input(
+                options,
+                !options.IsJsonLines && multilineResolver?.Invoke(options) is { } rule
+                    ? new FileTailMultilineBuffer(rule)
+                    : null),
+            StringComparer.Ordinal);
         order = configuration.Inputs.Select((options, index) => (options.Id, index)).ToDictionary(item => item.Id, item => item.index, StringComparer.Ordinal);
         // What each input named at load (a valid load has no overlaps): when two inputs meet
         // later, only the one whose resolution changed is refused.
@@ -339,6 +347,21 @@ public sealed class FileTailSource : IAsyncDisposable
         // path.1 gets exactly the same checks as the configured path (never a link).
         (FileTailPathState rotatedState, string rotatedPath) = CheckRotated(path);
 
+        if (input.Multiline is { } multiline)
+        {
+            return await PollMultilineAsync(
+                input,
+                multiline,
+                snapshot,
+                cursor,
+                otherSchema,
+                state,
+                path,
+                rotatedState,
+                rotatedPath,
+                cancellationToken);
+        }
+
         // A missing file is read as missing: the cursor is still persisted (a file created
         // later is read from its start) and the rotated file may still hold unread lines.
         FileTailBatch batch = Read(
@@ -454,6 +477,216 @@ public sealed class FileTailSource : IAsyncDisposable
         return new FileTailPollResult(handled, backpressure, !backpressure && batch.More);
     }
 
+    private async Task<FileTailPollResult> PollMultilineAsync(
+        Input input,
+        FileTailMultilineBuffer multiline,
+        SourceCursorSnapshot? snapshot,
+        FileTailCursor? cursor,
+        bool otherSchema,
+        FileTailPathState state,
+        string path,
+        FileTailPathState rotatedState,
+        string rotatedPath,
+        CancellationToken cancellationToken)
+    {
+        FileTailInputOptions options = input.Options;
+        DateTimeOffset now = clock.GetUtcNow();
+        if (multiline.HasBuffered && !Equals(multiline.OriginCursor, cursor))
+        {
+            multiline.Clear();
+        }
+
+        FileTailCursor? readFrom = multiline.HasBuffered ? multiline.ReadCursor : cursor;
+        FileTailBatch batch = Read(
+            state == FileTailPathState.Ready ? path : null,
+            rotatedState == FileTailPathState.Ready ? rotatedPath : null,
+            readFrom,
+            options,
+            cancellationToken);
+
+        _ = Check(options);
+        if (batch.RotatedPath is not null)
+        {
+            _ = CheckRotated(path);
+        }
+
+        if (batch.Gap)
+        {
+            Interlocked.Increment(ref input.Counters.RotationGaps);
+        }
+
+        FileTailCursor committed = multiline.HasBuffered
+            ? multiline.OriginCursor!
+            : batch.Lines.Count == 0
+                ? batch.Cursor
+                : (batch.Origin ?? batch.Cursor);
+        bool backpressure = false;
+        bool stoppedEarly = false;
+        int handled = 0;
+        Exception? failure = null;
+
+        async Task<bool> SubmitMergedAsync(FileTailMergedEvent merged)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                committed = merged.OriginCursor;
+                multiline.Clear();
+                stoppedEarly = true;
+                return false;
+            }
+
+            FileTailSubmitOutcome? outcome = null;
+            string? record = FileTailRecord.TryBuild(options, merged.Line, clock.GetUtcNow(), out string? unbuilt);
+            if (record is not null)
+            {
+                try
+                {
+                    outcome = await sink.SubmitAsync(options, record, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    committed = merged.OriginCursor;
+                    multiline.Clear();
+                    stoppedEarly = true;
+                    return false;
+                }
+                catch (Exception exception)
+                {
+                    Interlocked.Increment(ref input.Counters.SubmitFailures);
+                    failure = exception;
+                    committed = merged.OriginCursor;
+                    multiline.Clear();
+                    stoppedEarly = true;
+                    return false;
+                }
+
+                if (outcome == FileTailSubmitOutcome.Unavailable)
+                {
+                    Interlocked.Increment(ref input.Counters.Backpressure);
+                    backpressure = true;
+                    committed = merged.OriginCursor;
+                    multiline.Clear();
+                    stoppedEarly = true;
+                    return false;
+                }
+            }
+            else if (unbuilt == FileTailRecord.TooLarge)
+            {
+                Interlocked.Increment(ref input.Counters.Oversized);
+            }
+            else
+            {
+                Interlocked.Increment(ref input.Counters.Malformed);
+            }
+
+            committed = merged.EndCursor;
+            handled += merged.SourceLines;
+            CountMerged(input, merged.SourceLines, merged.SourceBytes, outcome);
+            return true;
+        }
+
+        bool mustFlushBeforeBatch = multiline.HasBuffered && (
+            multiline.IsExpired(now)
+            || batch.Gap
+            || (batch.Lines.Count > 0 && !string.Equals(batch.Lines[0].Fingerprint, multiline.Fingerprint, StringComparison.Ordinal))
+            || (batch.Lines.Count == 0 && (batch.Rotated || !string.Equals(batch.Cursor.Fingerprint, multiline.Fingerprint, StringComparison.Ordinal))));
+
+        if (mustFlushBeforeBatch && multiline.Flush() is { } pending)
+        {
+            await SubmitMergedAsync(pending);
+        }
+
+        if (!stoppedEarly)
+        {
+            for (int index = 0; index < batch.Lines.Count; index++)
+            {
+                FileTailLine line = batch.Lines[index];
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    committed = multiline.HasBuffered ? multiline.OriginCursor! : batch.RewindTo(line);
+                    multiline.Clear();
+                    stoppedEarly = true;
+                    break;
+                }
+
+                FileTailCursor lineOrigin = batch.RewindTo(line);
+                FileTailCursor lineEnd = (batch.Origin ?? batch.Cursor) with { Offset = line.EndOffset, Discarding = false };
+
+                if (line.Oversized || line.Bytes.Length == 0)
+                {
+                    if (multiline.Flush() is { } flushedBeforeSpecial && !await SubmitMergedAsync(flushedBeforeSpecial))
+                    {
+                        break;
+                    }
+
+                    handled++;
+                    Count(input, line, null);
+                    committed = lineEnd;
+                    continue;
+                }
+
+                IReadOnlyList<FileTailMergedEvent> ready = multiline.AddLine(line, lineOrigin, lineEnd, now);
+                foreach (FileTailMergedEvent merged in ready)
+                {
+                    if (!await SubmitMergedAsync(merged))
+                    {
+                        break;
+                    }
+                }
+
+                if (stoppedEarly)
+                {
+                    break;
+                }
+            }
+        }
+
+        if (!stoppedEarly)
+        {
+            if (batch.Rotated && multiline.Flush() is { } trailing)
+            {
+                await SubmitMergedAsync(trailing);
+            }
+
+            if (!stoppedEarly && !multiline.HasBuffered)
+            {
+                committed = batch.Cursor;
+                if (batch.Rotated)
+                {
+                    Interlocked.Increment(ref input.Counters.Rotations);
+                }
+            }
+        }
+
+        string value = committed.Serialize();
+        if (!string.Equals(value, snapshot?.Value, StringComparison.Ordinal))
+        {
+            bool advanced = await cursors.TryAdvanceAsync(
+                options.SourceId, snapshot?.Version ?? 0, value, clock.GetUtcNow(), CancellationToken.None);
+            if (!advanced)
+            {
+                multiline.Clear();
+                Interlocked.Increment(ref input.Counters.CursorConflicts);
+                throw new FileTailException(FileTailFailures.CursorConflict);
+            }
+        }
+
+        if (otherSchema)
+        {
+            Interlocked.Increment(ref input.Counters.RotationGaps);
+        }
+
+        Interlocked.Exchange(ref input.Offset, committed.Offset);
+        if (failure is not null)
+        {
+            throw new FileTailException(FileTailFailures.SubmitFailed, failure);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        input.State = backpressure ? "backpressure" : state == FileTailPathState.Missing ? "waiting" : "running";
+        return new FileTailPollResult(handled, backpressure, !backpressure && batch.More);
+    }
+
     private FileTailBatch Read(
         string? path,
         string? rotated,
@@ -558,6 +791,15 @@ public sealed class FileTailSource : IAsyncDisposable
     }
 
 
+    private void CountMerged(Input input, int lines, long bytes, FileTailSubmitOutcome? outcome)
+    {
+        FileTailCounters counters = input.Counters;
+        Interlocked.Add(ref counters.LinesRead, lines);
+        Interlocked.Add(ref counters.BytesRead, bytes);
+        Interlocked.Exchange(ref input.LastLineTicks, clock.GetUtcNow().UtcTicks);
+        CountOutcome(counters, outcome);
+    }
+
     private void Count(Input input, FileTailLine line, FileTailSubmitOutcome? outcome)
     {
         FileTailCounters counters = input.Counters;
@@ -576,6 +818,11 @@ public sealed class FileTailSource : IAsyncDisposable
             return;
         }
 
+        CountOutcome(counters, outcome);
+    }
+
+    private static void CountOutcome(FileTailCounters counters, FileTailSubmitOutcome? outcome)
+    {
         switch (outcome)
         {
             case FileTailSubmitOutcome.Queued:
@@ -624,9 +871,10 @@ public sealed class FileTailSource : IAsyncDisposable
         public long CursorConflicts;
     }
 
-    private sealed class Input(FileTailInputOptions options)
+    private sealed class Input(FileTailInputOptions options, FileTailMultilineBuffer? multiline = null)
     {
         public FileTailInputOptions Options { get; } = options;
+        public FileTailMultilineBuffer? Multiline { get; } = multiline;
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public FileTailCounters Counters { get; } = new();
         public volatile string State = "starting";

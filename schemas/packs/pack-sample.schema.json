@@ -6,8 +6,9 @@
   "type": "object",
   "additionalProperties": false,
   "oneOf": [
-    {"required": ["event"], "not": {"required": ["raw"]}},
-    {"required": ["raw", "parser"], "not": {"required": ["event"]}}
+    {"required": ["event"], "not": {"anyOf": [{"required": ["raw"]}, {"required": ["rawLines"]}]}},
+    {"required": ["raw", "parser"], "not": {"anyOf": [{"required": ["event"]}, {"required": ["rawLines"]}]}},
+    {"required": ["rawLines", "parser"], "not": {"anyOf": [{"required": ["event"]}, {"required": ["raw"]}]}}
   ],
   "$defs": {
     "path": {
@@ -34,6 +35,19 @@
     "raw": {
       "description": "A raw record for a pack parser (parse, transform, map, redact, select). {{now}} is replaced with the current UTC time, which is also the transform evaluation time.",
       "type": "object"
+    },
+    "rawLines": {
+      "description": "Physical text lines merged through the parser's multiline rule before parsing, transform, redaction and selection. {{now}} is replaced with the current UTC time.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "items": {"type": "string"}
+    },
+    "expectEvents": {
+      "description": "Exact number of merged events expected from rawLines. Defaults to 1 when rawLines is used.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 256
     },
     "parser": {
       "description": "Parser for a raw sample: zero-based index in manifest (ordinal path) order, or a parser name (file name without extension, or its pack path).",
