@@ -125,5 +125,18 @@ class GlossaryEncodingTests(unittest.TestCase):
                     with self.assertRaisesRegex(SystemExit, "Glossary is stale"):
                         runpy.run_path(str(script), run_name="__main__")
 
+
+class ConfigAndApiReferenceTests(unittest.TestCase):
+    def test_generated_configuration_and_api_references_are_up_to_date(self):
+        mod = load("generate_config_and_api_reference")
+        config_md = mod.render_configuration()
+        api_md = mod.render_api()
+        self.assertIn("BOWER_QUEUE_PATH", config_md)
+        self.assertIn("schemas/policy/", config_md)
+        self.assertIn("/v1/events", api_md)
+        self.assertIn("/api/collectors", api_md)
+        self.assertEqual(mod.CONFIG_TARGET.read_text(encoding="utf-8"), config_md)
+        self.assertEqual(mod.API_TARGET.read_text(encoding="utf-8"), api_md)
+
 if __name__ == "__main__":
     unittest.main()

@@ -13,6 +13,10 @@ on:
       - 'deploy/kubernetes/deployment.yaml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
       - 'src/Bower.Cli/Commands/CliHelp.cs'
+      - 'src/Bower.Collector/CollectorSettings.cs'
+      - 'src/Bower.Collector/CollectorApplication.cs'
+      - 'src/Bower.Management.Api/*.cs'
+      - 'schemas/**'
       - '.github/workflows/docs.yml'
   push:
     branches: [main]
@@ -27,6 +31,10 @@ on:
       - 'deploy/kubernetes/deployment.yaml'
       - 'ui/Bower.Management.Web/src/components/glossary.json'
       - 'src/Bower.Cli/Commands/CliHelp.cs'
+      - 'src/Bower.Collector/CollectorSettings.cs'
+      - 'src/Bower.Collector/CollectorApplication.cs'
+      - 'src/Bower.Management.Api/*.cs'
+      - 'schemas/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -60,6 +68,7 @@ jobs:
         run: |
           .venv-docs/bin/python tools/docs/generate_glossary.py --check
           .venv-docs/bin/python tools/docs/generate_cli_reference.py --check
+          .venv-docs/bin/python tools/docs/generate_config_and_api_reference.py --check
           .venv-docs/bin/python -m unittest discover -s tools/docs/tests -p 'test_*.py'
       - name: Build the site
         working-directory: website
