@@ -37,7 +37,8 @@ class SelectionTests(unittest.TestCase):
     def test_separate_workflows_do_not_run_ci_jobs(self):
         # workflow-lint (always required) still lints them.
         for path in (".github/workflows/docs.yml", ".github/workflows/images.yml",
-                     ".github/workflows/asvs-examples.yml", ".github/workflows/sentinel-solution.yml"):
+                     ".github/workflows/asvs-examples.yml", ".github/workflows/sentinel-solution.yml",
+                     ".github/workflows/dependabot-auto-merge.yml"):
             with self.subTest(path=path):
                 self.assertEqual(set(), self.enabled([path]))
 
