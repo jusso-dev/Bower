@@ -148,6 +148,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           "type": "doc",
+          "id": "deployment/air-gapped",
+          "label": "Air-gapped bundles"
+        },
+        {
+          "type": "doc",
           "id": "deployment/s3-output",
           "label": "Amazon S3 output"
         },
