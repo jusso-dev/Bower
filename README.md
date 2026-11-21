@@ -23,6 +23,15 @@
 **Turn application security events into selected signal, with privacy controls
 applied before persistence and forwarding.**
 
+## Part of the Microsoft security logging stack
+
+1. **[microsoft-security-logging-guide](https://github.com/jusso-dev/microsoft-security-logging-guide)** — What to log: practical, product-by-product guidance on getting high-value security logs from Microsoft products into Microsoft Sentinel and Microsoft Defender XDR.
+2. **[soc-ready-logging](https://github.com/jusso-dev/soc-ready-logging)** — How to instrument custom applications: OWASP and ACSC ISM schemas, CLI validators, language wrappers, starter detections, and AI agent skills for high-value, low-noise security logging.
+3. **[Bower](https://github.com/jusso-dev/Bower)** *(you are here)* — How to normalise, redact, and ship logs: self-hosted security telemetry normaliser and Australian privacy gateway with default-deny selection, host-side PII redaction, tamper-evident buffering, and signed Sentinel arrival proof.
+4. **Operate on the logs in Microsoft Defender XDR and Microsoft Sentinel:**
+   - **[blueboard](https://github.com/jusso-dev/blueboard)** — Shared board where AI agents and SOC analysts work incidents together across Microsoft Defender XDR and Microsoft Sentinel, with human-approved containment and eradication.
+   - **[crosswire](https://github.com/jusso-dev/crosswire)** — Open-source SOC kit for GitHub Copilot and Squad agents that hunt in Microsoft Defender XDR and Microsoft Sentinel, cross-compare threat intelligence, and propose gated responses for human approval.
+
 ## Why Bower
 
 Azure Monitor Agent, Elastic Agent and Cribl Stream move logs. Bower makes a narrower
