@@ -99,6 +99,54 @@
       ],
       "maxLength": 2048
     },
+    "multiline": {
+      "description": "Optional bounded multi-line merge rule applied before parsing and redaction.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "pattern"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "Start",
+            "Continuation"
+          ]
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "maxLines": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 256,
+          "default": 64
+        },
+        "maxBytes": {
+          "type": "integer",
+          "minimum": 256,
+          "maximum": 30720,
+          "default": 16384
+        },
+        "flushTimeoutMilliseconds": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 60000,
+          "default": 1000
+        },
+        "joinSeparator": {
+          "type": "string",
+          "maxLength": 8,
+          "default": "\n"
+        }
+      }
+    },
     "runtime": {
       "description": "Explicit signed semantic mapping; absent means preview-only.",
       "type": [

@@ -16,6 +16,7 @@ using Bower.Output.Http;
 using Bower.Output.S3;
 using Bower.Packs;
 using Bower.Persistence;
+using Bower.Pipeline;
 using Bower.PolicyEngine;
 using Bower.Redaction;
 using Bower.ServiceDefaults;
@@ -191,7 +192,16 @@ public static partial class CollectorApplication
                     services.GetRequiredService<TimeProvider>(),
                     services.GetRequiredService<EventTap>())),
                 services.GetRequiredService<FileTailCursors>().Store,
-                services.GetRequiredService<TimeProvider>())
+                services.GetRequiredService<TimeProvider>(),
+                input => PackRecordIntake.Parser(bundle, input.Route.Pack, input.Route.Parser)?.Multiline is { } rule
+                    ? new FileTailMultilineOptions(
+                        rule.Mode == MultilineMode.Start,
+                        rule.Pattern,
+                        rule.MaxLines,
+                        rule.MaxBytes,
+                        rule.FlushTimeoutMilliseconds,
+                        rule.JoinSeparator)
+                    : null)
             {
                 // A busy queue database (for example during a retention batch) is backpressure.
                 IsTransientStorageFailure = QueueStorageErrors.IsBusy,

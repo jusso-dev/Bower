@@ -46,10 +46,12 @@ samples fail cannot be signed. Sample lines:
 was accepted unchanged. Every other expectation must match exactly.
 
 Sample lines follow [`schemas/packs/pack-sample.schema.json`](../../schemas/packs/pack-sample.schema.json)
-(version 2: adds `expectFields` and parser names; every version 1 line is still valid).
-Members other than `name`, `expect`, `event`, `raw`, `parser`, `mustNotContain`,
+(version 2: adds `expectFields`, `rawLines`, `expectEvents` and parser names; every version 1 line is still valid).
+Members other than `name`, `expect`, `event`, `raw`, `rawLines`, `expectEvents`, `parser`, `mustNotContain`,
 `expectedDetections` and `expectFields`, and repeated members, fail the build, so a
-mistyped assertion cannot pass silently.
+mistyped assertion cannot pass silently. Use `rawLines` (array of physical lines) with
+`expectEvents` (default `1`) to pin a parser's `multiline` rule (for example Java or .NET
+stack traces merging into one event before redaction).
 
 ### Field assertions (`expectFields`)
 

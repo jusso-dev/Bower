@@ -72,6 +72,40 @@ Choose keys that keep distinct actors apart (for example include `actor.userId` 
 `source.ipAddress`) if the counts will be used to investigate anyone: a count per
 application alone hides who did what.
 
+### Multi-line merge in parsers
+
+A parser configuration can include an optional `multiline` rule to merge stack traces
+and other multi-line text records into one logical event **before** parsing, transforms
+and redaction run (so secrets split across continuation lines are still caught as one
+value):
+
+```json
+"multiline": {
+  "mode": "Start",
+  "pattern": "^\\d{4}-\\d{2}-\\d{2}T",
+  "maxLines": 64,
+  "maxBytes": 16384,
+  "flushTimeoutMilliseconds": 1000,
+  "joinSeparator": "\n"
+}
+```
+
+- `mode`: `Start` (matching lines start a new record; non-matching lines append) or
+  `Continuation` (matching lines append to the current record; non-matching lines start
+  a new record).
+- Patterns compile with .NET's non-backtracking regex engine (`<= 512` chars).
+- Limits prevent memory exhaustion: `maxLines` (`2–256`, default `64`), `maxBytes`
+  (`256–30720`, default `16384`, leaving room inside the 32 KiB pack record limit),
+  `flushTimeoutMilliseconds` (`100–60000`, default `1000`), and `joinSeparator`
+  (`<= 8` chars, default `\n`).
+- For the file tail source (`text` format), the durable SQLite cursor stays before the
+  first line of an accumulating multi-line event until the merged event flushes and is
+  durably enqueued or definitively dropped, so a crash before flush neither loses nor
+  duplicates events.
+- Pack samples can test multi-line merging and cross-line redaction with `rawLines` and
+  `expectEvents` (see [Bower packs](../deployment/packs.md) and
+  [custom log parser](../developer-integration/custom-log-parser.md)).
+
 ## Population diff
 
 Run every sample through two policy directories before rollout:

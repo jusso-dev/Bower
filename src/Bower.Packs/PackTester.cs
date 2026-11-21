@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Bower.Abstractions;
 using Bower.Contracts;
+using Bower.Pipeline;
 using Bower.Pipeline.Transforms;
 using Bower.PolicyEngine;
 using Bower.Redaction;
@@ -18,6 +19,9 @@ public sealed record PackSampleResult(string Name, bool Passed, string ExpectedD
 /// "{{now}}" in the event is replaced with the current UTC time. Raw samples run the
 /// parser's transform program with that same time as its evaluation time; a transform
 /// failure is decision "quarantine" (the record is never redacted, selected or kept).
+/// Multi-line samples use "rawLines" (an array of raw text lines) with "parser" and optional
+/// "expectEvents" (default 1): lines are merged through the parser's multiline rule before
+/// parsing, transforms and redaction, so secrets split across lines are caught as one value.
 /// Expectations: "accept" passes for accept and for redact-and-accept, because the event
 /// is delivered either way (prove the redaction with "mustNotContain"); "redact-and-accept"
 /// requires that redaction happened; every other expectation must match exactly.
@@ -30,7 +34,7 @@ public static class PackTester
 {
     private static readonly HashSet<string> Members = new(StringComparer.Ordinal)
     {
-        "name", "expect", "event", "raw", "parser", "mustNotContain", "expectedDetections", "expectFields"
+        "name", "expect", "event", "raw", "rawLines", "expectEvents", "parser", "mustNotContain", "expectedDetections", "expectFields"
     };
 
     /// <param name="parser">Run only the raw samples of this parser (name or path); null runs every sample.</param>
@@ -67,7 +71,20 @@ public static class PackTester
             }
 
             JsonObject sample = JsonNode.Parse(line)!.AsObject();
-            int? sampleParser = sample["raw"] is null ? null : SampleParser(pack, sample["parser"]);
+            bool hasEvent = sample["event"] is not null;
+            bool hasRaw = sample["raw"] is not null;
+            bool hasRawLines = sample["rawLines"] is not null;
+            if ((hasEvent ? 1 : 0) + (hasRaw ? 1 : 0) + (hasRawLines ? 1 : 0) != 1)
+            {
+                throw new InvalidDataException($"Sample {index} must specify exactly one of 'event', 'raw' or 'rawLines'.");
+            }
+
+            if (sample["expectEvents"] is not null && !hasRawLines)
+            {
+                throw new InvalidDataException($"Sample {index} 'expectEvents' is only valid with 'rawLines'.");
+            }
+
+            int? sampleParser = !hasRaw && !hasRawLines ? null : SampleParser(pack, sample["parser"]);
             if (only is not null && sampleParser != only)
             {
                 continue;
@@ -80,7 +97,62 @@ public static class PackTester
             string? eventJson;
             string? rawJson = null;
             string? transformFailure = null;
-            if (sample["raw"] is { } raw)
+            if (hasRawLines)
+            {
+                CustomLogParserConfiguration parserConfig = pack.Parsers[sampleParser!.Value];
+                string[] rawLines = ReadRawLines(sample["rawLines"]!, name, now);
+                int expectedEvents = ReadExpectedEvents(sample["expectEvents"], name);
+                string[] mergedTexts = parserConfig.Multiline is { } multiline
+                    ? MultilineLineMerger.MergeAll(multiline, rawLines, now).Select(item => item.Text).ToArray()
+                    : rawLines;
+                if (mergedTexts.Length != expectedEvents)
+                {
+                    problems.Add($"Expected {expectedEvents} merged event(s), got {mergedTexts.Length}.");
+                }
+
+                List<string> actualDecisions = [];
+                string[] forbiddenValues = (sample["mustNotContain"] as JsonArray)?.Select(item => item!.GetValue<string>()).ToArray() ?? [];
+                string[]? expectedDetectionsList = (sample["expectedDetections"] as JsonArray)?.Select(item => item!.GetValue<string>()).ToArray();
+                for (int mergedIndex = 0; mergedIndex < mergedTexts.Length; mergedIndex++)
+                {
+                    JsonObject recordObject = new()
+                    {
+                        ["id"] = $"sample-ml-{index}-{mergedIndex + 1}",
+                        ["message"] = mergedTexts[mergedIndex],
+                        ["readAt"] = now.ToString("O")
+                    };
+                    string mergedRaw = recordObject.ToJsonString();
+                    string? mergedFailure = null;
+                    SecurityEventEnvelope? mapped = null;
+                    try
+                    {
+                        mapped = PackRuntime.Parse(parserConfig, mergedRaw, now);
+                    }
+                    catch (TransformException exception)
+                    {
+                        mergedFailure = exception.Code;
+                    }
+
+                    string? mergedEventJson = mapped is null ? null : JsonSerializer.Serialize(mapped, BowerJson.Envelope);
+                    string decision = EvaluateEvent(
+                        engine,
+                        evaluator,
+                        mergedEventJson,
+                        mergedRaw,
+                        mergedFailure,
+                        expected,
+                        forbiddenValues,
+                        expectations,
+                        expectedDetectionsList,
+                        problems);
+                    actualDecisions.Add(decision);
+                }
+
+                string summaryActual = actualDecisions.Count == 0 ? "none" : actualDecisions[^1];
+                results.Add(new PackSampleResult(name, problems.Count == 0, expected, summaryActual, problems));
+                continue;
+            }
+            else if (sample["raw"] is { } raw)
             {
                 SecurityEventEnvelope? mapped = null;
                 rawJson = raw.ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal);
@@ -102,83 +174,149 @@ public static class PackTester
                     .ToJsonString().Replace("{{now}}", now.ToString("O"), StringComparison.Ordinal);
             }
 
-            RedactionResult redaction = eventJson is null
-                ? new RedactionResult(false, null, [], [], "not-selected") : engine.Redact(eventJson);
-            string actual;
-            string[] detected = [];
-            if (transformFailure is not null)
-            {
-                actual = "quarantine";
-            }
-            else if (eventJson is null)
-            {
-                actual = "reject";
-            }
-            else if (!redaction.Succeeded)
-            {
-                actual = "quarantine";
-            }
-            else
-            {
-                SecurityEventEnvelope? envelope = JsonSerializer.Deserialize(redaction.RedactedJson!, BowerJson.Envelope);
-                PolicyDecision decision = evaluator.Evaluate(envelope!);
-                actual = decision.Action switch
-                {
-                    DecisionAction.Accept when redaction.RemovedPaths.Count + redaction.MaskedPaths.Count > 0
-                        || redaction.PrivacyDetected?.Count > 0 => "redactandaccept",
-                    _ => decision.Action.ToString().ToLowerInvariant()
-                };
-
-                if (envelope!.Attributes?.TryGetValue(PackDetectionRedactor.EvidenceAttribute, out JsonElement evidence) == true)
-                {
-                    detected = evidence.EnumerateArray().Select(item => item.GetProperty("ruleId").GetString()!).ToArray();
-                }
-
-                string[] forbiddenValues = (sample["mustNotContain"] as JsonArray)?.Select(item => item!.GetValue<string>()).ToArray() ?? [];
-                foreach (string forbidden in forbiddenValues)
-                {
-                    if (redaction.RedactedJson!.Contains(forbidden, StringComparison.Ordinal))
-                    {
-                        problems.Add($"Redacted event still contains a forbidden value ({forbidden.Length} characters).");
-                    }
-                }
-
-                if (expectations is not null)
-                {
-                    // Pre-redaction inputs only identify withheld values; they are never echoed.
-                    string[] inputs = rawJson is null ? [eventJson] : [rawJson, eventJson];
-                    problems.AddRange(PackFieldAssertions.Check(expectations, redaction.RedactedJson!, inputs, forbiddenValues));
-                }
-            }
-
-            if (expectations is not null && (transformFailure is not null || eventJson is null || !redaction.Succeeded))
-            {
-                problems.Add($"Field assertions need a redacted event; got {actual}.");
-            }
-
-            if (sample["expectedDetections"] is JsonArray expectedDetections
-                && !expectedDetections.Select(item => item!.GetValue<string>()).Order(StringComparer.Ordinal)
-                    .SequenceEqual(detected.Order(StringComparer.Ordinal), StringComparer.Ordinal))
-            {
-                problems.Add("Expected detection rule ids do not match local execution.");
-            }
-
-            // "accept" also covers redact-and-accept; the reverse does not hold.
-            bool decisionMatches = string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase)
-                || (expected.Equals("accept", StringComparison.OrdinalIgnoreCase) && actual == "redactandaccept");
-            if (!decisionMatches)
-            {
-                problems.Add($"Expected {expected}, got {actual}.");
-                if (transformFailure is not null)
-                {
-                    problems.Add($"Transform failed: {transformFailure}.");
-                }
-            }
+            string[] singleForbiddenValues = (sample["mustNotContain"] as JsonArray)?.Select(item => item!.GetValue<string>()).ToArray() ?? [];
+            string[]? singleExpectedDetections = (sample["expectedDetections"] as JsonArray)?.Select(item => item!.GetValue<string>()).ToArray();
+            string actual = EvaluateEvent(
+                engine,
+                evaluator,
+                eventJson,
+                rawJson,
+                transformFailure,
+                expected,
+                singleForbiddenValues,
+                expectations,
+                singleExpectedDetections,
+                problems);
 
             results.Add(new PackSampleResult(name, problems.Count == 0, expected, actual, problems));
         }
 
         return results;
+    }
+
+    private static string EvaluateEvent(
+        PackDetectionRedactor engine,
+        DeterministicPolicyEvaluator evaluator,
+        string? eventJson,
+        string? rawJson,
+        string? transformFailure,
+        string expected,
+        string[] forbiddenValues,
+        IReadOnlyList<PackFieldExpectation>? expectations,
+        string[]? expectedDetections,
+        List<string> problems)
+    {
+        RedactionResult redaction = eventJson is null
+            ? new RedactionResult(false, null, [], [], "not-selected") : engine.Redact(eventJson);
+        string actual;
+        string[] detected = [];
+        if (transformFailure is not null)
+        {
+            actual = "quarantine";
+        }
+        else if (eventJson is null)
+        {
+            actual = "reject";
+        }
+        else if (!redaction.Succeeded)
+        {
+            actual = "quarantine";
+        }
+        else
+        {
+            SecurityEventEnvelope? envelope = JsonSerializer.Deserialize(redaction.RedactedJson!, BowerJson.Envelope);
+            PolicyDecision decision = evaluator.Evaluate(envelope!);
+            actual = decision.Action switch
+            {
+                DecisionAction.Accept when redaction.RemovedPaths.Count + redaction.MaskedPaths.Count > 0
+                    || redaction.PrivacyDetected?.Count > 0 => "redactandaccept",
+                _ => decision.Action.ToString().ToLowerInvariant()
+            };
+
+            if (envelope!.Attributes?.TryGetValue(PackDetectionRedactor.EvidenceAttribute, out JsonElement evidence) == true)
+            {
+                detected = evidence.EnumerateArray().Select(item => item.GetProperty("ruleId").GetString()!).ToArray();
+            }
+
+            foreach (string forbidden in forbiddenValues)
+            {
+                if (redaction.RedactedJson!.Contains(forbidden, StringComparison.Ordinal))
+                {
+                    problems.Add($"Redacted event still contains a forbidden value ({forbidden.Length} characters).");
+                }
+            }
+
+            if (expectations is not null)
+            {
+                // Pre-redaction inputs only identify withheld values; they are never echoed.
+                string[] inputs = rawJson is null ? [eventJson] : [rawJson, eventJson];
+                problems.AddRange(PackFieldAssertions.Check(expectations, redaction.RedactedJson!, inputs, forbiddenValues));
+            }
+        }
+
+        if (expectations is not null && (transformFailure is not null || eventJson is null || !redaction.Succeeded))
+        {
+            problems.Add($"Field assertions need a redacted event; got {actual}.");
+        }
+
+        if (expectedDetections is not null
+            && !expectedDetections.Order(StringComparer.Ordinal)
+                .SequenceEqual(detected.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+        {
+            problems.Add("Expected detection rule ids do not match local execution.");
+        }
+
+        // "accept" also covers redact-and-accept; the reverse does not hold.
+        bool decisionMatches = string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase)
+            || (expected.Equals("accept", StringComparison.OrdinalIgnoreCase) && actual == "redactandaccept");
+        if (!decisionMatches)
+        {
+            problems.Add($"Expected {expected}, got {actual}.");
+            if (transformFailure is not null)
+            {
+                problems.Add($"Transform failed: {transformFailure}.");
+            }
+        }
+
+        return actual;
+    }
+
+    private static string[] ReadRawLines(JsonNode node, string sampleName, DateTimeOffset now)
+    {
+        if (node is not JsonArray array || array.Count is < 1 or > CustomLogMultilineRule.MaximumMaxLines)
+        {
+            throw new InvalidDataException(
+                $"Sample '{sampleName}' 'rawLines' must be an array of 1 to {CustomLogMultilineRule.MaximumMaxLines} strings.");
+        }
+
+        string nowText = now.ToString("O");
+        string[] lines = new string[array.Count];
+        for (int index = 0; index < array.Count; index++)
+        {
+            if (array[index] is not JsonValue value || value.GetValueKind() != JsonValueKind.String)
+            {
+                throw new InvalidDataException($"Sample '{sampleName}' 'rawLines[{index}]' must be a string.");
+            }
+
+            lines[index] = value.GetValue<string>().Replace("{{now}}", nowText, StringComparison.Ordinal);
+        }
+
+        return lines;
+    }
+
+    private static int ReadExpectedEvents(JsonNode? node, string sampleName)
+    {
+        if (node is null)
+        {
+            return 1;
+        }
+
+        if (node is not JsonValue value || value.GetValueKind() != JsonValueKind.Number || !value.TryGetValue(out int count) || count < 1)
+        {
+            throw new InvalidDataException($"Sample '{sampleName}' 'expectEvents' must be an integer of at least 1.");
+        }
+
+        return count;
     }
 
     /// <summary>
