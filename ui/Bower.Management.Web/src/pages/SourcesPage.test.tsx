@@ -508,6 +508,43 @@ describe("Sources page", () => {
     expect(within(step).getByText(/change the settings and ask for approval again/)).toBeTruthy();
     expect(within(step).getByText(/Matches BWR-210/)).toBeTruthy();
   });
+
+  it("lets operators preview the first live redacted event via the audited tap endpoint", async () => {
+    stub({
+      details: [detail("approved", check("complete", "Receiving events"))]
+    });
+    const baseFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/api/pipelines/collectors/edge-01/tap")) {
+        return Promise.resolve(json({
+          collectorId: "edge-01",
+          mode: "live",
+          command: "bower tap --collector edge-01",
+          note: "Returned 1 post-redaction event from collector edge-01.",
+          frames: [
+            {
+              observedAt: "2026-10-27T09:30:00Z",
+              stage: "redact",
+              decision: "accept",
+              eventType: "ssh_login_failed",
+              source: "ssh-gateway",
+              policyId: "ssh-auth",
+              redactedPayload: "{\"eventType\":\"ssh_login_failed\",\"actor\":{\"username\":\"[REDACTED:id.email]\"}}"
+            }
+          ],
+          capturedAt: "2026-10-27T09:30:01Z"
+        }));
+      }
+      return baseFetch(input, init);
+    }));
+    renderAt(`/sources?request=${"a".repeat(32)}`);
+
+    const checkStep = await screen.findByRole("region", { name: "Check it works" });
+    fireEvent.click(within(checkStep).getByRole("button", { name: "Preview first live redacted event" }));
+
+    const preview = await within(checkStep).findByLabelText("First live redacted event");
+    expect(preview.textContent).toContain("[REDACTED:id.email]");
+  });
 });
 
 describe("Source setup approvals", () => {
