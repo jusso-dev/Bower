@@ -12,6 +12,7 @@ import { useResource } from "../hooks/useResource";
 import { formatDate } from "../lib/format";
 import type { Access, Approval, Collector } from "../types";
 import { SourceSetupApprovals } from "./SourceSetupApprovals";
+import { PackInstallApprovals } from "./PackInstallApprovals";
 
 export function ApprovalsPage() {
   const api = useApi();
@@ -153,6 +154,8 @@ export function ApprovalsPage() {
       </ResourceState>
 
       <SourceSetupApprovals access={access.data} canApprove={canApprove} />
+
+      <PackInstallApprovals access={access.data} canApprove={canApprove} />
 
       <section className="sheet section-gap">
         <div className="section-heading">

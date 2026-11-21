@@ -257,6 +257,15 @@ evidence.
   the password comes from a file that is never logged, hashed or reported. An inspecting
   proxy can read heartbeat metadata and the bearer token in transit, so trust it as you
   would the management host. It cannot forge commands.
+- Console pack gallery (`GET /api/packs`, `POST /api/packs/install-requests`): management
+  loads `.bowerpack` archives only from the server-configured `BOWER_PACK_GALLERY_DIR`
+  and verifies every manifest signature and file digest against `BOWER_PACK_TRUSTED_KEYS`
+  before listing, before accepting an install submission, and again before approval.
+  Archives without a trusted key or with modified contents are refused with a plain reason
+  and cannot be submitted or approved; sample results expose pass/fail decisions only
+  (never raw sample inputs or sensitive strings). Pack installs require two-person
+  approval (the requester cannot approve) and write desired-policy hashes plus audit rows
+  atomically; every collector still verifies pack signatures independently on load.
 - Management API abuse: Entra-only endpoints (except token enrolment and the
   enrolled-collector credential, above), per-principal rate limiting, HSTS on
   HTTPS, restricted CORS headers and methods, and fixed error messages that never

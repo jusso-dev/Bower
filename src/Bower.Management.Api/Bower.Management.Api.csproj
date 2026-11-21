@@ -21,6 +21,7 @@
     <ProjectReference Include="..\Bower.Evidence\Bower.Evidence.csproj" />
     <ProjectReference Include="..\Bower.Integrity\Bower.Integrity.csproj" />
     <ProjectReference Include="..\Bower.Jobs\Bower.Jobs.csproj" />
+    <ProjectReference Include="..\Bower.Packs\Bower.Packs.csproj" />
     <ProjectReference Include="..\Bower.Pipeline\Bower.Pipeline.csproj" />
     <ProjectReference Include="..\Bower.PolicyEngine\Bower.PolicyEngine.csproj" />
     <ProjectReference Include="..\Bower.Redaction\Bower.Redaction.csproj" />

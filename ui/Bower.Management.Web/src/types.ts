@@ -723,3 +723,97 @@ export interface PipelineTapResponse {
   frames: PipelineTapFrame[];
   capturedAt: string;
 }
+
+export interface PackPolicySummary {
+  id: string;
+  version: string;
+  action: string;
+  eventTypes: string[];
+  hash: string;
+}
+
+export interface PackSampleSummary {
+  name: string;
+  passed: boolean;
+  expectedDecision: string;
+  actualDecision: string;
+  problems: string[];
+}
+
+export interface PackGalleryItem {
+  trusted: boolean;
+  fileName: string;
+  id: string | null;
+  version: string | null;
+  name: string | null;
+  description: string | null;
+  owner: string | null;
+  builtAtUtc: string | null;
+  packHash: string | null;
+  signedByKeyId: string | null;
+  eventTypes: string[];
+  policies: PackPolicySummary[];
+  redactions: string[];
+  detectionCount: number;
+  parserCount: number;
+  sampleResults: PackSampleSummary[];
+  refusalReason: string | null;
+}
+
+export interface PackTargetGroup {
+  environment: string;
+  eligibleCollectors: number;
+  collectorIds: string[];
+}
+
+export interface PackGalleryResponse {
+  configured: boolean;
+  trustedKeyCount: number;
+  packs: PackGalleryItem[];
+  groups: PackTargetGroup[];
+}
+
+export interface PackPolicyDiffEntry {
+  policyId: string;
+  change: string;
+  detail: string;
+}
+
+export interface PackCollectorDiffEntry {
+  collectorId: string;
+  machineName: string;
+  environment: string;
+  currentPolicyHash: string;
+  currentDesiredPolicyHash: string | null;
+  targetPolicyHash: string;
+  alreadyAssigned: boolean;
+}
+
+export interface PackPopulationDiff {
+  packId: string;
+  packVersion: string;
+  packHash: string;
+  eventTypesAdded: string[];
+  policyChanges: PackPolicyDiffEntry[];
+  affectedCollectors: PackCollectorDiffEntry[];
+}
+
+export interface PackInstallRequestRecord {
+  id: string;
+  packId: string;
+  packVersion: string;
+  packName: string;
+  packHash: string;
+  signedByKeyId: string;
+  targetEnvironment: string | null;
+  targetCollectorId: string | null;
+  status: "pending-review" | "approved" | "rejected";
+  diff: PackPopulationDiff;
+  reason: string;
+  requestedByObjectId: string;
+  requestedByName: string;
+  requestedAt: string;
+  reviewerName: string | null;
+  reviewedAt: string | null;
+  reviewReason: string | null;
+}

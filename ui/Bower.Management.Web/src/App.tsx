@@ -9,6 +9,7 @@ import {
   KeyRound,
   ListChecks,
   Menu,
+  Package,
   Plug,
   Moon,
   ScrollText,
@@ -39,6 +40,7 @@ import { PoliciesPage } from "./pages/PoliciesPage";
 import { SetupPage } from "./pages/SetupPage";
 import { EnrolmentPage } from "./pages/EnrolmentPage";
 import { SourcesPage } from "./pages/SourcesPage";
+import { PacksPage } from "./pages/PacksPage";
 import { useConsoleView } from "./hooks/useConsoleView";
 
 const navItems = [
@@ -49,6 +51,7 @@ const navItems = [
   { to: "/setup", label: "Setup", icon: ListChecks },
   { to: "/collectors", label: "Collectors", icon: Boxes },
   { to: "/sources", label: "Sources", icon: Plug },
+  { to: "/packs", label: "Packs", icon: Package },
   { to: "/pipelines", label: "Pipelines", icon: GitBranch },
   { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { to: "/enrolment", label: "Enrolment", icon: Ticket },
@@ -184,6 +187,7 @@ export function App() {
           <Route path="/collectors" element={<CollectorsPage />} />
           <Route path="/collectors/:id" element={<CollectorDetailPage />} />
           <Route path="/sources" element={<SourcesPage />} />
+          <Route path="/packs" element={<PacksPage />} />
           <Route path="/pipelines" element={<PipelinesPage />} />
           <Route path="/approvals" element={<ApprovalsPage />} />
           <Route path="/enrolment" element={<EnrolmentPage />} />
