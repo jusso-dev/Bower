@@ -1,0 +1,99 @@
+{
+  "version": "1.0",
+  "format": "Json",
+  "fields": [
+    { "sourceName": "atype", "type": "Text", "ocsfPath": null, "asimField": null, "sensitive": false },
+    { "sourceName": "uuid", "type": "Text", "ocsfPath": "metadata.uid", "asimField": "EventOriginalUid", "sensitive": false },
+    { "sourceName": "result", "type": "WholeNumber", "ocsfPath": null, "asimField": null, "sensitive": false },
+    { "sourceName": "event_id", "type": "Text", "ocsfPath": "metadata.uid", "asimField": "EventOriginalUid", "sensitive": true },
+    { "sourceName": "event_time", "type": "DateTime", "ocsfPath": "time", "asimField": "TimeGenerated", "sensitive": true },
+    { "sourceName": "event_category", "type": "Text", "ocsfPath": "category_name", "asimField": "EventType", "sensitive": true },
+    { "sourceName": "event_action", "type": "Text", "ocsfPath": "activity_name", "asimField": "EventSubType", "sensitive": true },
+    { "sourceName": "event_result", "type": "Text", "ocsfPath": "status", "asimField": "EventResult", "sensitive": true },
+    { "sourceName": "actor_user", "type": "Text", "ocsfPath": "actor.user.name", "asimField": "TargetUsername", "sensitive": true },
+    { "sourceName": "source_ip", "type": "IpAddress", "ocsfPath": "src_endpoint.ip", "asimField": "SrcIpAddr", "sensitive": true },
+    { "sourceName": "target_type", "type": "Text", "ocsfPath": null, "asimField": null, "sensitive": false },
+    { "sourceName": "target_name", "type": "Text", "ocsfPath": "database.name", "asimField": "TargetAppName", "sensitive": true },
+    { "sourceName": "db_engine", "type": "Text", "ocsfPath": null, "asimField": null, "sensitive": false },
+    { "sourceName": "statement_class", "type": "Text", "ocsfPath": null, "asimField": null, "sensitive": false },
+    { "sourceName": "reason", "type": "Text", "ocsfPath": "status_detail", "asimField": "EventResultDetails", "sensitive": true },
+    { "sourceName": "matched", "type": "Text", "ocsfPath": null, "asimField": null, "sensitive": true }
+  ],
+  "runtime": {
+    "applicationName": "mongodb-audit",
+    "environment": "production",
+    "eventCategory": "administrative-activity",
+    "eventType": "database_audit",
+    "eventAction": "db.dcl",
+    "eventResult": "success",
+    "transforms": [
+      ".event_time = parse_timestamp(coalesce(.ts.\"$date\", .ts), \"rfc3339\")",
+      ".event_id = concat(\"mongodb-audit-\", coalesce(.uuid.\"$binary\", .uuid, .event_time))",
+      ".u0 = at(.users, 0)",
+      ".actor_user = coalesce(.u0.user, .param.user)",
+      ".ipm = regex_extract(.remote.ip, '^(?<ip>[0-9A-Fa-f.:]{2,45})$')",
+      ".source_ip = .ipm.ip",
+      ".target_type = \"database\"",
+      ".target_name = coalesce(.param.ns, .param.db, .u0.db, \"admin\")",
+      ".db_engine = \"mongodb\"",
+      ".statement_class = .atype",
+      ".ma = lookup(\"actions\", .atype)",
+      ".matched = \"ignored\"",
+      "if .ma != null && .actor_user != null { .matched = \"yes\"; .event_category = lookup(\"categories\", .atype); .event_action = .ma; .event_result = \"success\"; .reason = .atype }",
+      "if .matched == \"yes\" && .result != 0 { .event_result = \"failure\"; .reason = concat(\"MongoResult_\", to_string(.result)) }",
+      "if .matched == \"yes\" && .atype == \"authenticate\" && .result != 0 { .event_action = \"db.logon_failure\" }",
+      "del(.u0)",
+      "del(.ipm)",
+      "del(.ma)"
+    ],
+    "tables": {
+      "actions": {
+        "authenticate": "db.logon",
+        "logout": "db.logoff",
+        "createUser": "db.dcl",
+        "dropUser": "db.dcl",
+        "grantRolesToUser": "db.dcl",
+        "revokeRolesFromUser": "db.dcl",
+        "createRole": "db.dcl",
+        "dropRole": "db.dcl",
+        "createCollection": "db.ddl",
+        "dropCollection": "db.ddl",
+        "dropDatabase": "db.ddl",
+        "authCheck": "db.sensitive_read",
+        "shutdown": "db.privileged"
+      },
+      "categories": {
+        "authenticate": "authentication",
+        "logout": "authentication",
+        "createUser": "administrative-activity",
+        "dropUser": "administrative-activity",
+        "grantRolesToUser": "administrative-activity",
+        "revokeRolesFromUser": "administrative-activity",
+        "createRole": "administrative-activity",
+        "dropRole": "administrative-activity",
+        "createCollection": "administrative-activity",
+        "dropCollection": "administrative-activity",
+        "dropDatabase": "administrative-activity",
+        "authCheck": "data-access",
+        "shutdown": "administrative-activity"
+      }
+    },
+    "match": {
+      "matched": "yes"
+    },
+    "fields": {
+      "eventId": "event_id",
+      "timeGenerated": "event_time",
+      "eventCategory": "event_category",
+      "eventAction": "event_action",
+      "eventResult": "event_result",
+      "actor.username": "actor_user",
+      "source.ipAddress": "source_ip",
+      "target.type": "target_type",
+      "target.name": "target_name",
+      "labels.dbEngine": "db_engine",
+      "labels.dbStatementClass": "statement_class",
+      "eventOutcomeReason": "reason"
+    }
+  }
+}

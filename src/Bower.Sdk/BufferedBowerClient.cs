@@ -3,7 +3,7 @@ using Bower.Contracts;
 
 namespace Bower.Sdk;
 
-internal sealed class BufferedBowerClient : IBowerTelemetry, IBowerTelemetryDiagnostics, IAsyncDisposable
+internal sealed partial class BufferedBowerClient : IBowerTelemetry, IAsvsTelemetry, IBowerTelemetryDiagnostics, IAsyncDisposable
 {
     private readonly BowerOptions options;
     private readonly Channel<SecurityEventEnvelope> channel;

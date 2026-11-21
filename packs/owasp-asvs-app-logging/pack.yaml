@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: owasp-asvs-app-logging
-  version: 1.0.0
+  version: 1.1.0
   name: OWASP ASVS 5.0 application security logging
   description: >-
     Starter pack for the security events OWASP ASVS 5.0 chapter V16 asks applications to
@@ -28,6 +28,11 @@ policies:
   - policies/errors-and-control-failures.yaml
   - policies/database-audit.yaml
 privacyProfile: privacy.yaml
+parsers:
+  - parsers/pgaudit-jsonlog.json
+  - parsers/mysql-audit-json.json
+  - parsers/mongodb-audit-json.json
+  - parsers/sqlserver-audit-33205.json
 detections:
   - detections/mfa-factor-removed.yml
   - detections/authorisation-stale-grant.yml
