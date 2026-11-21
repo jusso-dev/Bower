@@ -33,7 +33,7 @@ internal enum PackRecordOutcome
 /// its cursor past it; counters and tap frames for it are recorded only after the commit.
 /// </summary>
 internal sealed class PackRecordIntake(
-    PolicyBundle bundle,
+    Func<PolicyBundle> bundleProvider,
     SecurityEventProcessor processor,
     CollectorIdentity identity,
     ManagedPrivacyProfileState managedPrivacy,
@@ -41,6 +41,17 @@ internal sealed class PackRecordIntake(
     TimeProvider timeProvider,
     EventTap? tap = null)
 {
+    public PackRecordIntake(
+        PolicyBundle bundle,
+        SecurityEventProcessor processor,
+        CollectorIdentity identity,
+        ManagedPrivacyProfileState managedPrivacy,
+        PipelineTelemetry telemetry,
+        TimeProvider timeProvider,
+        EventTap? tap = null)
+        : this(() => bundle, processor, identity, managedPrivacy, telemetry, timeProvider, tap)
+    {
+    }
     /// <summary>The active parser of a loaded signed pack, or null.</summary>
     public static CustomLogParserConfiguration? Parser(PolicyBundle bundle, string pack, int parser)
     {
@@ -62,7 +73,7 @@ internal sealed class PackRecordIntake(
             return PackRecordOutcome.Unavailable;
         }
 
-        CustomLogParserConfiguration parser = Parser(bundle, pack, parserIndex)!;
+        CustomLogParserConfiguration parser = Parser(bundleProvider(), pack, parserIndex)!;
         SecurityEventEnvelope? envelope;
         try
         {

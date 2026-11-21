@@ -31,8 +31,10 @@ public sealed partial class ManagementHeartbeatJob(
     QueueStoragePressure? storagePressure = null,
     WindowsEventLogSource? windowsEventLog = null,
     WecRuntimeStatusTracker? wecRuntime = null,
-    CrashRecoveryState? crashRecovery = null)
+    CrashRecoveryState? crashRecovery = null,
+    PolicyBundleHolder? bundleHolder = null)
 {
+    private PolicyBundle ActiveBundle => bundleHolder?.CurrentBundle ?? bundle;
     public const string Id = "management-heartbeat";
     public const string HttpClientName = "bower-management";
 
@@ -140,6 +142,7 @@ public sealed partial class ManagementHeartbeatJob(
         // witness: a later head with a lower sequence or a different hash is tampering.
         LedgerHead ledger = await eventStore.GetLedgerHeadAsync(cancellationToken);
 
+        PolicyBundle activeBundle = ActiveBundle;
         using HttpRequestMessage registration = CreateRequest(
             "api/collectors/register",
             accessToken.Token,
@@ -150,7 +153,7 @@ public sealed partial class ManagementHeartbeatJob(
                     settings.Environment,
                     settings.Version,
                     settings.ConfigurationHash(),
-                    bundle.Hash,
+                    activeBundle.Hash,
                     sources,
                     outputs),
                 CollectorJsonContext.Default.CollectorRegistration));
@@ -168,7 +171,7 @@ public sealed partial class ManagementHeartbeatJob(
                 new CollectorHeartbeat(
                     settings.Version,
                     settings.ConfigurationHash(),
-                    bundle.Hash,
+                    activeBundle.Hash,
                     snapshot.Queued + snapshot.Retrying + snapshot.Uploading,
                     deliveryStatus,
                     sources,
@@ -176,7 +179,7 @@ public sealed partial class ManagementHeartbeatJob(
                     jobReports,
                     snapshot.DeadLettered,
                     new LedgerResponse(ledger.Sequence, ledger.Hash),
-                    bundle.PrivacyProfileHash ?? "default")
+                    activeBundle.PrivacyProfileHash ?? "default")
                 {
                     HeartbeatIntervalSeconds = IntervalSeconds,
                     OldestUndeliveredAgeSeconds = snapshot.OldestUndelivered is { } oldest

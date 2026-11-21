@@ -141,7 +141,7 @@ public sealed partial class SqliteEventStore : IDurableEventStore
             CREATE INDEX IF NOT EXISTS ix_queue_events_state_bytes ON queue_events_v5(state, payload_bytes, received_at);
             INSERT OR IGNORE INTO schema_history(version, applied_at, hash)
             VALUES (4, strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), 'bower-queue-v4-capacity-index');
-            """ + AuxiliarySchema + DeadLetterPurgeSchema;
+            """ + AuxiliarySchema + DeadLetterPurgeSchema + "\n" + ConfigReloadSchema;
         await check.ExecuteNonQueryAsync(cancellationToken);
         await repair.CommitAsync(cancellationToken);
         ApplyRestrictivePermissions();

@@ -14,11 +14,12 @@ public static partial class CollectorApplication
     {
         app.MapPost("/v1/packs/{packId}/parsers/{parserIndex:int}/events",
             async (string packId, int parserIndex, HttpContext context,
-                PolicyBundle bundle, SecurityEventProcessor processor, ProducerAuthorization authorization,
+                PolicyBundleHolder bundleHolder, SecurityEventProcessor processor, ProducerAuthorization authorization,
                 CollectorIdentity identity, EventIdentityConflicts conflicts, IngestAuthentication authentication,
                 PipelineTelemetry telemetry, EventTap tap, TimeProvider clock, CancellationToken cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                PolicyBundle bundle = bundleHolder.CurrentBundle;
                 LoadedPack? pack = bundle.LoadedPacks.SingleOrDefault(pack => pack.Manifest.Id == packId);
                 if (pack is null || parserIndex < 0 || parserIndex >= pack.Parsers.Count || pack.Parsers[parserIndex].Runtime is null)
                 {

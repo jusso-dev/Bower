@@ -180,6 +180,18 @@ public sealed record CollectorSettings
     /// <summary>JSON file of security-selected local files and their pack routes (BOWER_FILE_CONFIG).</summary>
     public string? FileTailConfigPath { get; init; }
 
+    /// <summary>
+    /// BOWER_POLICY_WATCH (default false): watch the policy directory, local privacy profile
+    /// and configured signed pack files and hot-reload atomically on change.
+    /// </summary>
+    public bool PolicyWatchEnabled { get; init; }
+
+    /// <summary>
+    /// BOWER_POLICY_WATCH_DEBOUNCE_MS (default 500, range 100-30000): coalescing delay after
+    /// a watched policy/pack file changes before validating and hot-reloading.
+    /// </summary>
+    public TimeSpan PolicyWatchDebounce { get; init; } = TimeSpan.FromMilliseconds(500);
+
     public string? ManagementScope { get; init; }
 
     /// <summary>
@@ -442,7 +454,9 @@ public sealed record CollectorSettings
             TapProducers = SplitList(read("BOWER_TAP_PRODUCERS")),
             OriginProducers = SplitList(read("BOWER_ORIGIN_PRODUCERS")),
             WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
-            FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG"))
+            FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG")),
+            PolicyWatchEnabled = ReadBoolean(read, "BOWER_POLICY_WATCH"),
+            PolicyWatchDebounce = TimeSpan.FromMilliseconds(ReadInt32(read, "BOWER_POLICY_WATCH_DEBOUNCE_MS", 500))
         };
         settings.Validate();
         return settings;
@@ -537,6 +551,12 @@ public sealed record CollectorSettings
         {
             throw new InvalidOperationException(
                 "BOWER_HEALTH_RECORD_INTERVAL_SECONDS must be 0 (off) or between 60 and 3600.");
+        }
+
+        if (PolicyWatchDebounce < TimeSpan.FromMilliseconds(100) || PolicyWatchDebounce > TimeSpan.FromSeconds(30))
+        {
+            throw new InvalidOperationException(
+                "BOWER_POLICY_WATCH_DEBOUNCE_MS must be between 100 and 30000.");
         }
 
         if (OutputType is not ("none" or "ama-spool" or "azure-logs-ingestion" or "relay" or "s3" or "http" or "ama-syslog"))
