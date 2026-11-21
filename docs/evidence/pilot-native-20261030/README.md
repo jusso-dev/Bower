@@ -45,10 +45,10 @@ validation pack reproduces the deployed parser, policy, privacy and sample bytes
 policy hashes and generated DCR; both local pack sample tests passed.
 
 AWS run: `bower-pilot-20261030-084844`, Sydney. Azure validation uses subscription
-`945092a0-2500-4b25-85a4-99f1c3135906`, tenant
-`f4f33fb1-b681-40d1-a854-6f888d45b891`, resource group
+`00000000-0000-0000-0000-000000000000`, tenant
+`11111111-1111-1111-1111-111111111111`, resource group
 `rg-bower-val-20261030-084842`, workspace
-`a5ba4598-1f56-4b1d-a320-77bb7c28a48c`. The temporary resources have been removed.
+`22222222-2222-2222-2222-222222222203`. The temporary resources have been removed.
 The [access checks](azure-access-check.json) verify publisher-query denial,
 verifier-query success, and verifier-ingestion denial.
 

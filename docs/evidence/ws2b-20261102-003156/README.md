@@ -10,7 +10,7 @@ fix. Release packages remain **unsigned**.
 
 ## What ran
 
-- Azure subscription `945092a0-2500-4b25-85a4-99f1c3135906`, `australiaeast`, run
+- Azure subscription `00000000-0000-0000-0000-000000000000`, `australiaeast`, run
   `bower-ws2b-20261102-003156`: resource group `rg-bower-ws2b-20261102-003156`, workspace
   `law-ws2b` with Microsoft Sentinel. The table, DCE and DCR came from `deploy/bicep/main.bicep`.
   A certificate-authenticated app registration held Monitoring Metrics Publisher on the DCR

@@ -13,6 +13,6 @@
   "hosts": {"linux": "Amazon Linux 2023 ami-062900c135ab91582, t3.small, 1 GiB encrypted gp3 xfs at /var/lib/bower with RequiresMountsFor",
     "windowsDc": "Windows Server 2022 ami-086db0bc6076e24da, t3.medium, domain controller and WEF source",
     "windowsWec": "Windows Server 2022, t3.medium, WEC and collector; 2 GiB encrypted gp3 NTFS volume mounted at C:\\ProgramData\\Bower\\state (MSI default queue path)"},
-  "azure": {"subscription": "945092a0-2500-4b25-85a4-99f1c3135906", "region": "australiaeast", "resourceGroup": "rg-bower-ws3b-20261102-005001",
+  "azure": {"subscription": "00000000-0000-0000-0000-000000000000", "region": "australiaeast", "resourceGroup": "rg-bower-ws3b-20261102-005001",
     "identities": "separate publisher (certificate; Monitoring Metrics Publisher on the DCR) and verifier (Log Analytics Reader on the workspace); queries used the verifier in an isolated Azure CLI cache"}
 }

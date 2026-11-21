@@ -73,8 +73,8 @@ The private Azure state directory must already contain:
   in that state.
 
 The helper reuses `query-firewall.py`'s reviewed transport. It validates subscription
-`945092a0-2500-4b25-85a4-99f1c3135906`, tenant
-`f4f33fb1-b681-40d1-a854-6f888d45b891`, workspace scope and verifier identity.
+`00000000-0000-0000-0000-000000000000`, tenant
+`11111111-1111-1111-1111-111111111111`, workspace scope and verifier identity.
 It signs the verifier in through an owner-only `azure-cli-verifier` cache under
 the supplied state directory, checks the authenticated principal, and performs a
 TLS-verified Logs query. It does not use or modify the normal `~/.azure` cache.

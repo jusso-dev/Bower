@@ -18,7 +18,7 @@ import subprocess
 import sys
 
 ACCOUNT, REGION, PROFILE = "959038055523", "ap-southeast-2", "homelab-admin"
-SUBSCRIPTION = "945092a0-2500-4b25-85a4-99f1c3135906"
+SUBSCRIPTION = "00000000-0000-0000-0000-000000000000"
 
 
 def run(argv):

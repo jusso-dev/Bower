@@ -84,7 +84,7 @@
   },
   "azure.subscription": {
    "passed": true,
-   "detail": "945092a0-2500-4b25-85a4-99f1c3135906"
+   "detail": "00000000-0000-0000-0000-000000000000"
   },
   "azure.resourceGroup": {
    "passed": true,
@@ -110,35 +110,35 @@
    "passed": true,
    "detail": "0 in deleted items (purged)"
   },
-  "azure.roleAssignment.d8b04895-6264-4f27-a7a5-369fffc56cdc": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666601": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.ebaa3f16-0482-4d17-af61-e155d63cca27": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666602": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.f71767ea-d1f1-4046-b1db-a1c0a6456490": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666603": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.4ba791fe-c0c9-4ee9-a82e-cfe0ef407e3f": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666604": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.1dc5aa25-7f0d-4a1d-809c-405ef6563e3f": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666605": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.3788d3a3-84bf-4f76-bfb7-77b852883dfb": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666606": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.440d3f67-e145-4793-b1ff-74e1acce3093": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666607": {
    "passed": true,
    "detail": "not found"
   },
-  "azure.roleAssignment.4ee32d97-c818-4c70-9ccc-aa203b5fd6eb": {
+  "azure.roleAssignment.66666666-6666-6666-6666-666666666608": {
    "passed": true,
    "detail": "not found"
   },

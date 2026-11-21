@@ -73,46 +73,46 @@
   }
  },
  "azure": {
-  "subscription": "945092a0-2500-4b25-85a4-99f1c3135906",
-  "tenant": "f4f33fb1-b681-40d1-a854-6f888d45b891",
+  "subscription": "00000000-0000-0000-0000-000000000000",
+  "tenant": "11111111-1111-1111-1111-111111111111",
   "region": "australiaeast",
   "resourceGroup": "rg-bower-ws5-20261031-074543",
   "workspace": "law-bower-ws5-20261031-074543",
-  "workspaceCustomerId": "bb6abacb-056b-46bb-af65-68146bc9597f",
+  "workspaceCustomerId": "22222222-2222-2222-2222-222222222205",
   "bicep": "deploy/bicep/main.bicep (namePrefix bws5)",
   "outputs": {
-   "dataCollectionEndpoint": "https://bws5-dce-e5k3.australiaeast-1.ingest.monitor.azure.com",
-   "dataCollectionRuleImmutableId": "dcr-f3b05b22ed07451a8a8393f6ca6e016d",
+   "dataCollectionEndpoint": "https://bws5-dce-0000.australiaeast-1.ingest.monitor.azure.com",
+   "dataCollectionRuleImmutableId": "dcr-00000000000000000000000000000000",
    "streamName": "Custom-BowerSecurity",
    "tableName": "BowerSecurity_CL"
   },
   "entraApps": {
    "pub-expire": {
-    "appId": "0142c712-d916-491a-ba38-cb75ecb1bcf3",
+    "appId": "33333333-3333-3333-3333-333333333309",
     "displayName": "bower-ws5-20261031-074543-pub-expire"
    },
    "pub-revoke": {
-    "appId": "cf8ac61f-b226-417f-b11f-0209a40fe1ca",
+    "appId": "33333333-3333-3333-3333-333333333310",
     "displayName": "bower-ws5-20261031-074543-pub-revoke"
    },
    "pub-role": {
-    "appId": "f898473e-792b-4422-af53-4cde2dbed57c",
+    "appId": "33333333-3333-3333-3333-333333333311",
     "displayName": "bower-ws5-20261031-074543-pub-role"
    },
    "pub-disable": {
-    "appId": "40dc5e9b-bc6b-4166-9048-60a71fcdbbe0",
+    "appId": "33333333-3333-3333-3333-333333333312",
     "displayName": "bower-ws5-20261031-074543-pub-disable"
    },
    "pub-cert": {
-    "appId": "233babb7-eb88-42e2-8613-dd295146a4fa",
+    "appId": "33333333-3333-3333-3333-333333333313",
     "displayName": "bower-ws5-20261031-074543-pub-cert"
    },
    "pub-rotate": {
-    "appId": "40cb29c4-7c4f-405d-b776-5713e9fe3ec2",
+    "appId": "33333333-3333-3333-3333-333333333314",
     "displayName": "bower-ws5-20261031-074543-pub-rotate"
    },
    "verifier": {
-    "appId": "f65ea010-8f1d-4359-9330-41512b2aba6f",
+    "appId": "33333333-3333-3333-3333-333333333315",
     "displayName": "bower-ws5-20261031-074543-verifier"
    }
   },

@@ -13,7 +13,7 @@ Run `bower-ws5-20261031-074543`, branch
 
 ## Where it ran
 
-- **Azure** (subscription `945092a0-2500-4b25-85a4-99f1c3135906`, tenant
+- **Azure** (subscription `00000000-0000-0000-0000-000000000000`, tenant
   `f4f33fb1-…`, `australiaeast`): new resource group `rg-bower-ws5-20261031-074543`.
   It held a new Log Analytics workspace and the repository Bicep (`deploy/bicep/main.bicep`:
   `BowerSecurity_CL`, DCE, DCR). There were six publisher applications, each with

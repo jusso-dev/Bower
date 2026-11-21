@@ -24,13 +24,13 @@
   "identities": [
     {
       "role": "ingest",
-      "appId": "1f1b8a97-e346-4972-8b12-f5fce637c639",
+      "appId": "33333333-3333-3333-3333-333333333316",
       "activeApps": 0,
       "activeServicePrincipals": 0
     },
     {
       "role": "verifier",
-      "appId": "3a421774-a778-4475-83ce-c5f4d1157d20",
+      "appId": "33333333-3333-3333-3333-333333333317",
       "activeApps": 0,
       "activeServicePrincipals": 0
     }

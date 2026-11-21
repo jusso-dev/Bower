@@ -41,10 +41,10 @@ Host and management paths ([host detection](host-detection.json), [fleet](manage
 
 ## What ran where
 
-- Run `bower-ws6-20261031-074751`. Azure subscription `945092a0-2500-4b25-85a4-99f1c3135906`,
-  tenant `f4f33fb1-b681-40d1-a854-6f888d45b891`, `australiaeast`, resource group
+- Run `bower-ws6-20261031-074751`. Azure subscription `00000000-0000-0000-0000-000000000000`,
+  tenant `11111111-1111-1111-1111-111111111111`, `australiaeast`, resource group
   `rg-bower-ws6-20261031-074751`: Log Analytics workspace `law-ws6-20261031` (customer ID
-  `e45b11e4-7e19-4946-b729-1fcf284c6e88`) with Microsoft Sentinel; `BowerSecurity_CL`,
+  `22222222-2222-2222-2222-222222222206`) with Microsoft Sentinel; `BowerSecurity_CL`,
   DCE and DCR from [`deploy/bicep/main.bicep`](../../../deploy/bicep/main.bicep);
   [`monitoring.bicep`](../../../deploy/sentinel/monitoring/monitoring.bicep) (8 log, 5
   metric rules, DCR `LogErrors` diagnostic setting) and

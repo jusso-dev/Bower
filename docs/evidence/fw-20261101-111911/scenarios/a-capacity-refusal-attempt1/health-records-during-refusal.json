@@ -1,7 +1,7 @@
 {
  "query": "BowerSecurity_CL\n| where CollectorId == \"bower-fw-20261101-111911-linux\" and EventType == \"collector_health\"\n| where TimeGenerated between (datetime(2026-11-01T16:30:00Z) .. datetime(2026-11-01T16:47:00Z))\n| extend a = todynamic(Attributes)\n| project TimeGenerated, Status = tostring(a.status), Problems = tostring(a.problems),\n    Undelivered = toint(a.queue.undelivered), Storage = tostring(a.storage),\n    Frames = toint(a.syslog[0].framesReceived), Queued = toint(a.syslog[0].queued), Retries = toint(a.syslog[0].retries),\n    Started = tostring(a.collectorStartedAt)\n| order by TimeGenerated asc",
- "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
- "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "workspaceId": "22222222-2222-2222-2222-222222222201",
+ "verifierClientId": "33333333-3333-3333-3333-333333333301",
  "columns": [
   "TimeGenerated",
   "Status",

@@ -17,8 +17,8 @@ MAX_ROWS = 200000
 MAX_BYTES = 64 * 1024 * 1024
 # The installed Track A nftables rule covers ports 4400..4449, with 40,000 IDs per port.
 TRACK_A_IDENTITY_LIMIT = 50 * 40000
-SUBSCRIPTION = '945092a0-2500-4b25-85a4-99f1c3135906'
-TENANT = 'f4f33fb1-b681-40d1-a854-6f888d45b891'
+SUBSCRIPTION = '00000000-0000-0000-0000-000000000000'
+TENANT = '11111111-1111-1111-1111-111111111111'
 IDENTITY = re.compile(r'a13-n[0-9]{4,5}x[0-9]{5}')
 DIGEST = re.compile(r'[0-9a-f]{64}')
 COLUMNS = ['EventId', 'Copies', 'FirstGenerated', 'LastGenerated', 'FirstIngested', 'LastIngested']

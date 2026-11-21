@@ -7,7 +7,7 @@ rules now retry only in even catch-up slots; the fix was qualified by the
 
 ## What ran
 
-- Azure subscription `945092a0-2500-4b25-85a4-99f1c3135906`, `australiaeast`, resource
+- Azure subscription `00000000-0000-0000-0000-000000000000`, `australiaeast`, resource
   group `rg-bower-ws2-20261031-075516`, workspace `law-ws2` (Sentinel onboarded), table,
   DCE and DCR from `deploy/bicep/main.bicep`, ingestion by a certificate-authenticated app
   registration scoped to the DCR (Monitoring Metrics Publisher). No AWS resources.

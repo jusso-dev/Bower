@@ -4,8 +4,8 @@
  "runId": "bower-fw-20261101-111911",
  "scenario": "a-sender-reboot-only",
  "collectorId": "bower-fw-20261101-111911-linux",
- "workspaceId": "b41439ee-2723-4f42-ba8c-070677cc6226",
- "verifierClientId": "cfa6ab6b-138f-4225-9795-29d3a9bb8515",
+ "workspaceId": "22222222-2222-2222-2222-222222222201",
+ "verifierClientId": "33333333-3333-3333-3333-333333333301",
  "planSha256": "96a90f30f50291aabc1f400db51f141c7c00446faf4665472aa9324c42857aba",
  "packSha256": "44aa95145b1662dcca81c0f54f1c24dbc61bcaa832de3e4de14171d062636bc5",
  "query": {
