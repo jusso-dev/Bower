@@ -143,6 +143,7 @@ public sealed partial class ManagementStore(string databasePath)
         await InitializeHomeAsync(connection, cancellationToken);
         await InitializeSourceSetupAsync(connection, cancellationToken);
         await InitializeOfflineSitesAsync(connection, cancellationToken);
+        await InitializePipelinesAsync(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(
@@ -335,6 +336,8 @@ public sealed partial class ManagementStore(string databasePath)
         await UpdateHeartbeatV2Async(
             connection, transaction, collectorId, heartbeat, deliveryStatus, now, cancellationToken);
         await RecordRedactionsAsync(connection, transaction, collectorId, heartbeat.Redactions, now, cancellationToken);
+        await SavePipelineSnapshotAsync(
+            connection, transaction, collectorId, heartbeat.Pipeline, heartbeat.Activity, now, cancellationToken);
 
         (IReadOnlyList<SignedCollectorCommand> commands, IReadOnlyList<string> acknowledged) = heartbeat.IsV2
             ? await ExchangeCommandsAsync(

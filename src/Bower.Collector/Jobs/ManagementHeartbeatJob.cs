@@ -190,7 +190,9 @@ public sealed partial class ManagementHeartbeatJob(
                     Storage = storage,
                     WecRuntime = wecSnapshots.Count > 0 ? wecSnapshots : null,
                     OldestDeadLetterAgeSeconds = oldestDeadLetterAge,
-                    Recovery = crashRecovery?.Last
+                    Recovery = crashRecovery?.Last,
+                    Pipeline = telemetry?.Snapshot(),
+                    Activity = telemetry?.BusiestSources(25)
                 },
                 CollectorJsonContext.Default.CollectorHeartbeat));
         // One budget for the whole exchange, body included: a stalled body cannot hold the

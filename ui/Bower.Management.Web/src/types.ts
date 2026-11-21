@@ -642,3 +642,84 @@ export interface SourceSetupRequestDetail extends SourceSetupRequestSummary {
   values: Record<string, string>;
   plan: SourceSetupPlan;
 }
+
+export interface PipelineFlowStage {
+  id: string;
+  title: string;
+  light: "green" | "amber" | "red";
+  headline: string;
+  detail: string;
+}
+
+export interface SourceActivityReport {
+  application: string;
+  environment: string;
+  lastSeenAt: string;
+  eventCount: number;
+}
+
+export interface RedactionSummaryItem {
+  type: string;
+  label: string;
+  events: number;
+}
+
+export interface PipelineRowReport {
+  stage: string;
+  policyId: string;
+  action: string;
+  events: number;
+  queued: number;
+  duplicates: number;
+  suppressed: number;
+  bytesIn: number;
+  bytesQueued: number;
+}
+
+export interface CollectorPipelineFlow {
+  collectorId: string;
+  machineName: string;
+  site: string;
+  connectivity: string;
+  lastSeenAt: string;
+  policyHash: string;
+  privacyProfileHash: string;
+  eventsIn: number;
+  eventsQueued: number;
+  eventsSuppressed: number;
+  eventsRejected: number;
+  duplicates: number;
+  bytesIn: number;
+  bytesQueued: number;
+  reductionPercent: number | null;
+  queueDepth: number;
+  deadLettered: number;
+  oldestUndeliveredAgeSeconds: number | null;
+  deliveryStatus: string;
+  lastSuccessfulDeliveryAt: string | null;
+  stages: PipelineFlowStage[];
+  sources: SourceReport[];
+  outputs: OutputReport[];
+  topSources: SourceActivityReport[];
+  redactions: RedactionSummaryItem[];
+  policyBreakdown: PipelineRowReport[];
+}
+
+export interface PipelineTapFrame {
+  observedAt: string;
+  stage: string;
+  decision: string;
+  eventType: string | null;
+  source: string | null;
+  policyId: string | null;
+  redactedPayload: string | null;
+}
+
+export interface PipelineTapResponse {
+  collectorId: string;
+  mode: "live" | "cli";
+  command: string;
+  note: string;
+  frames: PipelineTapFrame[];
+  capturedAt: string;
+}

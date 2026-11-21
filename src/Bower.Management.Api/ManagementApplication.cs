@@ -345,6 +345,7 @@ public static class ManagementApplication
             .RequireAuthorization("View");
 
         OfflineSiteEndpoints.Map(api);
+        PipelineLiveEndpoints.Map(api);
 
         api.MapGet(
                 "/collectors",

@@ -243,6 +243,14 @@ internal sealed record CollectorHeartbeat(
     /// <summary>Last start's unclean-shutdown and recovery check (additive). Metadata only.</summary>
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public CrashRecoveryStatus? Recovery { get; init; }
+
+    /// <summary>Selection counters since process start for the console visual pipeline view. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PipelineMetricsSnapshot? Pipeline { get; init; }
+
+    /// <summary>Top busiest sources (capped) for the console visual pipeline view. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Abstractions.SourceActivity>? Activity { get; init; }
 }
 
 /// <summary>
