@@ -145,6 +145,7 @@ public sealed partial class ManagementStore(string databasePath)
         await InitializeOfflineSitesAsync(connection, cancellationToken);
         await InitializePipelinesAsync(connection, cancellationToken);
         await InitializePackInstallsAsync(connection, cancellationToken);
+        await InitializeAlertsAsync(connection, cancellationToken);
     }
 
     public async Task<CollectorRecord> RegisterAsync(

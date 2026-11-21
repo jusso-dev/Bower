@@ -45,7 +45,7 @@ public sealed class ManagementApiTests
         BackgroundJobStatus[]? jobs = await Client(app, BowerRoles.Viewer)
             .GetFromJsonAsync<BackgroundJobStatus[]>("/api/jobs", cancellationToken);
 
-        Assert.Equal(["collector-inactivity", "collector-staleness"], jobs!.Select(job => job.Id));
+        Assert.Equal(["alert-notifications", "collector-inactivity", "collector-staleness"], jobs!.Select(job => job.Id));
         Assert.Equal("*/5 * * * *", jobs!.Single(job => job.Id == "collector-staleness").Schedule);
     }
 

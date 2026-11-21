@@ -195,7 +195,31 @@ public sealed partial class ManagementStore
             }
         }
 
-        return HomeStatus.Evaluate(collectors, latest, verified, counts, reporting, since, now);
+        HomeRecord home = HomeStatus.Evaluate(collectors, latest, verified, counts, reporting, since, now);
+        List<AlertMuteRecord> activeMutes = await ListActiveMutesAsync(now, cancellationToken);
+        if (activeMutes.Count == 0 || home.Attention.Count == 0)
+        {
+            return home;
+        }
+
+        HomeAttention[] annotated = home.Attention
+            .Select(item =>
+            {
+                AlertMuteRecord? mute = activeMutes.FirstOrDefault(m =>
+                    string.Equals(m.ConditionId, item.Id, StringComparison.Ordinal)
+                    && m.CollectorId is null);
+                return mute is null
+                    ? item
+                    : item with
+                    {
+                        Muted = true,
+                        MuteId = mute.Id,
+                        MutedUntil = mute.ExpiresAt,
+                        MuteReason = mute.Reason
+                    };
+            })
+            .ToArray();
+        return home with { Attention = annotated };
     }
 
     private static bool ValidRedactions(RedactionReport? report) =>

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Bower.Management.Api;
 
 /// <summary>
@@ -30,7 +32,16 @@ public static class HomeProofStates
 public sealed record HomeFix(string Action, string Page);
 
 /// <summary>One thing that needs attention. Fixed Bower text, never raw collector or Azure detail.</summary>
-public sealed record HomeAttention(string Id, string State, string Message, HomeFix Fix, int Count);
+public sealed record HomeAttention(
+    string Id,
+    string State,
+    string Message,
+    HomeFix Fix,
+    int Count,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Muted = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? MuteId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? MutedUntil = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? MuteReason = null);
 
 /// <summary>
 /// One collector group (environment): the worst condition decides the state and the reason.

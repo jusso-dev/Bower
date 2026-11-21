@@ -282,6 +282,14 @@ evidence.
   (never raw sample inputs or sensitive strings). Pack installs require two-person
   approval (the requester cannot approve) and write desired-policy hashes plus audit rows
   atomically; every collector still verifies pack signatures independently on load.
+- Alert notifications and mutes (`AlertNotificationJob`, `/api/alerts/*`): outbound Teams
+  webhook URLs (`BOWER_ALERT_TEAMS_WEBHOOK_FILE`, HTTPS required) and SMTP passwords
+  (`BOWER_ALERT_EMAIL_PASSWORD_FILE`) are loaded strictly from server-side files and are
+  never persisted in the management database or returned over HTTP. Notification bodies
+  carry fixed plain-language condition wording, affected counts, suggested fixes and a
+  console link requiring Entra sign-in — never raw event payloads or collector secrets.
+  Alert mutes require the `Operate` role with a mandatory reason and bounded expiry, and
+  every mute, unmute and dispatched notification writes an audit row.
 - Management API abuse: Entra-only endpoints (except token enrolment and the
   enrolled-collector credential, above), per-principal rate limiting, HSTS on
   HTTPS, restricted CORS headers and methods, and fixed error messages that never

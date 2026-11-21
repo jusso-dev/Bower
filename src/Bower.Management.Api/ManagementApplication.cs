@@ -197,9 +197,16 @@ public static class ManagementApplication
         builder.Services.AddSingleton<ISetupEvidenceClientFactory, SetupEvidenceClientFactory>();
         builder.Services.AddSingleton<SetupCanaryService>();
 
+        builder.Services.AddSingleton(AlertNotificationOptions.FromConfiguration(builder.Configuration));
+        builder.Services.AddHttpClient(TeamsWebhookAlertChannel.HttpClientName, client =>
+            client.Timeout = TimeSpan.FromSeconds(15));
+        builder.Services.AddSingleton<IAlertNotificationChannel, TeamsWebhookAlertChannel>();
+        builder.Services.AddSingleton<IAlertNotificationChannel, SmtpEmailAlertChannel>();
+
         builder.Services.AddBowerBackgroundJobs("bower-management", workerCount: 1);
         builder.Services.AddTransient<CollectorStalenessJob>();
         builder.Services.AddTransient<CollectorInactivityJob>();
+        builder.Services.AddTransient<AlertNotificationJob>();
 
         configure?.Invoke(builder);
 
@@ -295,6 +302,11 @@ public static class ManagementApplication
             (job, token) => job.RunAsync(token),
             Cron.Daily(2),
             CollectorInactivityJob.RetryAttempts);
+        jobs.AddOrUpdate<AlertNotificationJob>(
+            AlertNotificationJob.Id,
+            (job, token) => job.RunAsync(token),
+            "*/5 * * * *",
+            AlertNotificationJob.RetryAttempts);
     }
 
     private static void MapApi(RouteGroupBuilder api, bool developmentAuthentication)
@@ -329,6 +341,8 @@ public static class ManagementApplication
                 async (ManagementStore store, TimeProvider clock, CancellationToken cancellationToken) =>
                     await store.HomeAsync(clock.GetUtcNow(), cancellationToken))
             .RequireAuthorization("View");
+
+        AlertEndpoints.Map(api);
 
         // Plain-English fleet view: one state, reason and fix per collector, computed here.
         api.MapGet(
