@@ -1,0 +1,18 @@
+title: Jailbroken or rooted device enrolled in Intune
+id: bower-pack-intune-jailbroken-001
+status: stable
+description: The daily compliance snapshot reported a managed device as jailbroken or rooted.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: intune_device_compliance
+detection:
+  selection:
+    EventType: intune_device_compliance
+    jailBroken: 'True'
+  condition: selection
+tags:
+  - attack.t1398
+falsepositives:
+  - Developer test devices

@@ -1,0 +1,40 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-INTUNE-AUDIT
+  name: Microsoft Intune audit events
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - administrative-activity
+  eventTypes:
+    - intune_audit
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - eventResult
+    - application.name
+    - target.type
+  atLeastOne:
+    - actor.username
+    - actor.userId
+  recommendedFields:
+    - source.ipAddress
+    - request.correlationId
+    - target.id
+
+decision:
+  action: accept
+  minimumValueScore: 75
+  neverSample: true
+
+routing:
+  profile: cloud-control-plane
+  destination: security-events

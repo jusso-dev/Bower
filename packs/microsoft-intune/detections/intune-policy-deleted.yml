@@ -1,0 +1,27 @@
+title: Intune compliance or configuration policy deleted
+id: bower-pack-intune-policy-deleted-001
+status: stable
+description: >-
+  A compliance policy, configuration profile or security baseline was deleted, which can
+  remove device protections silently.
+version: 1.0.0
+level: medium
+logsource:
+  product: bower
+  service: intune_audit
+detection:
+  selection:
+    EventType: intune_audit
+    intuneOperationType: Delete
+    intuneCategory:
+      - Compliance
+      - DeviceConfiguration
+      - DeviceIntent
+      - SecurityBaseline
+      - EndpointSecurity
+  condition: selection
+tags:
+  - attack.t1562.001
+  - attack.defense_evasion
+falsepositives:
+  - Policy consolidation

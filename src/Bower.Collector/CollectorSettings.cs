@@ -180,6 +180,9 @@ public sealed record CollectorSettings
     /// <summary>JSON file of security-selected local files and their pack routes (BOWER_FILE_CONFIG).</summary>
     public string? FileTailConfigPath { get; init; }
 
+    /// <summary>JSON file of Microsoft cloud API inputs (Intune) and their pack routes (BOWER_MICROSOFT_CONFIG).</summary>
+    public string? MicrosoftCloudConfigPath { get; init; }
+
     /// <summary>
     /// BOWER_POLICY_WATCH (default false): watch the policy directory, local privacy profile
     /// and configured signed pack files and hot-reload atomically on change.
@@ -455,6 +458,7 @@ public sealed record CollectorSettings
             OriginProducers = SplitList(read("BOWER_ORIGIN_PRODUCERS")),
             WindowsEventLogConfigPath = Blank(read("BOWER_WINDOWS_EVENTLOG_CONFIG")),
             FileTailConfigPath = Blank(read("BOWER_FILE_CONFIG")),
+            MicrosoftCloudConfigPath = Blank(read("BOWER_MICROSOFT_CONFIG")),
             PolicyWatchEnabled = ReadBoolean(read, "BOWER_POLICY_WATCH"),
             PolicyWatchDebounce = TimeSpan.FromMilliseconds(ReadInt32(read, "BOWER_POLICY_WATCH_DEBOUNCE_MS", 500))
         };
@@ -938,6 +942,11 @@ public sealed record CollectorSettings
         if (FileTailConfigPath is not null)
         {
             material += '\u001f' + "file-tail:" + FileTailConfigPath;
+        }
+
+        if (MicrosoftCloudConfigPath is not null)
+        {
+            material += '\u001f' + "microsoft-cloud:" + MicrosoftCloudConfigPath;
         }
 
         if (PressureRetentionFloor != TimeSpan.FromHours(1))

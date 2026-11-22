@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Microsoft cloud pull source (`Bower.Source.MicrosoftCloud`, collector `BOWER_MICROSOFT_CONFIG`): Intune audit events and a daily device compliance snapshot from Microsoft Graph with least-privilege read-only permissions, a token host allow-list, capped retry honouring `Retry-After`, and durable per-page cursors in the queue database. Signed `microsoft-intune` pack (two parsers, two policies, four detections) and the `deploy/privacy/microsoft-cloud.yaml` pseudonymisation profile.
+
 ## [1.0.0] - 2026-11-21
 
 Initial v1.0.0 release of Bower, a self-hosted security telemetry privacy gateway for Microsoft Sentinel following the Collect, Select, Arrange, Deliver and Prove model.

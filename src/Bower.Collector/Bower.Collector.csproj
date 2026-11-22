@@ -23,6 +23,7 @@
     <ProjectReference Include="../Bower.Output.Http/Bower.Output.Http.csproj" />
     <ProjectReference Include="../Bower.Packs/Bower.Packs.csproj" />
     <ProjectReference Include="../Bower.Source.File/Bower.Source.File.csproj" />
+    <ProjectReference Include="../Bower.Source.MicrosoftCloud/Bower.Source.MicrosoftCloud.csproj" />
     <ProjectReference Include="../Bower.Source.Syslog/Bower.Source.Syslog.csproj" />
     <ProjectReference Include="../Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />
     <ProjectReference Include="../Bower.ServiceDefaults/Bower.ServiceDefaults.csproj" />

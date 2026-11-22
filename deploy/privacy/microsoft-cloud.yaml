@@ -1,0 +1,20 @@
+apiVersion: bower.security/v1
+kind: PrivacyProfile
+metadata:
+  id: microsoft-cloud-pseudonymised
+  version: 1.0.0
+  description: >-
+    For the microsoft-intune pack and the other Microsoft cloud source packs. Replaces user
+    principal names, object ids of people and resource display names with keyed HMAC
+    pseudonyms, so analysts can follow one person or resource across events without the
+    profile exposing who or what it is. Everything else keeps the default Australian
+    redaction. Set with BOWER_PRIVACY_PROFILE plus BOWER_PRIVACY_HMAC_KEY_FILE and
+    BOWER_PRIVACY_HMAC_KEY_ID.
+fields:
+  - path: actor.username
+    action: hmac
+  - path: actor.userId
+    action: hmac
+  - path: target.name
+    action: hmac
+maximumFieldLength: 16384

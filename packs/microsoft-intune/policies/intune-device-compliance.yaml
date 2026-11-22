@@ -1,0 +1,35 @@
+apiVersion: bower.security/v1
+kind: TelemetryPolicy
+
+metadata:
+  id: BWR-PACK-INTUNE-COMPLIANCE
+  name: Microsoft Intune devices that need attention
+  version: 1.0.0
+  owner: Security Operations
+  reviewDate: 2027-06-30
+
+match:
+  eventCategories:
+    - application-security
+  eventTypes:
+    - intune_device_compliance
+
+requirements:
+  requiredFields:
+    - timeGenerated
+    - eventType
+    - eventAction
+    - application.name
+    - target.id
+  atLeastOne:
+    - actor.username
+    - actor.userId
+
+decision:
+  action: accept
+  minimumValueScore: 70
+  neverSample: true
+
+routing:
+  profile: device-posture
+  destination: security-events

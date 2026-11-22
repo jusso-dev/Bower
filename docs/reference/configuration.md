@@ -7,7 +7,7 @@ CI runs `generate_config_and_api_reference.py --check` so the reference cannot d
 
 ## Collector environment variables
 
-Recognised collector settings (`82` variables in `CollectorSettings.cs`):
+Recognised collector settings (`83` variables in `CollectorSettings.cs`):
 
 | Environment variable |
 |---|
@@ -49,6 +49,7 @@ Recognised collector settings (`82` variables in `CollectorSettings.cs`):
 | `BOWER_MANAGEMENT_SCOPE` |
 | `BOWER_MANAGEMENT_VIA_RELAY` |
 | `BOWER_MAX_DELIVERY_ATTEMPTS` |
+| `BOWER_MICROSOFT_CONFIG` |
 | `BOWER_ORIGIN_PRODUCERS` |
 | `BOWER_OUTPUT` |
 | `BOWER_PACKS` |

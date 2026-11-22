@@ -92,3 +92,24 @@ cloud raw parser is activated here. DCR templates remain packaged-only.
 See [activation, limits, failure codes and Sigma subset](../deployment/packs.md#local-parser-and-detection-activation).
 All host demonstrations are local and synthetic. Destination delivery requires a
 separate authorised query; no Sentinel delivery or all-software coverage is claimed.
+
+`microsoft-intune` 1.0.0 exposes two signed JSON parsers for records from the
+[Microsoft cloud source](../deployment/microsoft-cloud-sources.md). Parser 0 maps
+`intune-audit` records (Graph `deviceManagement/auditEvents`): it requires source kind
+`intune-audit` and an activity time, maps the activity to the action, the Intune result
+through a static table to `success` or `failure` (else `unknown`), the actor to the user
+principal name, service principal name or application name in that order, a strictly
+formatted actor IP address to the source address, and the first resource to the target. It
+produces `intune_audit`, category `administrative-activity`, application
+`microsoft-intune`, with labels for category, component, operation type and the names of
+modified properties. Parser 1 maps `intune-device-compliance` records (daily
+`deviceManagement/managedDevices` snapshot): it requires that source kind and a state other
+than `compliant`, and produces `intune_device_compliance`, category `application-security`,
+action `device.compliance.<state>`, target the Entra device id, with operating system,
+version, ownership, encryption, jailbreak, last sync and grace period labels. The device
+name, modified property values and hardware identifiers are never forwarded (the source
+never reads the last two). Policies `BWR-PACK-INTUNE-AUDIT` 1.0.0 and
+`BWR-PACK-INTUNE-COMPLIANCE` 1.0.0 select. The pack ships no privacy profile; use
+`deploy/privacy/microsoft-cloud.yaml` to pseudonymise people and resource names. Local
+rules: `bower-pack-intune-device-wipe-001`, `bower-pack-intune-rbac-change-001`,
+`bower-pack-intune-policy-deleted-001` and `bower-pack-intune-jailbroken-001`.

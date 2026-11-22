@@ -788,6 +788,7 @@
           "Bower.Packs": "[1.0.0, )",
           "Bower.ServiceDefaults": "[1.0.0, )",
           "Bower.Source.File": "[1.0.0, )",
+          "Bower.Source.MicrosoftCloud": "[1.0.0, )",
           "Bower.Source.Syslog": "[1.0.0, )",
           "Bower.Source.WindowsEventLog": "[1.0.0, )",
           "Microsoft.Extensions.Hosting.WindowsServices": "[11.0.0, )"
@@ -1012,6 +1013,12 @@
           "Bower.Contracts": "[1.0.0, )",
           "Bower.Pipeline": "[1.0.0, )",
           "Bower.Source.File": "[1.0.0, )"
+        }
+      },
+      "bower.source.microsoftcloud": {
+        "type": "Project",
+        "dependencies": {
+          "Bower.Abstractions": "[1.0.0, )"
         }
       },
       "bower.source.sqlserver": {

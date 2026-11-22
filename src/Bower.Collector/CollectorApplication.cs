@@ -21,6 +21,7 @@ using Bower.PolicyEngine;
 using Bower.Redaction;
 using Bower.ServiceDefaults;
 using Bower.Source.File;
+using Bower.Source.MicrosoftCloud;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 using Microsoft.AspNetCore.RateLimiting;
@@ -272,6 +273,39 @@ public static partial class CollectorApplication
                 };
             });
             builder.Services.AddHostedService<FileTailIntakeService>();
+        }
+        if (sources.MicrosoftCloud is { } microsoftCloud)
+        {
+            // Cursors live with the queue, so a restart resumes where the queue left off.
+            builder.Services.AddSingleton(new MicrosoftCloudCursors(settings.QueuePath));
+            builder.Services.AddSingleton(services =>
+            {
+                PolicyBundleHolder bundleHolder = services.GetRequiredService<PolicyBundleHolder>();
+                TimeProvider clock = services.GetRequiredService<TimeProvider>();
+                // Tests supply a fake API (IMicrosoftCloudTokenProvider and HttpClient); otherwise
+                // the collector's one configured Azure credential, or the input's certificate.
+                IMicrosoftCloudTokenProvider tokens = services.GetService<IMicrosoftCloudTokenProvider>()
+                    ?? new MicrosoftCloudTokenProvider(() => credential ?? AzureCredentialFactory.Create(settings));
+                HttpClient client = services.GetService<MicrosoftCloudHttpClient>()?.Client ?? MicrosoftCloudRoutes.CreateHttpClient();
+                return new MicrosoftCloudSource(
+                    microsoftCloud,
+                    new CollectorMicrosoftCloudSink(new PackRecordIntake(
+                        () => bundleHolder.CurrentBundle,
+                        services.GetRequiredService<SecurityEventProcessor>(),
+                        services.GetRequiredService<CollectorIdentity>(),
+                        services.GetRequiredService<ManagedPrivacyProfileState>(),
+                        services.GetRequiredService<PipelineTelemetry>(),
+                        clock,
+                        services.GetRequiredService<EventTap>())),
+                    services.GetRequiredService<MicrosoftCloudCursors>().Store,
+                    new MicrosoftCloudHttp(client, tokens, clock),
+                    clock)
+                {
+                    // A busy queue database (for example during a retention batch) is backpressure.
+                    IsTransientStorageFailure = QueueStorageErrors.IsBusy
+                };
+            });
+            builder.Services.AddHostedService<MicrosoftCloudIntakeService>();
         }
         builder.Services.AddSingleton<EventIdentityConflicts>();
         builder.Services.AddSingleton(
@@ -703,6 +737,7 @@ public static partial class CollectorApplication
                         WindowsEventLog = windowsEventLog?.Snapshot(),
                         WecRuntime = wecRuntime is { Count: > 0 } ? wecRuntime : null,
                         FileTail = context.RequestServices.GetService<FileTailSource>()?.Snapshot(),
+                        MicrosoftCloud = context.RequestServices.GetService<MicrosoftCloudSource>()?.Snapshot(),
                         QueuePages = pages is null ? null : StatusQueuePagesResponse.From(pages),
                         Output = context.RequestServices.GetService<IOutputAdapter>()?.Id,
                         DeliveryActivity = new StatusDeliveryActivityResponse(

@@ -215,6 +215,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           "type": "doc",
+          "id": "deployment/microsoft-cloud-sources",
+          "label": "Microsoft cloud (Intune)"
+        },
+        {
+          "type": "doc",
           "id": "deployment/ama-companion",
           "label": "Azure Monitor Agent companion"
         },
@@ -469,6 +474,11 @@ const sidebars: SidebarsConfig = {
       "type": "doc",
       "id": "security/pack-runtime-catalogue",
       "label": "Pack catalogue"
+    },
+    {
+      "type": "doc",
+      "id": "security/microsoft-cloud-sources",
+      "label": "Microsoft cloud sources"
     },
     {
       "type": "category",
