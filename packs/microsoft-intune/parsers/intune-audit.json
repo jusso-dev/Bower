@@ -1,0 +1,285 @@
+{
+  "version": "1.0",
+  "format": "Json",
+  "fields": [
+    {
+      "sourceName": "id",
+      "type": "Text",
+      "ocsfPath": "metadata.uid",
+      "asimField": "EventOriginalUid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "input",
+      "type": "Text",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "sourceKind",
+      "type": "Text",
+      "ocsfPath": "metadata.log_name",
+      "asimField": "EventOriginalSubType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "tenantId",
+      "type": "Text",
+      "ocsfPath": "cloud.account.uid",
+      "asimField": "DvcScopeId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "auditEventId",
+      "type": "Text",
+      "ocsfPath": "metadata.original_uid",
+      "asimField": "EventOriginalUid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "activityDateTime",
+      "type": "DateTime",
+      "ocsfPath": "time",
+      "asimField": "TimeGenerated",
+      "sensitive": false
+    },
+    {
+      "sourceName": "activity",
+      "type": "Text",
+      "ocsfPath": "api.operation",
+      "asimField": "Operation",
+      "sensitive": false
+    },
+    {
+      "sourceName": "activityType",
+      "type": "Text",
+      "ocsfPath": "activity_name",
+      "asimField": "EventOriginalType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "activityOperationType",
+      "type": "Text",
+      "ocsfPath": "type_name",
+      "asimField": "EventType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "activityResult",
+      "type": "Text",
+      "ocsfPath": "status",
+      "asimField": "EventOriginalResultDetails",
+      "sensitive": false
+    },
+    {
+      "sourceName": "category",
+      "type": "Text",
+      "ocsfPath": "category_name",
+      "asimField": "EventSubType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "componentName",
+      "type": "Text",
+      "ocsfPath": "metadata.product.feature.name",
+      "asimField": "EventProduct",
+      "sensitive": false
+    },
+    {
+      "sourceName": "correlationId",
+      "type": "Text",
+      "ocsfPath": "metadata.correlation_uid",
+      "asimField": "EventOriginalUid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "actorType",
+      "type": "Text",
+      "ocsfPath": "actor.user.type",
+      "asimField": "ActorUserType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "actorUserPrincipalName",
+      "type": "Text",
+      "ocsfPath": "actor.user.email_addr",
+      "asimField": "ActorUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "actorUserId",
+      "type": "Text",
+      "ocsfPath": "actor.user.uid",
+      "asimField": "ActorUserId",
+      "sensitive": true
+    },
+    {
+      "sourceName": "actorApplicationId",
+      "type": "Text",
+      "ocsfPath": "actor.app_uid",
+      "asimField": "ActingAppId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "actorApplicationName",
+      "type": "Text",
+      "ocsfPath": "actor.app_name",
+      "asimField": "ActingAppName",
+      "sensitive": false
+    },
+    {
+      "sourceName": "actorServicePrincipalName",
+      "type": "Text",
+      "ocsfPath": "actor.user.name",
+      "asimField": "ActorUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "actorIpAddress",
+      "type": "IpAddress",
+      "ocsfPath": "src_endpoint.ip",
+      "asimField": "SrcIpAddr",
+      "sensitive": true
+    },
+    {
+      "sourceName": "resourceType",
+      "type": "Text",
+      "ocsfPath": "resources.type",
+      "asimField": "TargetAppType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "resourceId",
+      "type": "Text",
+      "ocsfPath": "resources.uid",
+      "asimField": "TargetAppId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "resourceName",
+      "type": "Text",
+      "ocsfPath": "resources.name",
+      "asimField": "TargetAppName",
+      "sensitive": true
+    },
+    {
+      "sourceName": "resourceCount",
+      "type": "WholeNumber",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "modifiedProperties",
+      "type": "Text",
+      "ocsfPath": "unmapped.modified_properties",
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "selected",
+      "type": "Text",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "action",
+      "type": "Text",
+      "ocsfPath": "api.operation",
+      "asimField": "Operation",
+      "sensitive": false
+    },
+    {
+      "sourceName": "result",
+      "type": "Text",
+      "ocsfPath": "status",
+      "asimField": "EventResult",
+      "sensitive": false
+    },
+    {
+      "sourceName": "actor",
+      "type": "Text",
+      "ocsfPath": "actor.user.name",
+      "asimField": "ActorUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "actor_id",
+      "type": "Text",
+      "ocsfPath": "actor.user.uid",
+      "asimField": "ActorUserId",
+      "sensitive": true
+    },
+    {
+      "sourceName": "target_type",
+      "type": "Text",
+      "ocsfPath": "resources.type",
+      "asimField": "TargetAppType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "correlation",
+      "type": "Text",
+      "ocsfPath": "metadata.correlation_uid",
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "source_ip",
+      "type": "IpAddress",
+      "ocsfPath": "src_endpoint.ip",
+      "asimField": "SrcIpAddr",
+      "sensitive": true
+    }
+  ],
+  "runtime": {
+    "applicationName": "microsoft-intune",
+    "environment": "production",
+    "eventCategory": "administrative-activity",
+    "eventType": "intune_audit",
+    "eventAction": "intune.audit",
+    "eventResult": "unknown",
+    "transforms": [
+      "if .sourceKind == \"intune-audit\" && .activityDateTime != null { .selected = \"true\" } else { .selected = \"false\" }",
+      ".action = coalesce(.activity, .activityType, \"unknown\")",
+      ".result = coalesce(lookup(\"results\", lower(.activityResult)), \"unknown\")",
+      ".actor = coalesce(.actorUserPrincipalName, .actorServicePrincipalName, .actorApplicationName, .actorType, \"unknown\")",
+      ".actor_id = coalesce(.actorUserId, .actorApplicationId, \"unknown\")",
+      ".target_type = coalesce(.resourceType, \"IntuneResource\")",
+      ".correlation = coalesce(.correlationId, .auditEventId)",
+      ".source_ip = .actorIpAddress"
+    ],
+    "tables": {
+      "results": {
+        "success": "success",
+        "succeeded": "success",
+        "failure": "failure",
+        "failed": "failure",
+        "fail": "failure"
+      }
+    },
+    "match": {
+      "selected": "true"
+    },
+    "fields": {
+      "eventId": "id",
+      "timeGenerated": "activityDateTime",
+      "eventAction": "action",
+      "eventResult": "result",
+      "actor.username": "actor",
+      "actor.userId": "actor_id",
+      "target.type": "target_type",
+      "target.id": "resourceId",
+      "target.name": "resourceName",
+      "source.ipAddress": "source_ip",
+      "request.correlationId": "correlation",
+      "labels.intuneCategory": "category",
+      "labels.intuneComponent": "componentName",
+      "labels.intuneOperationType": "activityOperationType",
+      "labels.intuneModifiedProperties": "modifiedProperties",
+      "labels.intuneAuditEventId": "auditEventId"
+    }
+  }
+}

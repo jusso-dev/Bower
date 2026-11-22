@@ -163,6 +163,17 @@ evidence.
   bounded tailer; CRI partial joins are capped; only allow-listed metadata labels are
   attached (and pass through the privacy engine); non-envelope stdout noise is dropped.
   See [Kubernetes source](../deployment/kubernetes-source.md).
+- Microsoft cloud pull source (`Bower.Source.MicrosoftCloud`, new outbound trust
+  boundary: bearer-token HTTPS requests to Microsoft Graph for one tenant per input):
+  read-only application permissions listed per source kind; tokens in memory only (the
+  collector's one Azure credential or a per-input certificate, never a client secret) and
+  sent only to the one host the kind allow-lists, HTTPS on the default port, with
+  redirects refused and next links on any other host refused before sending. Responses are
+  untrusted input: 16 MiB and depth 32 caps, bounded values, readers request only mapped
+  fields with `$select` and never read modified property values or hardware identifiers.
+  Records pass a signed pack parser, redaction and policy; cursors (`mscloud:<id>`) commit
+  per page only after durable enqueue and fail closed when damaged. Errors carry codes and
+  HTTP status only. See [Microsoft cloud sources security](microsoft-cloud-sources.md).
 - Event injection: the collector requires a shared bearer token
   (`BOWER_INGEST_TOKEN`, compared in constant time) whenever it listens beyond
   loopback and refuses to start without one. Kubernetes manifests add a

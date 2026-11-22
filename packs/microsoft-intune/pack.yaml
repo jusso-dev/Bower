@@ -1,0 +1,29 @@
+apiVersion: bower.security/v1
+kind: Pack
+metadata:
+  id: microsoft-intune
+  version: 1.1.0
+  name: Microsoft Intune audit and device compliance
+  description: >-
+    Intune audit events (who changed, wiped, retired or reassigned what) and a daily
+    snapshot of devices that need attention (noncompliant, in grace period, conflict or
+    error), from the Bower Microsoft cloud source (BOWER_MICROSOFT_CONFIG). Signed
+    transforms map each record to the Bower envelope inside the collector. Modified
+    property values, hardware identifiers and contact details are never read from the API.
+    Composes with other packs: it ships no privacy profile; use
+    deploy/privacy/microsoft-cloud.yaml to pseudonymise people and device names.
+  owner: Security Operations
+policies:
+  - policies/intune-audit.yaml
+  - policies/intune-device-compliance.yaml
+parsers:
+  - parsers/intune-audit.json
+  - parsers/intune-device-compliance.json
+detections:
+  - detections/intune-device-wipe-or-retire.yml
+  - detections/intune-rbac-change.yml
+  - detections/intune-policy-deleted.yml
+  - detections/intune-jailbroken-device.yml
+samples:
+  - samples/intune.jsonl
+dcr: true

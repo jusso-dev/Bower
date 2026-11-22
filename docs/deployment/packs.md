@@ -16,6 +16,8 @@ Examples: [`packs/linux-ssh-gateway`](../../packs/linux-ssh-gateway),
 [`packs/linux-journald-ssh`](../../packs/linux-journald-ssh) (uses transforms),
 [`packs/linux-authlog-ssh`](../../packs/linux-authlog-ssh) (plain-text auth.log lines from
 the [file tail source](file-tail-source.md), uses transforms) and
+[`packs/microsoft-intune`](../../packs/microsoft-intune) (Intune audit events and device
+compliance from the [Microsoft cloud source](microsoft-cloud-sources.md), uses transforms),
 [`packs/windows-security-logon`](../../packs/windows-security-logon) (Security event 4625
 from the [Windows Event Log source](windows-event-log-source.md), uses transforms). [`packs/owasp-asvs-app-logging`](../../packs/owasp-asvs-app-logging) selects
 semantic application events with no parser (see the

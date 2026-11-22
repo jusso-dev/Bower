@@ -1,0 +1,38 @@
+{
+  "value": [
+    {
+      "id": "5e1f0c2a-0000-4000-8000-000000000002",
+      "componentName": "RoleBasedAccessControl",
+      "actor": {
+        "auditActorType": "ItPro",
+        "userPrincipalName": "adele.vance@contoso.example",
+        "ipAddress": "2001:db8::40",
+        "userId": "0b7c1d3e-0000-4000-8000-000000000102"
+      },
+      "activity": "Patch RoleAssignment",
+      "activityDateTime": "{{end}}",
+      "activityType": "Patch RoleAssignment",
+      "activityOperationType": "Patch",
+      "activityResult": "Success",
+      "correlationId": "c0ffee00-0000-4000-8000-000000000002",
+      "resources": [
+        {
+          "displayName": "Helpdesk operators",
+          "modifiedProperties": [
+            { "displayName": "Members", "oldValue": "[\"secret-old-value-marker\"]", "newValue": "[\"secret-new-value-marker\"]" },
+            { "displayName": "ScopeTags", "oldValue": "0", "newValue": "1" }
+          ],
+          "auditResourceType": "RoleAssignment",
+          "resourceId": "5a5a5a5a-0000-4000-8000-000000000301"
+        }
+      ],
+      "category": "Role"
+    },
+    {
+      "id": "5e1f0c2a-0000-4000-8000-000000000003",
+      "activity": "Get ManagedDevices",
+      "activityResult": "Success",
+      "category": "Device"
+    }
+  ]
+}

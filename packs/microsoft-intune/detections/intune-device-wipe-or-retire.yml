@@ -1,0 +1,25 @@
+title: Intune device wipe, retire or delete
+id: bower-pack-intune-device-wipe-001
+status: stable
+description: >-
+  An administrator or application wiped, retired or deleted an Intune managed device. A
+  compromised admin account or app can destroy a fleet this way; review every occurrence.
+version: 1.0.0
+level: high
+logsource:
+  product: bower
+  service: intune_audit
+detection:
+  selection:
+    EventType: intune_audit
+    EventAction|startswith:
+      - Wipe
+      - Retire
+      - Delete ManagedDevice
+      - Clean Windows Device
+  condition: selection
+tags:
+  - attack.t1485
+  - attack.impact
+falsepositives:
+  - Planned device decommissioning or lost-device response

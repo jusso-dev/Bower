@@ -105,6 +105,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.Journald", "sr
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.Kubernetes", "src\Bower.Source.Kubernetes\Bower.Source.Kubernetes.csproj", "{DBB32FBD-107E-4DDC-A110-F00C1A3EC9D9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bower.Source.MicrosoftCloud", "src\Bower.Source.MicrosoftCloud\Bower.Source.MicrosoftCloud.csproj", "{34AF2780-854B-4886-9660-E97BCCDFCEC0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -691,6 +693,18 @@ Global
 		{DBB32FBD-107E-4DDC-A110-F00C1A3EC9D9}.Release|x64.Build.0 = Release|Any CPU
 		{DBB32FBD-107E-4DDC-A110-F00C1A3EC9D9}.Release|x86.ActiveCfg = Release|Any CPU
 		{DBB32FBD-107E-4DDC-A110-F00C1A3EC9D9}.Release|x86.Build.0 = Release|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Debug|x64.Build.0 = Debug|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Debug|x86.Build.0 = Debug|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Release|Any CPU.Build.0 = Release|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Release|x64.ActiveCfg = Release|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Release|x64.Build.0 = Release|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Release|x86.ActiveCfg = Release|Any CPU
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -729,5 +743,6 @@ Global
 		{BBF9180B-5DEE-43BB-8D0B-B11F7D368A2E} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 		{827CAE03-02C1-4625-AB39-B32FAF688A1D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{D784F971-24BA-435F-831E-4442A33FBC02} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{34AF2780-854B-4886-9660-E97BCCDFCEC0} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

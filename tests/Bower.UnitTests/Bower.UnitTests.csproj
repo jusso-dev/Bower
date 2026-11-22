@@ -19,6 +19,7 @@
     <ProjectReference Include="../../src/Bower.Collector/Bower.Collector.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Docker/Bower.Source.Docker.csproj" />
     <ProjectReference Include="../../src/Bower.Source.File/Bower.Source.File.csproj" />
+    <ProjectReference Include="../../src/Bower.Source.MicrosoftCloud/Bower.Source.MicrosoftCloud.csproj" />
     <ProjectReference Include="../../src/Bower.Source.Syslog/Bower.Source.Syslog.csproj" />
     <ProjectReference Include="../../src/Bower.Source.WindowsEventLog/Bower.Source.WindowsEventLog.csproj" />
     <ProjectReference Include="../../src/Bower.Core/Bower.Core.csproj" />
@@ -58,6 +59,10 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
     <!-- S3 output layout vectors (tests/fixtures). -->
+    <Content Include="../fixtures/microsoft-cloud/*.json">
+      <Link>fixtures/microsoft-cloud/%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="../fixtures/s3-output/*.json">
       <Link>s3-output/%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

@@ -2,6 +2,7 @@ using Bower.Collector.Relay;
 using Bower.Core;
 using Bower.Packs;
 using Bower.Source.File;
+using Bower.Source.MicrosoftCloud;
 using Bower.Source.Syslog;
 using Bower.Source.WindowsEventLog;
 
@@ -11,7 +12,7 @@ namespace Bower.Collector;
 /// Every file a collector start reads besides the policy bundle, loaded and checked the
 /// same way for start-up (<see cref="CollectorApplication.Build"/>) and for the signed
 /// <c>reload</c> pre-check: source expectations, producer scopes and ingest tokens, the
-/// syslog, Windows Event Log and file tail configurations and their routes to the loaded packs, the
+/// syslog, Windows Event Log, file tail and Microsoft cloud configurations and their routes to the loaded packs, the
 /// syslog TLS material, and the relay's pins and certificates. A reload is therefore
 /// refused for exactly the files that would stop a restart.
 /// </summary>
@@ -30,7 +31,8 @@ public sealed record CollectorStartupSources(
     ProducerAuthorization Producers,
     IngestAuthentication Ingest,
     RelayDownstreams? RelayDownstreams,
-    FileTailSourceConfiguration? FileTail = null)
+    FileTailSourceConfiguration? FileTail = null,
+    MicrosoftCloudSourceConfiguration? MicrosoftCloud = null)
 {
     public static CollectorStartupSources Load(CollectorSettings settings, PolicyBundle bundle)
     {
@@ -59,6 +61,13 @@ public sealed record CollectorStartupSources(
         {
             fileTail = FileTailSourceConfigurationLoader.LoadFile(settings.FileTailConfigPath);
             FileTailRoutes.Validate(fileTail, bundle);
+        }
+
+        MicrosoftCloudSourceConfiguration? microsoftCloud = null;
+        if (settings.MicrosoftCloudConfigPath is not null)
+        {
+            microsoftCloud = MicrosoftCloudSourceConfigurationLoader.LoadFile(settings.MicrosoftCloudConfigPath);
+            MicrosoftCloudRoutes.Validate(microsoftCloud, bundle);
         }
 
         RelayDownstreams? downstreams = null;
@@ -90,6 +99,7 @@ public sealed record CollectorStartupSources(
                 : ProducerAuthorization.FromJson(settings.ProducerScopesJson),
             new IngestAuthentication(settings.IngestToken, settings.IngestTokensFile),
             downstreams,
-            fileTail);
+            fileTail,
+            microsoftCloud);
     }
 }

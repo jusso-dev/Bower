@@ -1,0 +1,46 @@
+{
+  "value": [
+    {
+      "id": "11111111-0000-4000-8000-000000000701",
+      "deviceName": "MEGAN-LAPTOP",
+      "complianceState": "noncompliant",
+      "operatingSystem": "Windows",
+      "osVersion": "10.0.26100.2314",
+      "lastSyncDateTime": "{{mid}}",
+      "userPrincipalName": "megan.bowen@contoso.example",
+      "userId": "0b7c1d3e-0000-4000-8000-000000000101",
+      "azureADDeviceId": "22222222-0000-4000-8000-000000000801",
+      "managedDeviceOwnerType": "company",
+      "isEncrypted": false,
+      "jailBroken": "False",
+      "complianceGracePeriodExpirationDateTime": "9999-12-31T23:59:59Z",
+      "managementAgent": "mdm"
+    },
+    {
+      "id": "11111111-0000-4000-8000-000000000702",
+      "deviceName": "ADELE-PHONE",
+      "complianceState": "compliant",
+      "operatingSystem": "iOS",
+      "osVersion": "18.1",
+      "userPrincipalName": "adele.vance@contoso.example",
+      "azureADDeviceId": "22222222-0000-4000-8000-000000000802",
+      "managedDeviceOwnerType": "personal",
+      "isEncrypted": true,
+      "jailBroken": "False",
+      "managementAgent": "mdm"
+    },
+    {
+      "id": "11111111-0000-4000-8000-000000000703",
+      "deviceName": "KIOSK-03",
+      "complianceState": "inGracePeriod",
+      "operatingSystem": "Android",
+      "osVersion": "14",
+      "azureADDeviceId": "22222222-0000-4000-8000-000000000803",
+      "managedDeviceOwnerType": "company",
+      "isEncrypted": true,
+      "jailBroken": "True",
+      "complianceGracePeriodExpirationDateTime": "{{end}}",
+      "managementAgent": "mdm"
+    }
+  ]
+}

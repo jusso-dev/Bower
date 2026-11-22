@@ -1,0 +1,43 @@
+{
+  "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#deviceManagement/auditEvents",
+  "@odata.nextLink": "https://graph.microsoft.com/v1.0/deviceManagement/auditEvents?$filter=x&$skiptoken=page2",
+  "value": [
+    {
+      "@odata.type": "#microsoft.graph.auditEvent",
+      "id": "5e1f0c2a-0000-4000-8000-000000000001",
+      "displayName": "Wipe ManagedDevice",
+      "componentName": "DeviceManagement",
+      "actor": {
+        "@odata.type": "microsoft.graph.auditActor",
+        "type": "ItPro",
+        "auditActorType": "ItPro",
+        "userPermissions": ["*"],
+        "applicationId": "9e9e9e9e-0000-4000-8000-000000000401",
+        "applicationDisplayName": "Microsoft Intune portal extension",
+        "userPrincipalName": "megan.bowen@contoso.example",
+        "servicePrincipalName": null,
+        "ipAddress": "203.0.113.40",
+        "userId": "0b7c1d3e-0000-4000-8000-000000000101"
+      },
+      "activity": "Wipe ManagedDevice",
+      "activityDateTime": "{{mid}}",
+      "activityType": "Wipe ManagedDevice",
+      "activityOperationType": "Action",
+      "activityResult": "Success",
+      "correlationId": "c0ffee00-0000-4000-8000-000000000001",
+      "resources": [
+        {
+          "@odata.type": "microsoft.graph.auditResource",
+          "displayName": "Device-7Q2",
+          "modifiedProperties": [
+            { "displayName": "WipeKeepEnrollmentData", "oldValue": null, "newValue": "secret-old-value-marker" }
+          ],
+          "type": "ManagedDevice",
+          "auditResourceType": "ManagedDevice",
+          "resourceId": "8d1c0b3a-0000-4000-8000-000000000201"
+        }
+      ],
+      "category": "Device"
+    }
+  ]
+}

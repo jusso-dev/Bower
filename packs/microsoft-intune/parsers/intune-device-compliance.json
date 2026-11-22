@@ -1,0 +1,228 @@
+{
+  "version": "1.0",
+  "format": "Json",
+  "fields": [
+    {
+      "sourceName": "id",
+      "type": "Text",
+      "ocsfPath": "metadata.uid",
+      "asimField": "EventOriginalUid",
+      "sensitive": false
+    },
+    {
+      "sourceName": "input",
+      "type": "Text",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "sourceKind",
+      "type": "Text",
+      "ocsfPath": "metadata.log_name",
+      "asimField": "EventOriginalSubType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "tenantId",
+      "type": "Text",
+      "ocsfPath": "cloud.account.uid",
+      "asimField": "DvcScopeId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "snapshotDate",
+      "type": "Text",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "snapshotAt",
+      "type": "DateTime",
+      "ocsfPath": "time",
+      "asimField": "TimeGenerated",
+      "sensitive": false
+    },
+    {
+      "sourceName": "deviceId",
+      "type": "Text",
+      "ocsfPath": "device.uid",
+      "asimField": "DvcId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "complianceState",
+      "type": "Text",
+      "ocsfPath": "compliance.status",
+      "asimField": "EventResultDetails",
+      "sensitive": false
+    },
+    {
+      "sourceName": "operatingSystem",
+      "type": "Text",
+      "ocsfPath": "device.os.name",
+      "asimField": "DvcOs",
+      "sensitive": false
+    },
+    {
+      "sourceName": "osVersion",
+      "type": "Text",
+      "ocsfPath": "device.os.version",
+      "asimField": "DvcOsVersion",
+      "sensitive": false
+    },
+    {
+      "sourceName": "lastSyncDateTime",
+      "type": "DateTime",
+      "ocsfPath": "device.last_seen_time",
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "userPrincipalName",
+      "type": "Text",
+      "ocsfPath": "device.owner.email_addr",
+      "asimField": "ActorUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "userId",
+      "type": "Text",
+      "ocsfPath": "device.owner.uid",
+      "asimField": "ActorUserId",
+      "sensitive": true
+    },
+    {
+      "sourceName": "azureADDeviceId",
+      "type": "Text",
+      "ocsfPath": "device.uid_alt",
+      "asimField": "DvcAzureResourceId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "ownerType",
+      "type": "Text",
+      "ocsfPath": "device.owner.type",
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "isEncrypted",
+      "type": "Text",
+      "ocsfPath": "device.is_encrypted",
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "jailBroken",
+      "type": "Text",
+      "ocsfPath": "device.is_jailbroken",
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "gracePeriodExpires",
+      "type": "DateTime",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "selected",
+      "type": "Text",
+      "ocsfPath": null,
+      "asimField": null,
+      "sensitive": false
+    },
+    {
+      "sourceName": "action",
+      "type": "Text",
+      "ocsfPath": "activity_name",
+      "asimField": "EventType",
+      "sensitive": false
+    },
+    {
+      "sourceName": "result",
+      "type": "Text",
+      "ocsfPath": "status",
+      "asimField": "EventResult",
+      "sensitive": false
+    },
+    {
+      "sourceName": "user",
+      "type": "Text",
+      "ocsfPath": "device.owner.email_addr",
+      "asimField": "ActorUsername",
+      "sensitive": true
+    },
+    {
+      "sourceName": "user_id",
+      "type": "Text",
+      "ocsfPath": "device.owner.uid",
+      "asimField": "ActorUserId",
+      "sensitive": true
+    },
+    {
+      "sourceName": "device",
+      "type": "Text",
+      "ocsfPath": "device.uid",
+      "asimField": "DvcId",
+      "sensitive": false
+    },
+    {
+      "sourceName": "target_type",
+      "type": "Text",
+      "ocsfPath": "device.type",
+      "asimField": "DvcIdType",
+      "sensitive": false
+    }
+  ],
+  "runtime": {
+    "applicationName": "microsoft-intune",
+    "environment": "production",
+    "eventCategory": "application-security",
+    "eventType": "intune_device_compliance",
+    "eventAction": "intune.compliance",
+    "eventResult": "unknown",
+    "transforms": [
+      "if .sourceKind == \"intune-device-compliance\" && .complianceState != null && .complianceState != \"compliant\" { .selected = \"true\" } else { .selected = \"false\" }",
+      ".action = concat(\"device.compliance.\", coalesce(.complianceState, \"unknown\"))",
+      ".result = coalesce(lookup(\"results\", .complianceState), \"unknown\")",
+      ".user = coalesce(.userPrincipalName, \"none\")",
+      ".user_id = coalesce(.userId, \"none\")",
+      ".device = coalesce(.azureADDeviceId, .deviceId)",
+      ".target_type = \"IntuneManagedDevice\""
+    ],
+    "tables": {
+      "results": {
+        "noncompliant": "failure",
+        "inGracePeriod": "failure",
+        "conflict": "failure",
+        "error": "failure",
+        "unknown": "unknown",
+        "configManager": "unknown"
+      }
+    },
+    "match": {
+      "selected": "true"
+    },
+    "fields": {
+      "eventId": "id",
+      "timeGenerated": "snapshotAt",
+      "eventAction": "action",
+      "eventResult": "result",
+      "actor.username": "user",
+      "actor.userId": "user_id",
+      "target.type": "target_type",
+      "target.id": "device",
+      "labels.operatingSystem": "operatingSystem",
+      "labels.osVersion": "osVersion",
+      "labels.ownerType": "ownerType",
+      "labels.isEncrypted": "isEncrypted",
+      "labels.jailBroken": "jailBroken",
+      "labels.intuneDeviceId": "deviceId",
+      "labels.snapshotDate": "snapshotDate"
+    }
+  }
+}

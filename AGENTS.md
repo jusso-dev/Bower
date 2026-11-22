@@ -41,10 +41,11 @@ control plane, or runtime AI filter.
 - `src/Bower.Source.Syslog`: RFC 5424/3164 syslog over TCP, TLS and UDP, routed to signed pack parsers (collector `BOWER_SYSLOG_CONFIG`).
 - `src/Bower.Source.File`: security-selected local file tail (operator-named files under allowed roots, no wildcards), routed to signed pack parsers with durable cursors (collector `BOWER_FILE_CONFIG`).
 - `src/Bower.Source.WindowsEventLog`: channel and event ID allow-listed Windows Event Log subscriptions with durable bookmarks, mapped by signed pack parsers (C# collector on Windows, `BOWER_WINDOWS_EVENTLOG_CONFIG`).
+- `src/Bower.Source.MicrosoftCloud`: least-privilege pull of Microsoft cloud admin and audit APIs (Intune audit and device compliance) with bounded HTTPS, a token host allow-list and durable per-page cursors, mapped by signed pack parsers (collector `BOWER_MICROSOFT_CONFIG`). Not the Unified Audit Log or an audit archive.
 - `src/Bower.Agent.Docker`: Docker sidecar that forwards opted-in container security events.
 - `src/Bower.ServiceDefaults`: opt-in OpenTelemetry host defaults; inert unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 - `src/Bower.AppHost`, `tools/Bower.DevSinks`, `tests/Bower.AppHost.Tests`: Aspire local development and integration-test harness with local stand-in destinations (development only, never deployed). See `docs/getting-started/aspire.md`.
-- `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `linux-authlog-ssh`, `windows-security-logon`, `aws-security`, `gcp-security`, `owasp-asvs-app-logging`).
+- `packs`: signed content packs (`linux-ssh-gateway`, `linux-journald-ssh`, `linux-authlog-ssh`, `windows-security-logon`, `aws-security`, `gcp-security`, `owasp-asvs-app-logging`, `microsoft-intune`).
 - `deploy/aws`, `deploy/gcp`: CloudFormation and Terraform for cloud signal and the S3 output policy (plan-only by default).
 - `deploy/azure-function`: Bicep for the Azure Functions collector (Flex Consumption, managed identity; plan-only by default).
 - `deploy/azure-webapp`, `deploy/docker/hosted`: private App Service pilot (Bicep, ephemeral queue) and hardened Compose for a hosted HTTPS collector. See `docs/deployment/hosted-collectors.md`.

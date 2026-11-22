@@ -215,6 +215,11 @@ const sidebars: SidebarsConfig = {
         },
         {
           "type": "doc",
+          "id": "deployment/microsoft-cloud-sources",
+          "label": "Microsoft cloud (Intune)"
+        },
+        {
+          "type": "doc",
           "id": "deployment/ama-companion",
           "label": "Azure Monitor Agent companion"
         },
@@ -471,6 +476,11 @@ const sidebars: SidebarsConfig = {
       "label": "Pack catalogue"
     },
     {
+      "type": "doc",
+      "id": "security/microsoft-cloud-sources",
+      "label": "Microsoft cloud sources"
+    },
+    {
       "type": "category",
       "label": "Engineering reviews",
       "collapsed": true,
@@ -542,6 +552,11 @@ const sidebars: SidebarsConfig = {
       "type": "doc",
       "id": "architecture/durable-azure-ingest-decision",
       "label": "Durable Azure ingest (proposed)"
+    },
+    {
+      "type": "doc",
+      "id": "architecture/microsoft-cloud-envelope-contract",
+      "label": "Microsoft cloud envelope contract"
     },
     {
       "type": "doc",

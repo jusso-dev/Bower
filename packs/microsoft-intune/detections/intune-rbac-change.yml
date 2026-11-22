@@ -1,0 +1,30 @@
+title: Intune role or role assignment changed
+id: bower-pack-intune-rbac-change-001
+status: stable
+description: >-
+  An Intune role definition or role assignment was created, changed or deleted. New Intune
+  administrators can push scripts and apps to every managed device. Reads are not matched.
+version: 1.1.0
+level: high
+logsource:
+  product: bower
+  service: intune_audit
+detection:
+  selection:
+    EventType: intune_audit
+    intuneCategory: Role
+    intuneOperationType:
+      - Create
+      - Patch
+      - Update
+      - Delete
+      - Assign
+      - Remove
+      - Action
+  condition: selection
+tags:
+  - attack.t1098
+  - attack.persistence
+  - attack.privilege_escalation
+falsepositives:
+  - Planned changes to Intune administration

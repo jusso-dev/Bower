@@ -92,3 +92,28 @@ cloud raw parser is activated here. DCR templates remain packaged-only.
 See [activation, limits, failure codes and Sigma subset](../deployment/packs.md#local-parser-and-detection-activation).
 All host demonstrations are local and synthetic. Destination delivery requires a
 separate authorised query; no Sentinel delivery or all-software coverage is claimed.
+
+`microsoft-intune` 1.1.0 exposes two signed JSON parsers for records from the
+[Microsoft cloud source](../deployment/microsoft-cloud-sources.md). Parser 0 maps
+`intune-audit` records (Graph `deviceManagement/auditEvents`): it requires source kind
+`intune-audit` and an activity time, maps the activity to the action, the Intune result
+through a static table to `success` or `failure` (else `unknown`), the actor to the user
+principal name, service principal name or application name in that order, the actor IP
+address (canonicalised by the source, or absent) to the source address, and the first
+resource to the target. It produces `intune_audit`, category `administrative-activity`,
+application `microsoft-intune`, with labels for the audit event id, category, component,
+operation type and the names of modified properties. Parser 1 maps
+`intune-device-compliance` records (daily `deviceManagement/managedDevices` snapshot): it
+requires that source kind and a state other than `compliant`, and produces
+`intune_device_compliance`, category `application-security`, action
+`device.compliance.<state>`, target the Entra device id, with Intune device id, snapshot
+day, operating system, version, ownership, encryption and jailbreak labels. Device names,
+modified property values and hardware identifiers are never read by the source. Policies
+`BWR-PACK-INTUNE-AUDIT` 1.0.0 and `BWR-PACK-INTUNE-COMPLIANCE` 1.0.0 select. The pack ships
+no privacy profile; use `deploy/privacy/microsoft-cloud.yaml` to pseudonymise people,
+email addresses and resource names. Local rules: `bower-pack-intune-device-wipe-001`,
+`bower-pack-intune-rbac-change-001` 1.1.0 (role changes only, never reads),
+`bower-pack-intune-policy-deleted-001` and `bower-pack-intune-jailbroken-001`. Version
+1.1.0 adds the audit event id, Intune device id and snapshot day labels, drops the outcome
+reason (it repeated the result) and the last sync and grace period labels (parser mapping
+limit), and limits the RBAC rule to changes.

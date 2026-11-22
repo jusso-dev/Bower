@@ -79,6 +79,10 @@ internal sealed record StatusResponse(
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public IReadOnlyList<Bower.Source.File.FileTailInputStatus>? FileTail { get; init; }
 
+    /// <summary>Microsoft cloud input counters; omitted when BOWER_MICROSOFT_CONFIG is not set. Metadata only.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<Bower.Source.MicrosoftCloud.MicrosoftCloudInputStatus>? MicrosoftCloud { get; init; }
+
     /// <summary>
     /// Queue database pages against the limit at which new events are refused: in-use bytes,
     /// free-list bytes, the limit and the settlement ceiling, so host checks never recompute
