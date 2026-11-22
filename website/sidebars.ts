@@ -555,6 +555,11 @@ const sidebars: SidebarsConfig = {
     },
     {
       "type": "doc",
+      "id": "architecture/microsoft-cloud-envelope-contract",
+      "label": "Microsoft cloud envelope contract"
+    },
+    {
+      "type": "doc",
       "id": "deployment/logs-ingestion-api",
       "label": "Azure ingestion API"
     },
