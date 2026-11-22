@@ -52,13 +52,6 @@
       "sensitive": false
     },
     {
-      "sourceName": "deviceName",
-      "type": "Text",
-      "ocsfPath": "device.hostname",
-      "asimField": "DvcHostname",
-      "sensitive": true
-    },
-    {
       "sourceName": "complianceState",
       "type": "Text",
       "ocsfPath": "compliance.status",
@@ -131,13 +124,6 @@
     {
       "sourceName": "gracePeriodExpires",
       "type": "DateTime",
-      "ocsfPath": null,
-      "asimField": null,
-      "sensitive": false
-    },
-    {
-      "sourceName": "managementAgent",
-      "type": "Text",
       "ocsfPath": null,
       "asimField": null,
       "sensitive": false
@@ -235,8 +221,8 @@
       "labels.ownerType": "ownerType",
       "labels.isEncrypted": "isEncrypted",
       "labels.jailBroken": "jailBroken",
-      "labels.lastSyncDateTime": "lastSyncDateTime",
-      "labels.gracePeriodExpires": "gracePeriodExpires"
+      "labels.intuneDeviceId": "deviceId",
+      "labels.snapshotDate": "snapshotDate"
     }
   }
 }

@@ -35,6 +35,21 @@ internal abstract class MicrosoftCloudReader
 
     public abstract MicrosoftCloudPage Read(MicrosoftCloudInputOptions input, MicrosoftCloudSpan span, MicrosoftCloudResponse response);
 
+    /// <summary>
+    /// A next link is stored in the cursor and followed with a bearer token, so it must pass
+    /// the same host check as a request before the page that returned it is committed.
+    /// </summary>
+    internal MicrosoftCloudPage Checked(MicrosoftCloudInputOptions input, MicrosoftCloudPage page)
+    {
+        if (page.Next is { } next
+            && (!Uri.TryCreate(next, UriKind.Absolute, out Uri? uri) || !MicrosoftCloudHttp.IsAllowed(uri, Host(input))))
+        {
+            throw new MicrosoftCloudException(MicrosoftCloudFailures.HostRefused);
+        }
+
+        return page;
+    }
+
     public virtual async Task<MicrosoftCloudPage> ReadPageAsync(
         MicrosoftCloudHttp http,
         MicrosoftCloudInputOptions input,
@@ -45,7 +60,7 @@ internal abstract class MicrosoftCloudReader
         Uri uri = page is null ? FirstPage(input, span) : new Uri(page, UriKind.Absolute);
         using MicrosoftCloudResponse response = await http.SendAsync(
             HttpMethod.Get, uri, input, Scope(input), Host(input), cancellationToken);
-        return Read(input, span, response);
+        return Checked(input, Read(input, span, response));
     }
 
     public static MicrosoftCloudReader For(string kind) => kind switch
@@ -99,6 +114,10 @@ internal abstract class GraphReader : MicrosoftCloudReader
 /// </summary>
 internal sealed class IntuneAuditReader : GraphReader
 {
+    /// <summary>Envelope limits: actions and target types hold 128 characters, labels and identities 256.</summary>
+    internal const int Action = 128;
+    internal const int Label = 256;
+
     public override Uri FirstPage(MicrosoftCloudInputOptions input, MicrosoftCloudSpan span)
     {
         string filter = $"activityDateTime ge {MicrosoftCloudHttp.Time(span.Start)} and activityDateTime lt {MicrosoftCloudHttp.Time(span.End)}";
@@ -124,25 +143,25 @@ internal sealed class IntuneAuditReader : GraphReader
             JsonElement[] resources = [.. MicrosoftCloudRecord.Array(item, "resources").Where(resource => resource.ValueKind == JsonValueKind.Object)];
             JsonElement resource = resources.Length > 0 ? resources[0] : default;
             records.Add(new MicrosoftCloudRecord(input)
-                .Add("auditEventId", id)
+                .Add("auditEventId", id, Label)
                 .Add("activityDateTime", time)
-                .Add("activity", MicrosoftCloudRecord.String(item, "activity"))
-                .Add("activityType", MicrosoftCloudRecord.String(item, "activityType"))
-                .Add("activityOperationType", MicrosoftCloudRecord.String(item, "activityOperationType"))
-                .Add("activityResult", MicrosoftCloudRecord.String(item, "activityResult"))
-                .Add("category", MicrosoftCloudRecord.String(item, "category"))
-                .Add("componentName", MicrosoftCloudRecord.String(item, "componentName"))
-                .Add("correlationId", MicrosoftCloudRecord.String(item, "correlationId"))
-                .Add("actorType", MicrosoftCloudRecord.String(actor, "auditActorType") ?? MicrosoftCloudRecord.String(actor, "type"))
-                .Add("actorUserPrincipalName", MicrosoftCloudRecord.String(actor, "userPrincipalName"))
-                .Add("actorUserId", MicrosoftCloudRecord.String(actor, "userId"))
-                .Add("actorApplicationId", MicrosoftCloudRecord.String(actor, "applicationId"))
-                .Add("actorApplicationName", MicrosoftCloudRecord.String(actor, "applicationDisplayName"))
-                .Add("actorServicePrincipalName", MicrosoftCloudRecord.String(actor, "servicePrincipalName"))
-                .Add("actorIpAddress", MicrosoftCloudRecord.String(actor, "ipAddress"))
-                .Add("resourceType", MicrosoftCloudRecord.String(resource, "auditResourceType") ?? MicrosoftCloudRecord.String(resource, "type"))
-                .Add("resourceId", MicrosoftCloudRecord.String(resource, "resourceId"))
-                .Add("resourceName", MicrosoftCloudRecord.String(resource, "displayName"))
+                .Add("activity", MicrosoftCloudRecord.String(item, "activity"), Action)
+                .Add("activityType", MicrosoftCloudRecord.String(item, "activityType"), Action)
+                .Add("activityOperationType", MicrosoftCloudRecord.String(item, "activityOperationType"), Label)
+                .Add("activityResult", MicrosoftCloudRecord.String(item, "activityResult"), Label)
+                .Add("category", MicrosoftCloudRecord.String(item, "category"), Label)
+                .Add("componentName", MicrosoftCloudRecord.String(item, "componentName"), Label)
+                .Add("correlationId", MicrosoftCloudRecord.String(item, "correlationId"), Label)
+                .Add("actorType", MicrosoftCloudRecord.String(actor, "auditActorType") ?? MicrosoftCloudRecord.String(actor, "type"), Label)
+                .Add("actorUserPrincipalName", MicrosoftCloudRecord.String(actor, "userPrincipalName"), Label)
+                .Add("actorUserId", MicrosoftCloudRecord.String(actor, "userId"), Label)
+                .Add("actorApplicationId", MicrosoftCloudRecord.String(actor, "applicationId"), Label)
+                .Add("actorApplicationName", MicrosoftCloudRecord.String(actor, "applicationDisplayName"), Label)
+                .Add("actorServicePrincipalName", MicrosoftCloudRecord.String(actor, "servicePrincipalName"), Label)
+                .Add("actorIpAddress", MicrosoftCloudRecord.Address(MicrosoftCloudRecord.String(actor, "ipAddress")))
+                .Add("resourceType", MicrosoftCloudRecord.String(resource, "auditResourceType") ?? MicrosoftCloudRecord.String(resource, "type"), Action)
+                .Add("resourceId", MicrosoftCloudRecord.String(resource, "resourceId"), Label)
+                .Add("resourceName", MicrosoftCloudRecord.String(resource, "displayName"), Label)
                 .Add("resourceCount", resources.Length == 0 ? null : resources.Length.ToString(System.Globalization.CultureInfo.InvariantCulture))
                 .Add("modifiedProperties", MicrosoftCloudRecord.Join(resources
                     .SelectMany(item => MicrosoftCloudRecord.Array(item, "modifiedProperties"))
@@ -157,15 +176,15 @@ internal sealed class IntuneAuditReader : GraphReader
 /// <summary>
 /// Once per UTC day, <c>GET /v1.0/deviceManagement/managedDevices</c> with <c>$select</c>
 /// limited to compliance fields. Least privileged application permission:
-/// <c>DeviceManagementManagedDevices.Read.All</c>. IMEI, serial number, phone number, MAC
-/// addresses, email address and hardware inventory are never requested. Devices whose state
+/// <c>DeviceManagementManagedDevices.Read.All</c>. Device name, IMEI, serial number, phone
+/// number, MAC addresses, email address and hardware inventory are never requested. Devices whose state
 /// is not in the input's <c>complianceStates</c> are dropped in memory.
 /// </summary>
 internal sealed class IntuneComplianceReader : GraphReader
 {
     internal const string Select =
-        "id,deviceName,complianceState,operatingSystem,osVersion,lastSyncDateTime,userPrincipalName,userId,"
-        + "azureADDeviceId,managedDeviceOwnerType,isEncrypted,jailBroken,complianceGracePeriodExpirationDateTime,managementAgent";
+        "id,complianceState,operatingSystem,osVersion,lastSyncDateTime,userPrincipalName,userId,"
+        + "azureADDeviceId,managedDeviceOwnerType,isEncrypted,jailBroken,complianceGracePeriodExpirationDateTime";
 
     public override bool IsSnapshot => true;
 
@@ -192,20 +211,18 @@ internal sealed class IntuneComplianceReader : GraphReader
             records.Add(new MicrosoftCloudRecord(input)
                 .Add("snapshotDate", span.SnapshotDate)
                 .Add("snapshotAt", snapshotAt)
-                .Add("deviceId", id)
-                .Add("deviceName", MicrosoftCloudRecord.String(item, "deviceName"))
-                .Add("complianceState", state)
-                .Add("operatingSystem", MicrosoftCloudRecord.String(item, "operatingSystem"))
-                .Add("osVersion", MicrosoftCloudRecord.String(item, "osVersion"))
+                .Add("deviceId", id, IntuneAuditReader.Label)
+                .Add("complianceState", state, IntuneAuditReader.Label)
+                .Add("operatingSystem", MicrosoftCloudRecord.String(item, "operatingSystem"), IntuneAuditReader.Label)
+                .Add("osVersion", MicrosoftCloudRecord.String(item, "osVersion"), IntuneAuditReader.Label)
                 .Add("lastSyncDateTime", MicrosoftCloudRecord.Time(MicrosoftCloudRecord.String(item, "lastSyncDateTime")))
-                .Add("userPrincipalName", MicrosoftCloudRecord.String(item, "userPrincipalName"))
-                .Add("userId", MicrosoftCloudRecord.String(item, "userId"))
-                .Add("azureADDeviceId", MicrosoftCloudRecord.String(item, "azureADDeviceId"))
-                .Add("ownerType", MicrosoftCloudRecord.String(item, "managedDeviceOwnerType"))
-                .Add("isEncrypted", MicrosoftCloudRecord.String(item, "isEncrypted"))
-                .Add("jailBroken", MicrosoftCloudRecord.String(item, "jailBroken"))
+                .Add("userPrincipalName", MicrosoftCloudRecord.String(item, "userPrincipalName"), IntuneAuditReader.Label)
+                .Add("userId", MicrosoftCloudRecord.String(item, "userId"), IntuneAuditReader.Label)
+                .Add("azureADDeviceId", MicrosoftCloudRecord.String(item, "azureADDeviceId"), IntuneAuditReader.Label)
+                .Add("ownerType", MicrosoftCloudRecord.String(item, "managedDeviceOwnerType"), IntuneAuditReader.Label)
+                .Add("isEncrypted", MicrosoftCloudRecord.String(item, "isEncrypted"), IntuneAuditReader.Label)
+                .Add("jailBroken", MicrosoftCloudRecord.String(item, "jailBroken"), IntuneAuditReader.Label)
                 .Add("gracePeriodExpires", MicrosoftCloudRecord.Time(MicrosoftCloudRecord.String(item, "complianceGracePeriodExpirationDateTime")))
-                .Add("managementAgent", MicrosoftCloudRecord.String(item, "managementAgent"))
                 .Build(id + "\u001f" + span.SnapshotDate));
         }
 

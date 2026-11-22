@@ -119,11 +119,17 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
             StringComparer.Ordinal);
     }
 
+    /// <summary>Pages read in one poll before it yields (the cursor is committed after each).</summary>
+    public const int MaximumPagesPerPoll = 100;
+
     /// <summary>Wait after a backpressure stop before the page is read again.</summary>
     public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(5);
 
     /// <summary>Longest wait between failed polls (permission, throttling, outage).</summary>
     public TimeSpan MaximumBackoff { get; init; } = TimeSpan.FromMinutes(30);
+
+    /// <summary>An HTTP client this source owns and disposes with itself (the production client).</summary>
+    public IDisposable? OwnedClient { get; init; }
 
     /// <summary>Busy queue database (for example during a retention batch): treated as backpressure.</summary>
     public Func<Exception, bool> IsTransientStorageFailure { get; init; } = static _ => false;
@@ -139,16 +145,19 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
         }
 
         CancellationToken token = stopping.Token;
-        foreach (Input input in inputs.Values)
+        lock (running)
         {
-            running.Add(Task.Run(() => RunAsync(input, token), CancellationToken.None));
+            foreach (Input input in inputs.Values)
+            {
+                running.Add(Task.Run(() => RunAsync(input, token), CancellationToken.None));
+            }
         }
 
         return Task.CompletedTask;
     }
 
     public IReadOnlyList<MicrosoftCloudInputStatus> Snapshot() =>
-        [.. inputs.Values.Select(input => input.Snapshot(http.Counters))];
+        [.. inputs.Values.Select(input => input.Snapshot(http.Counters(input.Options.Id)))];
 
     /// <summary>
     /// One poll of one input: resume the open window or snapshot, hand each record to the
@@ -157,8 +166,16 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
     /// </summary>
     public async Task<MicrosoftCloudPollResult> PollOnceAsync(string inputId, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref disposed) != 0, this);
         Input input = inputs[inputId];
         await input.Gate.WaitAsync(cancellationToken);
+        if (Volatile.Read(ref disposed) != 0)
+        {
+            // Disposal took the gate after this call checked: never poll a stopped source.
+            input.Gate.Release();
+            throw new ObjectDisposedException(nameof(MicrosoftCloudSource));
+        }
+
         try
         {
             return await PollAsync(input, cancellationToken);
@@ -183,9 +200,15 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
         }
 
         await stopping.CancelAsync();
+        Task[] loops;
+        lock (running)
+        {
+            loops = [.. running];
+        }
+
         try
         {
-            await Task.WhenAll(running);
+            await Task.WhenAll(loops);
         }
         catch (OperationCanceledException)
         {
@@ -194,9 +217,14 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
 
         foreach (Input input in inputs.Values)
         {
-            input.Gate.Dispose();
+            // Wait for any poll still holding the gate (a direct PollOnceAsync), then leave the
+            // semaphore undisposed: it holds no unmanaged handle unless a wait handle was
+            // requested, and disposing it would race a late Release.
+            await input.Gate.WaitAsync(CancellationToken.None);
             input.State = "stopped";
         }
+
+        OwnedClient?.Dispose();
 
         stopping.Dispose();
     }
@@ -255,7 +283,7 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
     {
         MicrosoftCloudInputOptions options = input.Options;
         DateTimeOffset now = clock.GetUtcNow();
-        input.LastPollTicks = now.UtcTicks;
+        Interlocked.Exchange(ref input.LastPollTicks, now.UtcTicks);
         SourceCursorSnapshot? snapshot = await cursors.ReadAsync(options.SourceId, cancellationToken);
         MicrosoftCloudCursor cursor;
         if (snapshot is null)
@@ -270,7 +298,7 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
 
         long version = snapshot?.Version ?? 0;
         input.Observe(cursor);
-        MicrosoftCloudCursor opened = Open(input, cursor, now, out MicrosoftCloudSpan? span);
+        MicrosoftCloudCursor opened = Open(input, cursor, now, out MicrosoftCloudSpan? span, out bool gap);
         if (span is null)
         {
             input.State = "idle";
@@ -283,10 +311,17 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
             // exact window (and a gap is counted once, when the window is first opened).
             cursor = opened;
             version = await CommitAsync(input, cursor, version, cancellationToken);
+            if (gap)
+            {
+                Interlocked.Increment(ref input.Counters.Gaps);
+            }
         }
 
         input.State = "running";
         int submitted = 0;
+        int pages = 0;
+        bool restarted = false;
+        HashSet<string> visited = new(StringComparer.Ordinal);
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -296,14 +331,23 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
                 page = await input.Reader.ReadPageAsync(http, options, span, cursor.Page, cancellationToken);
             }
             catch (MicrosoftCloudException exception) when (
-                exception.Code == MicrosoftCloudFailures.RequestRefused && cursor.Page is not null)
+                exception.Code == MicrosoftCloudFailures.RequestRefused && cursor.Page is not null && !restarted)
             {
                 // A stored page link expired (skip tokens do). Restart the same window or
-                // snapshot from its first page; records already queued deduplicate.
+                // snapshot from its first page once per poll; records already queued
+                // deduplicate. A second refusal in the same poll fails it, so the loop backs off.
+                restarted = true;
                 Interlocked.Increment(ref input.Counters.PageRestarts);
                 cursor = cursor with { Page = null };
                 version = await CommitAsync(input, cursor, version, cancellationToken);
+                visited.Clear();
                 continue;
+            }
+
+            if (page.Next is not null && !visited.Add(page.Next))
+            {
+                // A next link the API already returned in this poll: a cycle that would never end.
+                throw new MicrosoftCloudException(MicrosoftCloudFailures.ResponseInvalid);
             }
 
             Interlocked.Increment(ref input.Counters.Pages);
@@ -337,7 +381,9 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
                 return new MicrosoftCloudPollResult(submitted, false, more);
             }
 
-            if (submitted >= options.MaxRecordsPerPoll)
+            // Pages with nothing in scope (for example all compliant devices) still count,
+            // so one poll is bounded in requests as well as records.
+            if (submitted >= options.MaxRecordsPerPoll || ++pages >= MaximumPagesPerPoll)
             {
                 return new MicrosoftCloudPollResult(submitted, false, true);
             }
@@ -345,8 +391,9 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
     }
 
     /// <summary>The open window or snapshot, or a new one when one is due; null span when caught up.</summary>
-    private static MicrosoftCloudCursor Open(Input input, MicrosoftCloudCursor cursor, DateTimeOffset now, out MicrosoftCloudSpan? span)
+    private static MicrosoftCloudCursor Open(Input input, MicrosoftCloudCursor cursor, DateTimeOffset now, out MicrosoftCloudSpan? span, out bool gap)
     {
+        gap = false;
         MicrosoftCloudInputOptions options = input.Options;
         MicrosoftCloudReader reader = input.Reader;
         if (reader.IsSnapshot)
@@ -358,7 +405,9 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
             }
 
             string today = now.UtcDateTime.ToString("yyyy'-'MM'-'dd", System.Globalization.CultureInfo.InvariantCulture);
-            if (string.Equals(cursor.CompletedDate, today, StringComparison.Ordinal))
+            // Ordinal order of yyyy-MM-dd is date order: a clock stepped back across midnight
+            // never re-runs a day that already completed.
+            if (cursor.CompletedDate is not null && string.CompareOrdinal(today, cursor.CompletedDate) <= 0)
             {
                 span = null;
                 return cursor;
@@ -380,12 +429,9 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
             : now - TimeSpan.FromHours(options.StartLookbackHours);
         if (lower < floor)
         {
-            if (cursor.Committed is not null)
-            {
-                // The API keeps no older data: what lay between the cursor and the floor is lost.
-                Interlocked.Increment(ref input.Counters.Gaps);
-            }
-
+            // The API keeps no older data. Only a committed bound before the floor loses
+            // records; an overlap reaching past it does not.
+            gap = cursor.Committed < floor;
             lower = floor;
         }
 
@@ -399,6 +445,7 @@ public sealed class MicrosoftCloudSource : IAsyncDisposable
         if (upper <= lower || (cursor.Committed is { } done && upper <= done))
         {
             span = null;
+            gap = false;
             return cursor;
         }
 

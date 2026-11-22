@@ -77,13 +77,15 @@ public static class MicrosoftCloudKinds
 public static class MicrosoftCloudSourceConfigurationLoader
 {
     public const int MaximumInputs = 16;
+    public const int MaximumOverlapSeconds = 43_200;
     private const int MaximumBytes = 262_144;
 
     /// <summary>Default compliance states kept by the compliance snapshot: everything that needs attention.</summary>
     public static readonly IReadOnlyList<string> DefaultComplianceStates = ["noncompliant", "inGracePeriod", "conflict", "error"];
 
     private static readonly HashSet<string> ComplianceStateNames = new(
-        ["unknown", "compliant", "noncompliant", "conflict", "error", "inGracePeriod", "configManager"],
+        // compliant is deliberately absent: compliant devices are never collected.
+        ["unknown", "noncompliant", "conflict", "error", "inGracePeriod", "configManager"],
         StringComparer.Ordinal);
 
     public static MicrosoftCloudSourceConfiguration LoadFile(string path)
@@ -193,9 +195,11 @@ public static class MicrosoftCloudSourceConfigurationLoader
             throw Invalid(id, "settleDelaySeconds must be between 0 and 86400.");
         }
 
-        if (input.OverlapSeconds is < 0 or > 86_400)
+        // Windows are at most 24 hours: an overlap near that would stop the committed bound
+        // advancing (each window would end at or before it), so it is capped at 12 hours.
+        if (input.OverlapSeconds is < 0 or > MaximumOverlapSeconds)
         {
-            throw Invalid(id, "overlapSeconds must be between 0 and 86400.");
+            throw Invalid(id, $"overlapSeconds must be between 0 and {MaximumOverlapSeconds}.");
         }
 
         if (input.MaxRecordsPerPoll is < 1 or > 10_000)
@@ -211,7 +215,7 @@ public static class MicrosoftCloudSourceConfigurationLoader
                 throw Invalid(id, "complianceStates applies to intune-device-compliance only.");
             }
 
-            if (input.ComplianceStates.Count is < 1 or > 7
+            if (input.ComplianceStates.Count is < 1 or > 6
                 || input.ComplianceStates.Any(state => state is null || !ComplianceStateNames.Contains(state))
                 || input.ComplianceStates.Distinct(StringComparer.Ordinal).Count() != input.ComplianceStates.Count)
             {

@@ -10,6 +10,12 @@ metadata:
     profile exposing who or what it is. Everything else keeps the default Australian
     redaction. Set with BOWER_PRIVACY_PROFILE plus BOWER_PRIVACY_HMAC_KEY_FILE and
     BOWER_PRIVACY_HMAC_KEY_ID.
+detectors:
+  # Value detectors run before field rules. The default email action (mask) would turn
+  # megan.bowen@ and mark.smith@ into the same m***@ before the field rule hashed it, so
+  # every user sharing an initial and domain would share one pseudonym. Hash the address
+  # itself instead, wherever it appears.
+  id.email: hmac
 fields:
   - path: actor.username
     action: hmac

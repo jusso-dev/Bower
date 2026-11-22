@@ -48,13 +48,16 @@ public sealed class MicrosoftCloudCollectorTests
     {
         CancellationToken cancellation = TestContext.Current.CancellationToken;
         using TemporaryDirectory directory = new();
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        // Real time plus an offset: collector timers keep running, and the restart can be moved
+        // past the settle delay so the audit input really re-reads its overlap.
+        ShiftedClock clock = new();
+        DateTimeOffset now = clock.GetUtcNow();
         MicrosoftCloudSourceTests.FakeGraph graph = new();
         graph.AuditPages(now);
         graph.Respond(uri => uri.AbsolutePath.EndsWith("/managedDevices", StringComparison.Ordinal),
             MicrosoftCloudSourceTests.Fixture("intune-managed-devices.json", now));
         List<QueuedEvent> rows;
-        await using (WebApplication app = await Start(directory, graph, cancellation))
+        await using (WebApplication app = await Start(directory, graph, clock, cancellation))
         {
             MicrosoftCloudSource source = app.Services.GetRequiredService<MicrosoftCloudSource>();
             await WaitFor(source, items => items.All(item => item.Queued + item.Duplicates >= 2), cancellation);
@@ -82,6 +85,7 @@ public sealed class MicrosoftCloudCollectorTests
             Assert.DoesNotContain("megan.bowen@contoso.example", row.Payload, StringComparison.Ordinal);
             Assert.DoesNotContain("adele.vance@contoso.example", row.Payload, StringComparison.Ordinal);
             Assert.DoesNotContain("MEGAN-LAPTOP", row.Payload, StringComparison.Ordinal);
+            Assert.DoesNotContain("KIOSK-03", row.Payload, StringComparison.Ordinal);
             Assert.DoesNotContain("secret-", row.Payload, StringComparison.Ordinal);
         }
 
@@ -98,14 +102,37 @@ public sealed class MicrosoftCloudCollectorTests
         Assert.Equal("True", kiosk.Labels!["jailBroken"]);
         Assert.Equal("22222222-0000-4000-8000-000000000803", kiosk.Target!.Id);
 
-        // A restart re-reads the audit overlap and today's snapshot is already complete:
-        // the queue holds exactly the same four events.
-        await using (WebApplication again = await Start(directory, graph, cancellation, auditOnly: true))
+        // Restart both inputs 15 minutes later (same UTC day unless the test runs just before
+        // midnight, which the snapshot assertion allows for). The audit window re-reads its
+        // 10 minute overlap, which holds the role change: it must be a queue duplicate.
+        int requestsBefore = graph.Requests.Count;
+        clock.Offset = TimeSpan.FromMinutes(15);
+        bool sameDay = clock.GetUtcNow().UtcDateTime.Date == now.UtcDateTime.Date;
+        await using (WebApplication again = await Start(directory, graph, clock, cancellation))
         {
             MicrosoftCloudSource source = again.Services.GetRequiredService<MicrosoftCloudSource>();
-            await WaitFor(source, items => items.Single().LastPollAt is not null && items.Single().State is "idle" or "running", cancellation);
-            Assert.Equal(0, source.Snapshot().Single().Queued);
+            await WaitFor(source, items => items.Single(item => item.Id == "intune-audit").Duplicates >= 1
+                && items.Single(item => item.Id == "intune-compliance").State == (sameDay ? "idle" : "running"), cancellation);
+            MicrosoftCloudInputStatus audit = source.Snapshot().Single(item => item.Id == "intune-audit");
+            Assert.Equal(0, audit.Queued);
+            Assert.True(graph.Requests.Count > requestsBefore);
+            if (sameDay)
+            {
+                Assert.Equal(0, source.Snapshot().Single(item => item.Id == "intune-compliance").Pages);
+            }
+
+            // Exactly the four rows from the first run, whatever state the leases left them in.
+            QueueSnapshot queue = await again.Services.GetRequiredService<IDurableEventStore>().GetSnapshotAsync(cancellation);
+            Assert.Equal(4, queue.Queued + queue.Uploading + queue.Retrying + queue.Delivered + queue.DeadLettered);
         }
+    }
+
+    /// <summary>System time plus an adjustable offset.</summary>
+    private sealed class ShiftedClock : TimeProvider
+    {
+        public TimeSpan Offset { get; set; }
+
+        public override DateTimeOffset GetUtcNow() => System.GetUtcNow() + Offset;
     }
 
     [Fact]
@@ -153,6 +180,20 @@ public sealed class MicrosoftCloudCollectorTests
 
         string redacted = engine.RedactJson(JsonSerializer.Serialize(envelope, BowerJson.Options)).RedactedJson!;
 
+        string other = engine.RedactJson(JsonSerializer.Serialize(envelope with
+        {
+            Actor = new ActorContext { Username = "mark.smith@contoso.example" }
+        }, BowerJson.Options)).RedactedJson!;
+        using JsonDocument first = JsonDocument.Parse(redacted);
+        using JsonDocument second = JsonDocument.Parse(other);
+        string megan = first.RootElement.GetProperty("actor").GetProperty("username").GetString()!;
+        string mark = second.RootElement.GetProperty("actor").GetProperty("username").GetString()!;
+        // Same initial and domain: the pseudonyms must still differ (no mask-then-hash collapse).
+        Assert.StartsWith("hmac-sha256:", megan, StringComparison.Ordinal);
+        Assert.StartsWith("hmac-sha256:", mark, StringComparison.Ordinal);
+        Assert.NotEqual(megan, mark);
+        Assert.DoesNotContain("***", megan, StringComparison.Ordinal);
+
         Assert.DoesNotContain("megan.bowen", redacted, StringComparison.Ordinal);
         Assert.DoesNotContain("0b7c1d3e-0000-4000-8000-000000000101", redacted, StringComparison.Ordinal);
         Assert.DoesNotContain("Helpdesk operators", redacted, StringComparison.Ordinal);
@@ -179,11 +220,12 @@ public sealed class MicrosoftCloudCollectorTests
         }
     }
 
-    private static async Task<WebApplication> Start(TemporaryDirectory directory, MicrosoftCloudSourceTests.FakeGraph graph, CancellationToken cancellation, bool auditOnly = false)
+    private static async Task<WebApplication> Start(TemporaryDirectory directory, MicrosoftCloudSourceTests.FakeGraph graph, TimeProvider clock, CancellationToken cancellation)
     {
-        WebApplication app = CollectorApplication.Build(Settings(directory, auditOnly: auditOnly), builder =>
+        WebApplication app = CollectorApplication.Build(Settings(directory), builder =>
         {
             builder.WebHost.UseTestServer();
+            builder.Services.AddSingleton(clock);
             builder.Services.AddSingleton<IMicrosoftCloudTokenProvider>(new MicrosoftCloudSourceTests.FakeTokens());
             builder.Services.AddSingleton(new MicrosoftCloudHttpClient(new HttpClient(graph)));
         });
@@ -192,7 +234,7 @@ public sealed class MicrosoftCloudCollectorTests
         return app;
     }
 
-    private static CollectorSettings Settings(TemporaryDirectory directory, int parser = 0, bool auditOnly = false)
+    private static CollectorSettings Settings(TemporaryDirectory directory, int parser = 0)
     {
         string archive = Path.Combine(directory.Path, "microsoft-intune.bowerpack");
         string trust = Path.Combine(directory.Path, "trusted.pem");
@@ -214,18 +256,15 @@ public sealed class MicrosoftCloudCollectorTests
                 ["route"] = new JsonObject { ["pack"] = "microsoft-intune", ["parser"] = parser }
             }
         ];
-        if (!auditOnly)
+        inputs.Add(new JsonObject
         {
-            inputs.Add(new JsonObject
-            {
-                ["id"] = "intune-compliance",
-                ["sourceKind"] = "intune-device-compliance",
-                ["tenantId"] = "a1b2c3d4-0000-4000-8000-00000000aaaa",
-                ["route"] = new JsonObject { ["pack"] = "microsoft-intune", ["parser"] = 1 }
-            });
-        }
+            ["id"] = "intune-compliance",
+            ["sourceKind"] = "intune-device-compliance",
+            ["tenantId"] = "a1b2c3d4-0000-4000-8000-00000000aaaa",
+            ["route"] = new JsonObject { ["pack"] = "microsoft-intune", ["parser"] = 1 }
+        });
 
-        string configuration = Path.Combine(directory.Path, auditOnly ? "microsoft-audit.json" : "microsoft.json");
+        string configuration = Path.Combine(directory.Path, "microsoft.json");
         File.WriteAllText(configuration, new JsonObject
         {
             ["apiVersion"] = "bower.security/v1",

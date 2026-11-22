@@ -229,7 +229,8 @@ public sealed class MicrosoftCloudSourceTests
         Assert.Equal("false", device.RootElement.GetProperty("isEncrypted").GetString());
         Assert.Equal(1, Assert.Single(source.Snapshot()).OutOfScope);
         string select = Uri.UnescapeDataString(graph.Requests[0].Query);
-        Assert.Contains("$select=id,deviceName,complianceState", select, StringComparison.Ordinal);
+        Assert.Contains("$select=id,complianceState", select, StringComparison.Ordinal);
+        Assert.DoesNotContain("deviceName", select, StringComparison.Ordinal);
         Assert.DoesNotContain("imei", select, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("serialNumber", select, StringComparison.Ordinal);
         Assert.DoesNotContain("phoneNumber", select, StringComparison.Ordinal);
@@ -457,6 +458,8 @@ public sealed class MicrosoftCloudSourceTests
     [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","inputs":[{"id":"x","sourceKind":"intune-audit","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0},"credential":{"clientId":"b1b2c3d4-0000-4000-8000-00000000bbbb","certificatePath":"cert.pem"}}]}""", "absolute path")]
     [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","inputs":[{"id":"x","sourceKind":"intune-audit","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0},"complianceStates":["noncompliant"]}]}""", "intune-device-compliance only")]
     [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","inputs":[{"id":"x","sourceKind":"intune-device-compliance","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0},"complianceStates":["everything"]}]}""", "complianceStates must list")]
+    [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","inputs":[{"id":"x","sourceKind":"intune-audit","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0},"overlapSeconds":86400}]}""", "overlapSeconds must be between 0 and 43200")]
+    [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","inputs":[{"id":"x","sourceKind":"intune-device-compliance","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0},"complianceStates":["compliant"]}]}""", "complianceStates must list")]
     [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","pollIntervalSeconds":5,"inputs":[{"id":"x","sourceKind":"intune-audit","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0}}]}""", "pollIntervalSeconds")]
     [InlineData("""{"apiVersion":"bower.security/v1","kind":"MicrosoftCloudSource","inputs":[{"id":"x","sourceKind":"intune-audit","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0}},{"id":"x","sourceKind":"intune-audit","tenantId":"a1b2c3d4-0000-4000-8000-00000000aaaa","route":{"pack":"p","parser":0}}]}""", "more than once")]
     public void Configuration_RefusesUnsafeOrUnknownShapes(string json, string message)
@@ -474,6 +477,237 @@ public sealed class MicrosoftCloudSourceTests
         Assert.Equal(TimeSpan.FromSeconds(60), http.Backoff(12));
         MicrosoftCloudHttp none = new(new HttpClient(new FakeGraph()), new FakeTokens(), TimeProvider.System, () => 0.0);
         Assert.Equal(TimeSpan.Zero, none.Backoff(5));
+    }
+
+    [Fact]
+    public async Task ExpiredPageLinkTwiceInOnePoll_FailsInsteadOfSpinning()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.AuditPages(Now);
+        // Page 2 is always refused: one restart, then the poll fails and the loop backs off.
+        graph.Respond(uri => uri.Query.Contains("skiptoken=page2", StringComparison.Ordinal), "{}", HttpStatusCode.BadRequest);
+        MicrosoftCloudSource source = Source(graph, new MemorySink(), new FileTailSourceTests.MemoryCursors(), Audit());
+
+        MicrosoftCloudException failure = await Assert.ThrowsAsync<MicrosoftCloudException>(
+            () => source.PollOnceAsync("intune-audit", cancellation));
+
+        Assert.Equal(MicrosoftCloudFailures.RequestRefused, failure.Code);
+        Assert.Equal(1, Assert.Single(source.Snapshot()).PageRestarts);
+        Assert.Equal(2, graph.Requests.Count(uri => uri.Query.Contains("skiptoken=page2", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public async Task CyclicNextLink_FailsThePollWithoutSpinning()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        const string Loop = "https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$skiptoken=loop";
+        graph.Respond(_ => true, JsonSerializer.Serialize(new Dictionary<string, object> { ["value"] = Array.Empty<object>(), ["@odata.nextLink"] = Loop }));
+        MicrosoftCloudSource source = Source(graph, new MemorySink(), new FileTailSourceTests.MemoryCursors(), Compliance());
+
+        MicrosoftCloudException failure = await Assert.ThrowsAsync<MicrosoftCloudException>(
+            () => source.PollOnceAsync("intune-compliance", cancellation));
+
+        Assert.Equal(MicrosoftCloudFailures.ResponseInvalid, failure.Code);
+        Assert.Equal(2, graph.Requests.Count);
+    }
+
+    [Fact]
+    public async Task PagesWithNothingInScope_StillYieldAfterThePageCap()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        int page = 0;
+        graph.Respond(_ => true, string.Empty);
+        FakeGraph.Dynamic = _ => JsonSerializer.Serialize(new Dictionary<string, object>
+        {
+            ["value"] = new[] { new Dictionary<string, object> { ["id"] = "d", ["complianceState"] = "compliant" } },
+            ["@odata.nextLink"] = $"https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?$skiptoken={Interlocked.Increment(ref page)}"
+        });
+        try
+        {
+            MicrosoftCloudSource source = Source(graph, new MemorySink(), new FileTailSourceTests.MemoryCursors(), Compliance());
+
+            MicrosoftCloudPollResult result = await source.PollOnceAsync("intune-compliance", cancellation);
+
+            Assert.True(result.More);
+            Assert.Equal(MicrosoftCloudSource.MaximumPagesPerPoll, graph.Requests.Count);
+            Assert.Equal(MicrosoftCloudSource.MaximumPagesPerPoll, Assert.Single(source.Snapshot()).OutOfScope);
+        }
+        finally
+        {
+            FakeGraph.Dynamic = null;
+        }
+    }
+
+    [Fact]
+    public async Task OffHostNextLink_IsNeverCommittedToTheCursor()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.Respond(_ => true, Fixture("intune-audit-page1.json", Now).Replace(
+            "https://graph.microsoft.com/v1.0/deviceManagement/auditEvents?$filter=x&$skiptoken=page2",
+            "https://evil.example/v1.0/deviceManagement/auditEvents?$skiptoken=page2", StringComparison.Ordinal));
+        MemorySink sink = new();
+        FileTailSourceTests.MemoryCursors cursors = new();
+
+        MicrosoftCloudException failure = await Assert.ThrowsAsync<MicrosoftCloudException>(
+            () => Source(graph, sink, cursors, Audit()).PollOnceAsync("intune-audit", cancellation));
+
+        Assert.Equal(MicrosoftCloudFailures.HostRefused, failure.Code);
+        Assert.Empty(sink.Records);
+        MicrosoftCloudCursor cursor = MicrosoftCloudCursor.Deserialize(cursors.Value("mscloud:intune-audit")!, MicrosoftCloudKinds.IntuneAudit)!;
+        Assert.Null(cursor.Page);
+        Assert.DoesNotContain("evil.example", cursors.Value("mscloud:intune-audit")!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task BodyFailingInTransit_IsRetried()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.AuditPages(Now);
+        graph.FailBodyOnce = true;
+        MicrosoftCloudSource source = Source(graph, new MemorySink(), new FileTailSourceTests.MemoryCursors(), Audit());
+
+        await source.PollOnceAsync("intune-audit", cancellation);
+
+        Assert.Equal(1, Assert.Single(source.Snapshot()).Retries);
+    }
+
+    [Fact]
+    public async Task UnauthorisedThenThrottled_RefreshesTheTokenExactlyOnce()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.AuditPages(Now);
+        graph.Respond(_ => true, "{}", HttpStatusCode.ServiceUnavailable, first: true);
+        graph.Respond(_ => true, "{}", HttpStatusCode.ServiceUnavailable, first: true);
+        graph.Respond(_ => true, "{}", HttpStatusCode.Unauthorized, first: true);
+        FakeTokens tokens = new();
+        MicrosoftCloudSource source = Source(graph, new MemorySink(), new FileTailSourceTests.MemoryCursors(), Audit(), tokens: tokens);
+
+        await source.PollOnceAsync("intune-audit", cancellation);
+
+        Assert.Equal(1, tokens.Refreshes);
+    }
+
+    [Fact]
+    public async Task RetryAfterZero_FallsBackToBackoff()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.AuditPages(Now);
+        graph.Respond(_ => true, "{}", HttpStatusCode.TooManyRequests, first: true, retryAfterSeconds: 0);
+        ManualTimeProvider clock = new(Now);
+        MicrosoftCloudHttp http = new(new HttpClient(graph), new FakeTokens(), clock, () => 1.0);
+        MicrosoftCloudSource source = new(Configuration(Audit()), new MemorySink(), new FileTailSourceTests.MemoryCursors(), http, clock);
+
+        Task<MicrosoftCloudPollResult> poll = source.PollOnceAsync("intune-audit", cancellation);
+        await Polling.UntilAsync(() => clock.ActiveTimers > 0, cancellation);
+        Assert.False(poll.IsCompleted);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        await poll;
+    }
+
+    [Theory]
+    [InlineData("203.0.113.40:51234", "203.0.113.40")]
+    [InlineData("[2001:db8::40]:443", "2001:db8::40")]
+    [InlineData("2001:db8::40", "2001:db8::40")]
+    [InlineData("010.0.0.1", null)]
+    [InlineData("1.2.3.4.5", null)]
+    [InlineData("dead", null)]
+    [InlineData("fe80::1%eth0", null)]
+    public void Address_IsCanonicalOrAbsentNeverAnEventBreaker(string input, string? expected)
+    {
+        Assert.Equal(expected, MicrosoftCloudRecord.Address(input));
+    }
+
+    [Fact]
+    public void Record_StaysBelowThePackLimitWithEscapedValues()
+    {
+        static string Wide()
+        {
+            MicrosoftCloudRecord record = new(Audit());
+            string wide = new('\u00e9', 5_000);
+            for (int index = 0; index < 30; index++)
+            {
+                record.Add("field" + index, wide);
+            }
+
+            return record.Build("x");
+        }
+
+        string json = Wide();
+
+        Assert.True(Encoding.UTF8.GetByteCount(json) < Bower.Packs.PackRuntime.MaximumRecordBytes);
+        // Clipping depends only on the input, so a re-read gives the same record and id.
+        Assert.Equal(json, Wide());
+    }
+
+    [Fact]
+    public void ActionValues_AreClippedToTheEnvelopeLimit()
+    {
+        FakeGraph graph = new();
+        string body = Fixture("intune-audit-page2.json", Now).Replace("\"Patch RoleAssignment\"", "\"" + new string('x', 400) + "\"", StringComparison.Ordinal);
+        using MicrosoftCloudResponse response = new(JsonDocument.Parse(body), null);
+
+        MicrosoftCloudPage page = new IntuneAuditReader().Read(Audit(), new MicrosoftCloudSpan(Now.AddHours(-1), Now), response);
+
+        using JsonDocument record = JsonDocument.Parse(page.Records[0]);
+        Assert.Equal(128, record.RootElement.GetProperty("activity").GetString()!.Length);
+    }
+
+    [Fact]
+    public async Task OverlapNearTheFloor_IsNotAGap()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.Respond(_ => true, """{"value":[]}""");
+        FileTailSourceTests.MemoryCursors cursors = new();
+        await cursors.TryAdvanceAsync(
+            "mscloud:intune-audit", 0,
+            new MicrosoftCloudCursor(1, MicrosoftCloudKinds.IntuneAudit, Now.AddDays(-7).AddMinutes(5)).Serialize(), Now, cancellation);
+        MicrosoftCloudSource source = Source(graph, new MemorySink(), cursors, Audit());
+
+        await source.PollOnceAsync("intune-audit", cancellation);
+
+        Assert.Equal(0, Assert.Single(source.Snapshot()).Gaps);
+    }
+
+    [Fact]
+    public async Task ClockSteppedBackAcrossMidnight_DoesNotReRunACompletedSnapshot()
+    {
+        CancellationToken cancellation = TestContext.Current.CancellationToken;
+        FakeGraph graph = new();
+        graph.Respond(_ => true, """{"value":[]}""");
+        FileTailSourceTests.MemoryCursors cursors = new();
+        await cursors.TryAdvanceAsync(
+            "mscloud:intune-compliance", 0,
+            new MicrosoftCloudCursor(1, MicrosoftCloudKinds.IntuneDeviceCompliance, CompletedDate: "2026-11-23").Serialize(), Now, cancellation);
+        MicrosoftCloudSource source = Source(graph, new MemorySink(), cursors, Compliance());
+
+        await source.PollOnceAsync("intune-compliance", cancellation);
+
+        Assert.Empty(graph.Requests);
+    }
+
+    [Fact]
+    public void ComplianceSnapshot_NeverRequestsTheDeviceName()
+    {
+        Assert.DoesNotContain("deviceName", IntuneComplianceReader.Select, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{"schemaVersion":1,"sourceKind":"intune-audit","windowStart":"2026-11-22T00:00:00Z","windowEnd":"2026-11-22T01:00:00Z","page":"not a uri"}""")]
+    [InlineData("""{"schemaVersion":1,"sourceKind":"intune-audit","completedDate":"2026-11-22"}""")]
+    [InlineData("""{"schemaVersion":1,"sourceKind":"intune-device-compliance","committed":"2026-11-22T00:00:00Z"}""")]
+    [InlineData("""{"schemaVersion":1,"sourceKind":"intune-device-compliance","completedDate":"22/11/2026"}""")]
+    public void MixedOrMalformedCursorFields_AreRefused(string value)
+    {
+        string kind = value.Contains("compliance", StringComparison.Ordinal) ? MicrosoftCloudKinds.IntuneDeviceCompliance : MicrosoftCloudKinds.IntuneAudit;
+        Assert.Null(MicrosoftCloudCursor.Deserialize(value, kind));
     }
 
     internal static MicrosoftCloudInputOptions Audit() =>
@@ -588,7 +822,16 @@ public sealed class MicrosoftCloudSourceTests
                 }
             }
 
-            HttpResponseMessage response = new(rule.Status) { Content = new StringContent(rule.Body, Encoding.UTF8, "application/json") };
+            string body = Dynamic is { } dynamic && rule.Body.Length == 0 ? dynamic(uri) : rule.Body;
+            HttpContent content = FailBodyOnce && rule.Status == HttpStatusCode.OK
+                ? new FailingContent()
+                : new StringContent(body, Encoding.UTF8, "application/json");
+            if (content is FailingContent)
+            {
+                FailBodyOnce = false;
+            }
+
+            HttpResponseMessage response = new(rule.Status) { Content = content };
             if (rule.RetryAfterSeconds is { } seconds)
             {
                 response.Headers.RetryAfter = new System.Net.Http.Headers.RetryConditionHeaderValue(TimeSpan.FromSeconds(seconds));
@@ -597,7 +840,44 @@ public sealed class MicrosoftCloudSourceTests
             return Task.FromResult(response);
         }
 
+        /// <summary>Builds the body for rules registered with an empty body (paging tests).</summary>
+        public static Func<Uri, string>? Dynamic { get; set; }
+
+        /// <summary>The next successful response's body fails while it is read, as a reset connection would.</summary>
+        public bool FailBodyOnce { get; set; }
+
         private sealed record Rule(Func<Uri, bool> Match, string Body, HttpStatusCode Status, bool Once, int? RetryAfterSeconds);
+
+        private sealed class FailingContent : HttpContent
+        {
+            protected override Task SerializeToStreamAsync(Stream stream, System.Net.TransportContext? context) =>
+                throw new IOException("connection reset");
+
+            protected override Task<Stream> CreateContentReadStreamAsync() =>
+                Task.FromResult<Stream>(new FailingStream());
+
+            protected override bool TryComputeLength(out long length)
+            {
+                length = 0;
+                return false;
+            }
+        }
+
+        private sealed class FailingStream : Stream
+        {
+            public override bool CanRead => true;
+            public override bool CanSeek => false;
+            public override bool CanWrite => false;
+            public override long Length => throw new NotSupportedException();
+            public override long Position { get => 0; set => throw new NotSupportedException(); }
+            public override void Flush() { }
+            public override int Read(byte[] buffer, int offset, int count) => throw new IOException("connection reset");
+            public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+                throw new IOException("connection reset");
+            public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+            public override void SetLength(long value) => throw new NotSupportedException();
+            public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        }
     }
 
     /// <summary>Throws on the Nth commit, as a crash between enqueue and commit would.</summary>

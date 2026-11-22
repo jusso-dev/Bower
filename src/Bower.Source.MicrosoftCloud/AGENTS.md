@@ -23,9 +23,14 @@ migration note.
 - Retry 429, 408 and 5xx and transport failures with capped exponential backoff and full
   jitter, honouring `Retry-After` up to its cap. Refresh the token once on 401. Never retry a
   403 (`mscloud-permission-denied`); the poll loop backs off.
-- Bound everything: response bytes (16 MiB default), JSON depth 32, values 1,024
-  characters, joined lists 256, URIs 4,096, records per poll, windows 24 hours, look-back
-  7 days.
+- Bound everything: response bytes (16 MiB default), JSON depth 32, values to the
+  envelope limit of the field they map to (128 or 256), a per-record escaped byte budget
+  under the 32 KiB pack limit, joined lists 256, URIs 4,096, records and 100 pages per poll,
+  windows 24 hours, overlap 12 hours, look-back 7 days. Canonicalise IP addresses or leave
+  them out; never let one odd value drop the whole event.
+- Check a next link against the host allow-list before the page that returned it is
+  committed. Restart an expired page link at most once per poll and fail on a repeated
+  next link, so a poll can never spin.
 - Cursors live in the queue database's `source_cursors` table (`mscloud:<id>`), schema 1.
   Store a newly opened window before reading it. Move past a page only once every record
   in it is durably enqueued or definitively dropped; commit after every page. Backpressure

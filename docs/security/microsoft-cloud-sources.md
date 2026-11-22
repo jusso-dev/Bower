@@ -13,10 +13,10 @@ token must never reach anything other than the API it was issued for.
 
 | Control | How |
 |---|---|
-| Token destination | Each source kind allow-lists exactly one host (`graph.microsoft.com` for Intune). Requests, `@odata.nextLink` and stored page links must be HTTPS on that host at the default port with no user info, or the poll fails with `mscloud-host-refused` before any request is sent. |
+| Token destination | Each source kind allow-lists exactly one host (`graph.microsoft.com` for Intune). Requests, `@odata.nextLink` and stored page links must be HTTPS on that host at the default port with no user info, or the poll fails with `mscloud-host-refused` before any request is sent. A refused next link is never stored in the cursor. |
 | Redirects | Never followed. A 3xx fails the poll (`mscloud-redirect-refused`). |
 | Response size | 16 MiB per response and JSON depth 32; larger fails with `mscloud-response-too-large`. |
-| Record size | Values clipped to 1,024 characters, joined lists to 256, and the pack parser's 32 KiB record limit applies. |
+| Record size | Values clipped to the envelope limit of the field they map to (128 for actions and target types, 256 for labels and identities), with a per-record budget that keeps the escaped record below the pack parser's 32 KiB limit. IP addresses are canonicalised (a `:port` is stripped) or left out, so an odd address never drops the event. |
 | Failure reporting | Status, logs and exceptions carry a stable code and the HTTP status only. Response bodies, URLs with queries and tokens are never logged or shown. |
 | Default deny | A record becomes an event only through a signed pack parser's match filter, then the Privacy & Secret Protection Engine and default-deny policy. |
 
@@ -35,7 +35,8 @@ tools.
 for `deviceManagement/auditEvents`. It also allows reading Intune app configuration; Bower
 reads only `auditEvents`. `DeviceManagementManagedDevices.Read.All` allows reading full
 device inventory; Bower requests only the compliance fields with `$select` and never asks
-for IMEI, serial number, phone number, MAC addresses, email address or hardware details.
+for the device name, IMEI, serial number, phone number, MAC addresses, email address or
+hardware details.
 
 ## Tokens and credentials
 
@@ -46,8 +47,9 @@ for IMEI, serial number, phone number, MAC addresses, email address or hardware 
 - Client secrets are refused in configuration. A certificate file stays on disk with the
   collector account's permissions (mode 0600); rotate it in Entra and replace the file,
   then restart.
-- A 401 drops the cached credential and acquires one new token; a second 401 fails the
-  poll with `mscloud-unauthorised`.
+- A 401 drops the cached credential and acquires one new token, once per request; the
+  retries after it reuse that token. A second 401 fails the poll with
+  `mscloud-unauthorised`.
 
 ## Checkpoints
 
@@ -65,13 +67,16 @@ for IMEI, serial number, phone number, MAC addresses, email address or hardware 
 
 ## Personal information by event type
 
-Values after the `deploy/privacy/microsoft-cloud.yaml` profile. Without the profile, the
-default Australian redaction still masks email addresses.
+Values after the `deploy/privacy/microsoft-cloud.yaml` profile. The profile sets the email
+detector to `hmac`: value detectors run before field rules, and the default mask
+(`m***@domain`) would otherwise make every user with the same initial and domain share one
+pseudonym. Without the profile, the default Australian redaction still masks email
+addresses.
 
 | Event type | Personal or sensitive fields kept | Treatment | Never collected |
 |---|---|---|---|
 | `intune_audit` | Actor user principal name or service principal name, actor object id, actor IP address, resource display name | UPN, object id and resource name are HMAC pseudonyms; IP address kept for detections | Modified property old and new values, actor permissions list |
-| `intune_device_compliance` | Primary user principal name and object id, operating system and version, ownership, encryption and jailbreak state | UPN and object id are HMAC pseudonyms; device name is never forwarded (the Entra device id identifies the device) | IMEI, MEID, serial number, phone number, Wi-Fi and Ethernet MAC addresses, email address, hardware inventory, compliant devices |
+| `intune_device_compliance` | Primary user principal name and object id, operating system and version, ownership, encryption and jailbreak state | UPN and object id are HMAC pseudonyms; the Entra and Intune device ids identify the device | Device name, IMEI, MEID, serial number, phone number, Wi-Fi and Ethernet MAC addresses, email address, hardware inventory, compliant devices (refused in `complianceStates`) |
 
 IP addresses are personal information under the Privacy Act 1988 when they can identify a
 person. They are kept because sign-in and admin anomaly detection depend on them. If your

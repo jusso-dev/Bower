@@ -2,7 +2,7 @@ apiVersion: bower.security/v1
 kind: Pack
 metadata:
   id: microsoft-intune
-  version: 1.0.0
+  version: 1.1.0
   name: Microsoft Intune audit and device compliance
   description: >-
     Intune audit events (who changed, wiped, retired or reassigned what) and a daily

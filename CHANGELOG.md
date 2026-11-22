@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Microsoft cloud pull source (`Bower.Source.MicrosoftCloud`, collector `BOWER_MICROSOFT_CONFIG`): Intune audit events and a daily device compliance snapshot from Microsoft Graph with least-privilege read-only permissions, a token host allow-list, capped retry honouring `Retry-After`, and durable per-page cursors in the queue database. Signed `microsoft-intune` pack (two parsers, two policies, four detections) and the `deploy/privacy/microsoft-cloud.yaml` pseudonymisation profile.
+- Microsoft cloud pull source (`Bower.Source.MicrosoftCloud`, collector `BOWER_MICROSOFT_CONFIG`): Intune audit events and a daily device compliance snapshot from Microsoft Graph with least-privilege read-only permissions, a token host allow-list, capped retry honouring `Retry-After`, and durable per-page cursors in the queue database. Signed `microsoft-intune` pack 1.1.0 (two parsers, two policies, four detections) and the `deploy/privacy/microsoft-cloud.yaml` pseudonymisation profile (email addresses hashed whole, so pseudonyms stay distinct per person).
 
 ## [1.0.0] - 2026-11-21
 

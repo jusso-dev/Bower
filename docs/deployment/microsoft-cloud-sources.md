@@ -73,8 +73,9 @@ BOWER_PRIVACY_PROFILE=/etc/bower/privacy/microsoft-cloud.yaml   # deploy/privacy
 BOWER_PRIVACY_HMAC_KEY_FILE=/etc/bower/privacy-hmac.key
 ```
 
-The privacy profile replaces user principal names, user object ids and resource names with
-keyed HMAC pseudonyms. Without it, the default Australian redaction still masks email
+The privacy profile replaces user principal names, user object ids, resource names and any
+email address with keyed HMAC pseudonyms (distinct for every address, so two people with
+the same initial never share one). Without it, the default Australian redaction still masks email
 addresses, but you lose the ability to follow one person across events.
 
 Check it with `bower status` or `GET /v1/status`: the `microsoftCloud` block lists each
@@ -110,9 +111,9 @@ Client secrets are not accepted.
 | `route` | | an active parser of a loaded signed pack | Start-up fails without one |
 | `startLookbackHours` | 24 | 1 to 168 | How far back the first poll reads |
 | `settleDelaySeconds` | 300 | 0 to 86400 | Windows end this long before now, so late-written records fall in the next one |
-| `overlapSeconds` | 600 | 0 to 86400 | Each window starts this long before the last committed time; re-read records deduplicate |
+| `overlapSeconds` | 600 | 0 to 43200 | Each window starts this long before the last committed time; re-read records deduplicate |
 | `maxRecordsPerPoll` | 1000 | 1 to 10000 | Records handed to the parser per poll before it yields |
-| `complianceStates` | `noncompliant`, `inGracePeriod`, `conflict`, `error` | Intune states | `intune-device-compliance` only |
+| `complianceStates` | `noncompliant`, `inGracePeriod`, `conflict`, `error` | also `unknown`, `configManager`; never `compliant` | `intune-device-compliance` only |
 
 ## How collection stays correct
 
@@ -132,13 +133,17 @@ Client secrets are not accepted.
 - **Permission problems** show as `mscloud-permission-denied` (403) or
   `mscloud-unauthorised` (401 after one token refresh). Fix the consent; the input retries
   on its own.
+- **Bounded polls.** One poll reads at most 100 pages and `maxRecordsPerPoll` records, then
+  yields. An expired page link restarts its window once per poll; a second refusal, or a
+  next link that repeats, fails the poll so it backs off instead of spinning. A next link
+  is checked against the allowed host before the page that returned it is committed.
 
 ## What reaches Sentinel
 
 | `EventType` | `EventCategory` | `EventAction` | Main columns |
 |---|---|---|---|
-| `intune_audit` | `administrative-activity` | Intune activity, for example `Wipe ManagedDevice` | `ActorUsername` (pseudonymised), `ActorUserId`, `SourceIpAddress`, `Target` (type, id, pseudonymised name), `CorrelationId`, `Labels.intuneCategory`, `Labels.intuneComponent`, `Labels.intuneOperationType`, `Labels.intuneModifiedProperties` |
-| `intune_device_compliance` | `application-security` | `device.compliance.<state>` | `ActorUsername` (primary user, pseudonymised), `Target.id` (Entra device id), `Labels.operatingSystem`, `osVersion`, `ownerType`, `isEncrypted`, `jailBroken`, `lastSyncDateTime`, `gracePeriodExpires` |
+| `intune_audit` | `administrative-activity` | Intune activity, for example `Wipe ManagedDevice` | `ActorUsername` (pseudonymised), `ActorUserId`, `SourceIpAddress`, `Target` (type, id, pseudonymised name), `CorrelationId`, `Labels.intuneAuditEventId`, `Labels.intuneCategory`, `Labels.intuneComponent`, `Labels.intuneOperationType`, `Labels.intuneModifiedProperties` |
+| `intune_device_compliance` | `application-security` | `device.compliance.<state>` | `ActorUsername` (primary user, pseudonymised), `Target.id` (Entra device id), `Labels.intuneDeviceId`, `snapshotDate`, `operatingSystem`, `osVersion`, `ownerType`, `isEncrypted`, `jailBroken` |
 
 Each pack parser declares the ASIM and OCSF field each source field corresponds to (for
 example `actorIpAddress` to ASIM `SrcIpAddr` and OCSF `src_endpoint.ip`), so ASIM-style

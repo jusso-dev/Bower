@@ -19,14 +19,78 @@ internal sealed class MicrosoftCloudRecord(MicrosoftCloudInputOptions input)
 
     private readonly List<KeyValuePair<string, string>> fields = [];
 
-    public MicrosoftCloudRecord Add(string name, string? value)
+    /// <param name="maximumLength">
+    /// The envelope limit of the field this value maps to (for example 128 for an action or
+    /// target type, 256 for labels and identities), so a long value is clipped here rather
+    /// than refused by the pack parser.
+    /// </param>
+    public MicrosoftCloudRecord Add(string name, string? value, int maximumLength = MaximumValueLength)
     {
-        if (!string.IsNullOrWhiteSpace(value))
+        if (!string.IsNullOrWhiteSpace(value) && budget > 0)
         {
-            fields.Add(new KeyValuePair<string, string>(name, Clip(value.Trim(), MaximumValueLength)));
+            string clipped = Clip(value.Trim(), Math.Min(Math.Min(maximumLength, MaximumValueLength), budget / 6));
+            if (clipped.Length > 0)
+            {
+                budget -= clipped.Length * 6;
+                fields.Add(new KeyValuePair<string, string>(name, clipped));
+            }
         }
 
         return this;
+    }
+
+    /// <summary>
+    /// An IP address in canonical form, or null. Strips an IPv4 <c>:port</c> and brackets, so
+    /// an unusual address never makes the pack parser refuse the whole event.
+    /// </summary>
+    public static string? Address(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value) || value.Length > 64)
+        {
+            return null;
+        }
+
+        string text = value.Trim();
+        if (text.StartsWith('['))
+        {
+            // [IPv6] or [IPv6]:port.
+            int close = text.IndexOf(']', StringComparison.Ordinal);
+            if (close < 0 || (close != text.Length - 1 && !IsPort(text.AsSpan(close + 1))))
+            {
+                return null;
+            }
+
+            text = text[1..close];
+        }
+        else if (text.Count(character => character == ':') == 1)
+        {
+            // IPv4:port. A bare IPv6 address always has two or more colons.
+            int colon = text.IndexOf(':', StringComparison.Ordinal);
+            if (!IsPort(text.AsSpan(colon)))
+            {
+                return null;
+            }
+
+            text = text[..colon];
+        }
+
+        if (text.Contains('%', StringComparison.Ordinal)
+            || !System.Net.IPAddress.TryParse(text, out System.Net.IPAddress? address))
+        {
+            return null;
+        }
+
+        string canonical = address.ToString();
+        // IPv4 must already be in canonical dotted form (no leading zeros, no short forms),
+        // which is exactly what the pack runtime accepts.
+        return address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork && canonical != text
+            ? null
+            : canonical;
+
+        static bool IsPort(ReadOnlySpan<char> suffix) =>
+            suffix.Length is >= 2 and <= 6 && suffix[0] == ':'
+            && int.TryParse(suffix[1..], System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out int port)
+            && port is >= 1 and <= 65_535;
     }
 
     /// <summary>
@@ -49,6 +113,16 @@ internal sealed class MicrosoftCloudRecord(MicrosoftCloudInputOptions input)
         string id = "mscloud-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(material)))[..32];
         return Write(id);
     }
+
+    /// <summary>
+    /// Escaped bytes all values of one record may use. JSON escaping is at most 6 bytes per
+    /// UTF-16 unit, so values are clipped against this budget as they are added and a record
+    /// always stays below the pack parser's 32 KiB limit. Clipping depends only on the input,
+    /// so a re-read gives the same record and the same event id.
+    /// </summary>
+    public const int MaximumValueBytes = 28_672;
+
+    private int budget = MaximumValueBytes;
 
     private string Write(string? id)
     {
@@ -138,6 +212,11 @@ internal sealed class MicrosoftCloudRecord(MicrosoftCloudInputOptions input)
         if (value.Length <= maximumLength)
         {
             return value;
+        }
+
+        if (maximumLength <= 0)
+        {
+            return string.Empty;
         }
 
         int end = maximumLength;

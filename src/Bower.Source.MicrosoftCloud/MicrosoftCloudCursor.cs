@@ -53,13 +53,28 @@ public sealed record MicrosoftCloudCursor(
             || cursor.WindowStart > cursor.WindowEnd
             || (cursor.Page is not null && cursor.WindowStart is null && cursor.SnapshotDate is null)
             || (cursor.SnapshotDate is null) != (cursor.SnapshotAt is null)
-            || cursor.Page?.Length > MicrosoftCloudHttp.MaximumUriLength)
+            || cursor.Page?.Length > MicrosoftCloudHttp.MaximumUriLength
+            || (cursor.Page is not null && !Uri.TryCreate(cursor.Page, UriKind.Absolute, out _))
+            || !IsDate(cursor.CompletedDate)
+            || !IsDate(cursor.SnapshotDate))
+        {
+            return null;
+        }
+
+        // Window kinds carry window fields only, snapshot kinds snapshot fields only.
+        bool snapshotKind = string.Equals(kind, MicrosoftCloudKinds.IntuneDeviceCompliance, StringComparison.Ordinal);
+        bool windowFields = cursor.Committed is not null || cursor.WindowStart is not null;
+        bool snapshotFields = cursor.CompletedDate is not null || cursor.SnapshotDate is not null;
+        if (snapshotKind ? windowFields : snapshotFields)
         {
             return null;
         }
 
         return cursor;
     }
+
+    private static bool IsDate(string? value) =>
+        value is null || DateOnly.TryParseExact(value, "yyyy'-'MM'-'dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out _);
 }
 
 [JsonSourceGenerationOptions(

@@ -99,7 +99,11 @@ public sealed class MicrosoftCloudHttp(
 
     public int MaximumResponseBytes { get; init; } = DefaultMaximumResponseBytes;
 
-    internal MicrosoftCloudRetryCounters Counters { get; } = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, MicrosoftCloudRetryCounters> counters =
+        new(StringComparer.Ordinal);
+
+    /// <summary>Retry and throttle counts for one input (inputs share this client).</summary>
+    internal MicrosoftCloudRetryCounters Counters(string inputId) => counters.GetOrAdd(inputId, static _ => new());
 
     /// <summary>True when <paramref name="uri"/> is HTTPS on <paramref name="host"/> at the default port.</summary>
     public static bool IsAllowed(Uri uri, string host) =>
@@ -123,14 +127,18 @@ public sealed class MicrosoftCloudHttp(
             throw new MicrosoftCloudException(MicrosoftCloudFailures.HostRefused);
         }
 
+        MicrosoftCloudRetryCounters inputCounters = Counters(input.Id);
         bool refreshed = false;
+        bool forceRefresh = false;
         for (int attempt = 1; ; attempt++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             string token;
             try
             {
-                token = await tokens.GetTokenAsync(input, scope, refreshed, cancellationToken);
+                token = await tokens.GetTokenAsync(input, scope, forceRefresh, cancellationToken);
+                // Refresh exactly once after a 401, never on the retries that follow it.
+                forceRefresh = false;
             }
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
@@ -151,16 +159,9 @@ public sealed class MicrosoftCloudHttp(
             {
                 response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
             }
-            catch (Exception exception) when (
-                exception is HttpRequestException
-                    || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested))
+            catch (Exception exception) when (IsTransport(exception, cancellationToken))
             {
-                if (attempt >= MaximumAttempts)
-                {
-                    throw new MicrosoftCloudException(MicrosoftCloudFailures.Unavailable);
-                }
-
-                await WaitAsync(Backoff(attempt), cancellationToken);
+                await RetryTransportAsync(attempt, inputCounters, cancellationToken);
                 continue;
             }
 
@@ -170,6 +171,7 @@ public sealed class MicrosoftCloudHttp(
                 if (status == HttpStatusCode.Unauthorized && !refreshed)
                 {
                     refreshed = true;
+                    forceRefresh = true;
                     continue;
                 }
 
@@ -193,7 +195,7 @@ public sealed class MicrosoftCloudHttp(
                 {
                     if (throttled)
                     {
-                        Interlocked.Increment(ref Counters.Throttled);
+                        Interlocked.Increment(ref inputCounters.Throttled);
                     }
 
                     TimeSpan? retryAfter = RetryAfter(response.Headers.RetryAfter);
@@ -203,8 +205,9 @@ public sealed class MicrosoftCloudHttp(
                             throttled ? MicrosoftCloudFailures.Throttled : MicrosoftCloudFailures.Unavailable, status);
                     }
 
-                    Interlocked.Increment(ref Counters.Retries);
-                    await WaitAsync(retryAfter ?? Backoff(attempt), cancellationToken);
+                    Interlocked.Increment(ref inputCounters.Retries);
+                    // A zero or past Retry-After falls back to jittered backoff, never a burst.
+                    await WaitAsync(retryAfter is { } after && after > TimeSpan.Zero ? after : Backoff(attempt), cancellationToken);
                     continue;
                 }
 
@@ -216,10 +219,36 @@ public sealed class MicrosoftCloudHttp(
                 string? nextPage = response.Headers.TryGetValues("NextPageUri", out IEnumerable<string>? values)
                     ? values.FirstOrDefault()
                     : null;
-                JsonDocument document = await ReadJsonAsync(response, cancellationToken);
+                JsonDocument document;
+                try
+                {
+                    // Headers arrived; the body can still fail in transit. Retry that the same way.
+                    document = await ReadJsonAsync(response, cancellationToken);
+                }
+                catch (Exception exception) when (IsTransport(exception, cancellationToken))
+                {
+                    await RetryTransportAsync(attempt, inputCounters, cancellationToken);
+                    continue;
+                }
+
                 return new MicrosoftCloudResponse(document, nextPage);
             }
         }
+    }
+
+    private static bool IsTransport(Exception exception, CancellationToken cancellationToken) =>
+        exception is HttpRequestException or IOException
+            || (exception is TaskCanceledException && !cancellationToken.IsCancellationRequested);
+
+    private async Task RetryTransportAsync(int attempt, MicrosoftCloudRetryCounters inputCounters, CancellationToken cancellationToken)
+    {
+        if (attempt >= MaximumAttempts)
+        {
+            throw new MicrosoftCloudException(MicrosoftCloudFailures.Unavailable);
+        }
+
+        Interlocked.Increment(ref inputCounters.Retries);
+        await WaitAsync(Backoff(attempt), cancellationToken);
     }
 
     private static bool IsTransient(HttpStatusCode status) =>
@@ -263,8 +292,23 @@ public sealed class MicrosoftCloudHttp(
         using MemoryStream buffer = new();
         byte[] chunk = new byte[81_920];
         int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
+        while (true)
         {
+            try
+            {
+                read = await stream.ReadAsync(chunk, cancellationToken);
+            }
+            catch (InvalidDataException)
+            {
+                // Corrupt gzip or deflate content.
+                throw new MicrosoftCloudException(MicrosoftCloudFailures.ResponseInvalid, response.StatusCode);
+            }
+
+            if (read == 0)
+            {
+                break;
+            }
+
             if (buffer.Length + read > MaximumResponseBytes)
             {
                 throw new MicrosoftCloudException(MicrosoftCloudFailures.ResponseTooLarge, response.StatusCode);

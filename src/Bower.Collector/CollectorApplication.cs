@@ -286,7 +286,8 @@ public static partial class CollectorApplication
                 // the collector's one configured Azure credential, or the input's certificate.
                 IMicrosoftCloudTokenProvider tokens = services.GetService<IMicrosoftCloudTokenProvider>()
                     ?? new MicrosoftCloudTokenProvider(() => credential ?? AzureCredentialFactory.Create(settings));
-                HttpClient client = services.GetService<MicrosoftCloudHttpClient>()?.Client ?? MicrosoftCloudRoutes.CreateHttpClient();
+                HttpClient? injected = services.GetService<MicrosoftCloudHttpClient>()?.Client;
+                HttpClient client = injected ?? MicrosoftCloudRoutes.CreateHttpClient();
                 return new MicrosoftCloudSource(
                     microsoftCloud,
                     new CollectorMicrosoftCloudSink(new PackRecordIntake(
@@ -302,7 +303,9 @@ public static partial class CollectorApplication
                     clock)
                 {
                     // A busy queue database (for example during a retention batch) is backpressure.
-                    IsTransientStorageFailure = QueueStorageErrors.IsBusy
+                    IsTransientStorageFailure = QueueStorageErrors.IsBusy,
+                    // The source owns the client it was given only when it created it.
+                    OwnedClient = injected is null ? client : null
                 };
             });
             builder.Services.AddHostedService<MicrosoftCloudIntakeService>();
